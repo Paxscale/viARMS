@@ -1,0 +1,272 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Sales Log - viARMS{% endblock %}
+
+{% block content %}
+<div class="panel-header" style="flex-wrap: wrap; gap: 1rem;">
+    <div>
+        <h1 style="font-size: 1.75rem; font-weight: 700;">Sales Ledger Log</h1>
+        <p style="color: var(--text-secondary); font-size: 0.9rem;">View audit trail logs, filter past invoices, reprint receipts, and export CSV reports.</p>
+    </div>
+    <div>
+        <!-- Dynamically passes query string to export route -->
+        <a href="{% url 'export_sales_csv' %}?{{ request.GET.urlencode }}" class="btn btn-secondary">
+            <i data-lucide="download"></i> Export to CSV Report
+        </a>
+    </div>
+</div>
+
+<!-- Filter Bar -->
+<div class="glass-panel" style="padding: 1.25rem;">
+    <form method="GET" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1rem; align-items: flex-end;">
+        <div class="form-group" style="margin-bottom: 0;">
+            <label for="search" class="form-label">Search Invoice</label>
+            <input type="text" name="search" id="search" class="form-control" value="{{ request.GET.search|default:'' }}" placeholder="Receipt #...">
+        </div>
+        <div class="form-group" style="margin-bottom: 0;">
+            <label for="start_date" class="form-label">Start Date</label>
+            <input type="date" name="start_date" id="start_date" class="form-control" value="{{ request.GET.start_date|default:'' }}">
+        </div>
+        <div class="form-group" style="margin-bottom: 0;">
+            <label for="end_date" class="form-label">End Date</label>
+            <input type="date" name="end_date" id="end_date" class="form-control" value="{{ request.GET.end_date|default:'' }}">
+        </div>
+        
+        {% if is_admin %}
+        <div class="form-group" style="margin-bottom: 0;">
+            <label for="shop_id" class="form-label">Shop Branch</label>
+            <select name="shop_id" id="shop_id" class="form-control">
+                <option value="">All Branches</option>
+                {% for s in shops %}
+                    <option value="{{ s.id }}" {% if request.GET.shop_id == s.id|stringformat:"i" %}selected{% endif %}>{{ s.name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        {% endif %}
+
+        <div class="form-group" style="margin-bottom: 0;">
+            <label for="cashier" class="form-label">Cashier</label>
+            <select name="cashier" id="cashier" class="form-control">
+                <option value="">All Staff</option>
+                {% for c in cashiers %}
+                    <option value="{{ c.id }}" {% if request.GET.cashier == c.id|stringformat:"i" %}selected{% endif %}>{{ c.username|title }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        
+        <div class="form-group" style="margin-bottom: 0;">
+            <label for="payment_method" class="form-label">Payment Method</label>
+            <select name="payment_method" id="payment_method" class="form-control">
+                <option value="">All Methods</option>
+                {% for method_val, method_name in payment_choices %}
+                    <option value="{{ method_val }}" {% if request.GET.payment_method == method_val %}selected{% endif %}>{{ method_name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        
+        <div style="display: flex; gap: 0.5rem; justify-content: flex-end;">
+            <a href="{% url 'sales_history' %}" class="btn btn-secondary flex-grow" style="padding: 0.65rem 0.85rem;">Clear</a>
+            <button type="submit" class="btn btn-primary flex-grow" style="padding: 0.65rem 0.85rem;">
+                <i data-lucide="filter" style="width: 14px; height: 14px;"></i> Filter
+            </button>
+        </div>
+    </form>
+</div>
+
+<!-- Ledger Log Table -->
+<div class="glass-panel" style="padding: 1.5rem;">
+    <div class="table-responsive">
+        <table class="custom-table">
+            <thead>
+                <tr>
+                    <th>Receipt Number</th>
+                    <th>Date/Time</th>
+                    <th>Shop Branch</th>
+                    <th>Cashier</th>
+                    <th>Payment Method</th>
+                    <th style="text-align: center;">Items Qty</th>
+                    <th>Subtotal</th>
+                    <th>Tax</th>
+                    <th>Discount</th>
+                    <th>Total Received</th>
+                    {% if is_admin %}
+                    <th style="color: var(--color-success);">Net Profit</th>
+                    {% endif %}
+                    <th style="text-align: right;">Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% if sales %}
+                    {% for s in sales %}
+                        <tr>
+                            <td style="font-family: monospace; font-weight: 600; color: var(--color-primary);">{{ s.receipt_number }}</td>
+                            <td>{{ s.timestamp|date:"Y-m-d H:i:s" }}</td>
+                            <td><span style="font-size: 0.82rem; font-weight: 500;">{{ s.shop.name|default:"Unassigned" }}</span></td>
+                            <td>{{ s.cashier.username|title }}</td>
+                            <td>
+                                <span class="badge badge-info">{{ s.get_payment_method_display }}</span>
+                            </td>
+                            <td style="text-align: center; font-weight: 600;">
+                                {{ s.items.count }}
+                            </td>
+                            <td>₦{{ s.subtotal|floatformat:2 }}</td>
+                            <td>₦{{ s.tax_amount|floatformat:2 }}</td>
+                            <td style="color: var(--color-danger);">-₦{{ s.discount|floatformat:2 }}</td>
+                            <td style="font-weight: 700;">₦{{ s.total_amount|floatformat:2 }}</td>
+                            {% if is_admin %}
+                            <td style="font-weight: 600; color: var(--color-success);">₦{{ s.net_profit|floatformat:2 }}</td>
+                            {% endif %}
+                            <td style="text-align: right;">
+                                <button class="btn btn-secondary btn-sm" onclick="reprintReceipt('{{ s.id }}')">
+                                    <i data-lucide="printer" style="width: 12px; height: 12px; margin-right: 4px;"></i> Invoice
+                                </button>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                {% else %}
+                    <tr>
+                        <td colspan="{% if is_admin %}12{% else %}11{% endif %}" style="text-align: center; color: var(--text-muted); padding: 3rem;">No sales records found matching the filter constraints.</td>
+                    </tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- MODAL: Invoice Reprint -->
+<div class="modal-backdrop" id="reprint-modal">
+    <div class="modal-window glass-panel" style="max-width: 400px; padding: 1.5rem;">
+        <div class="modal-header">
+            <h3 class="panel-title" style="display: flex; align-items: center; gap: 8px;">
+                <i data-lucide="file-text" style="color: var(--color-primary)"></i>
+                Invoice Copy
+            </h3>
+            <button class="modal-close" onclick="closeReprintModal()">&times;</button>
+        </div>
+        
+        <div id="reprint-print-area" class="receipt-print">
+            <!-- Dynamically populated from JSON -->
+            <div style="text-align: center; padding: 2rem;">
+                <i data-lucide="loader" class="animate-spin" style="width: 24px; height: 24px; animation: spin 1s linear infinite;"></i>
+                <p style="margin-top: 8px; font-size: 0.8rem; color: #666;">Loading invoice details...</p>
+            </div>
+        </div>
+        
+        <div style="display: flex; gap: 0.75rem; margin-top: 1.5rem;">
+            <button class="btn btn-secondary flex-grow" style="flex: 1;" onclick="closeReprintModal()">Close</button>
+            <button class="btn btn-success" style="flex: 1;" onclick="printReprintReceipt()"><i data-lucide="printer"></i> Print Copy</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    function reprintReceipt(saleId) {
+        document.getElementById('reprint-modal').classList.add('active');
+        document.getElementById('reprint-print-area').innerHTML = `
+            <div style="text-align: center; padding: 2rem;">
+                <i data-lucide="loader" class="animate-spin" style="width: 24px; height: 24px; margin: 0 auto 10px auto; animation: spin 1s linear infinite;"></i>
+                <p style="font-size: 0.8rem; color: #666;">Loading invoice details...</p>
+            </div>
+        `;
+        lucide.createIcons();
+
+        fetch(`/sales/${saleId}/json/`)
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    populateReprintMarkup(data.receipt);
+                } else {
+                    document.getElementById('reprint-print-area').innerHTML = `<p style="color: red; text-align: center; font-size: 0.85rem;">Failed to fetch receipt.</p>`;
+                }
+            })
+            .catch(err => {
+                console.error(err);
+                document.getElementById('reprint-print-area').innerHTML = `<p style="color: red; text-align: center; font-size: 0.85rem;">Connection error.</p>`;
+            });
+    }
+
+    function populateReprintMarkup(receipt) {
+        const area = document.getElementById('reprint-print-area');
+        
+        let itemsRows = '';
+        receipt.items.forEach(item => {
+            itemsRows += `
+                <div class="receipt-item-row">
+                    <span>${item.name} (x${item.quantity})</span>
+                    <span>₦${parseFloat(item.subtotal).toFixed(2)}</span>
+                </div>
+            `;
+        });
+
+        area.innerHTML = `
+            <div class="receipt-header">
+                <h4 style="margin: 0; font-size: 1.1rem; font-weight: bold; text-align: center;">${receipt.store_name}</h4>
+                <div style="font-size: 0.75rem; color: #333; margin: 4px 0; text-align: center;">${receipt.store_address}</div>
+                <div style="font-size: 0.75rem; color: #333; text-align: center;">Tel: ${receipt.store_phone}</div>
+            </div>
+            
+            <div style="font-size: 0.75rem; margin-bottom: 0.5rem;">
+                <div style="font-weight: bold; text-align: center; margin-bottom: 5px;">*** INVOICE COPY ***</div>
+                <div>Receipt: ${receipt.receipt_number}</div>
+                <div>Date: ${receipt.timestamp}</div>
+                <div>Cashier: ${receipt.cashier}</div>
+            </div>
+            
+            <div class="receipt-divider"></div>
+            ${itemsRows}
+            <div class="receipt-divider"></div>
+            
+            <div class="receipt-item-row" style="font-size: 0.8rem;">
+                <span>Subtotal</span>
+                <span>₦${parseFloat(receipt.subtotal).toFixed(2)}</span>
+            </div>
+            <div class="receipt-item-row" style="font-size: 0.8rem;">
+                <span>Discount</span>
+                <span>-₦${parseFloat(receipt.discount).toFixed(2)}</span>
+            </div>
+            <div class="receipt-item-row" style="font-size: 0.8rem;">
+                <span>Tax (${parseFloat(receipt.tax_rate).toFixed(1)}%)</span>
+                <span>₦${parseFloat(receipt.tax_amount).toFixed(2)}</span>
+            </div>
+            <div class="receipt-item-row" style="font-size: 1rem; font-weight: bold; margin-top: 4px;">
+                <span>Total Paid</span>
+                <span>₦${parseFloat(receipt.total_amount).toFixed(2)}</span>
+            </div>
+            
+            <div class="receipt-divider"></div>
+            <div style="font-size: 0.8rem;">Method: ${receipt.payment_method}</div>
+            <div class="receipt-divider"></div>
+            
+            <div style="text-align: center; font-size: 0.75rem; margin-top: 1rem; font-style: italic;">
+                ${receipt.receipt_footer}
+            </div>
+        `;
+    }
+
+    function closeReprintModal() {
+        document.getElementById('reprint-modal').classList.remove('active');
+    }
+
+    function printReprintReceipt() {
+        const printContent = document.getElementById('reprint-print-area').innerHTML;
+        
+        const printWindow = window.open('', '', 'height=600,width=400');
+        printWindow.document.write('<html><head><title>Print Invoice Copy</title>');
+        printWindow.document.write('<style>');
+        printWindow.document.write(`
+            body { font-family: 'Courier New', monospace; padding: 20px; color: black; background: white; }
+            .receipt-header { text-align: center; margin-bottom: 15px; border-bottom: 1px dashed black; padding-bottom: 8px; }
+            .receipt-divider { border-bottom: 1px dashed black; margin: 10px 0; }
+            .receipt-item-row { display: flex; justify-content: space-between; margin: 5px 0; font-size: 13px; }
+        `);
+        printWindow.document.write('</style></head><body>');
+        printWindow.document.write(printContent);
+        printWindow.document.write('</body></html>');
+        printWindow.document.close();
+        printWindow.print();
+    }
+</script>
+{% endblock %}

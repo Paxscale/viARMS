@@ -1,0 +1,153 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}viARMS - Shop Sales & Record Management{% endblock %}</title>
+    <link rel="stylesheet" href="{% static 'css/styles.css' %}">
+    <!-- Lucide Icons (CDN) for modern, clean iconography -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+<body>
+
+    <!-- Messages / Toasts -->
+    <div class="messages-container" id="toast-container">
+        {% if messages %}
+            {% for message in messages %}
+                <div class="alert-message {% if message.tags == 'success' %}alert-success{% else %}alert-error{% endif %}">
+                    <span>{{ message }}</span>
+                    <button class="remove-cart-item" style="color: white; font-weight: bold; font-size: 1.2rem; cursor: pointer; border: none; background: transparent; margin-left: 10px;" onclick="this.parentElement.remove()">&times;</button>
+                </div>
+            {% endfor %}
+        {% endif %}
+    </div>
+
+    <div class="app-container">
+        <!-- Sidebar Navigation -->
+        {% if user.is_authenticated %}
+        <nav class="sidebar">
+            <div class="sidebar-brand">
+                <i data-lucide="shopping-bag" style="color: var(--color-primary)"></i>
+                <span>viARMS</span>
+            </div>
+            
+            <ul class="sidebar-menu">
+                <li>
+                    <a href="{% url 'dashboard' %}" class="sidebar-link {% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}">
+                        <i data-lucide="layout-dashboard"></i>
+                        <span>Dashboard</span>
+                    </a>
+                </li>
+                <li>
+                    <a href="{% url 'pos' %}" class="sidebar-link {% if request.resolver_match.url_name == 'pos' %}active{% endif %}">
+                        <i data-lucide="shopping-cart"></i>
+                        <span>POS Checkout</span>
+                    </a>
+                </li>
+                <li>
+                    <a href="{% url 'products' %}" class="sidebar-link {% if request.resolver_match.url_name == 'products' %}active{% endif %}">
+                        <i data-lucide="package"></i>
+                        <span>Products & Stock</span>
+                    </a>
+                </li>
+                <li>
+                    <a href="{% url 'sales_history' %}" class="sidebar-link {% if request.resolver_match.url_name == 'sales_history' %}active{% endif %}">
+                        <i data-lucide="history"></i>
+                        <span>Sales Log</span>
+                    </a>
+                </li>
+                {% if is_admin or is_manager %}
+                <li>
+                    <a href="{% url 'staff_management' %}" class="sidebar-link {% if request.resolver_match.url_name == 'staff_management' %}active{% endif %}">
+                        <i data-lucide="users"></i>
+                        <span>Staff Directory</span>
+                    </a>
+                </li>
+                {% endif %}
+                {% if is_admin %}
+                <li>
+                    <a href="{% url 'shops' %}" class="sidebar-link {% if request.resolver_match.url_name == 'shops' %}active{% endif %}">
+                        <i data-lucide="store"></i>
+                        <span>Shop Branches</span>
+                    </a>
+                </li>
+                <li>
+                    <a href="{% url 'settings' %}" class="sidebar-link {% if request.resolver_match.url_name == 'settings' %}active{% endif %}">
+                        <i data-lucide="settings"></i>
+                        <span>Store Settings</span>
+                    </a>
+                </li>
+                {% endif %}
+            </ul>
+
+            <div class="sidebar-footer">
+                <div class="user-profile" style="flex-wrap: wrap; gap: 0.5rem 0.75rem;">
+                    <div class="user-avatar">
+                        {{ user.username|make_list|first|upper }}
+                    </div>
+                    <div class="user-info">
+                        <span class="user-name">{{ user.username|title }}</span>
+                        <span class="user-role">
+                            {% if user.profile.role == 'ADMIN' %}Admin
+                            {% elif user.profile.role == 'MANAGER' %}Manager
+                            {% else %}Cashier{% endif %}
+                        </span>
+                        {% if user.profile.shop %}
+                            <span style="font-size: 0.7rem; color: var(--color-primary); font-weight: 500; display: block; max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                                <i data-lucide="map-pin" style="width: 10px; height: 10px; display: inline; vertical-align: middle;"></i> {{ user.profile.shop.name }}
+                            </span>
+                        {% endif %}
+                    </div>
+                </div>
+                <a href="{% url 'logout' %}" class="sidebar-link" style="color: var(--color-danger); border-color: rgba(244, 63, 94, 0.1);">
+                    <i data-lucide="log-out"></i>
+                    <span>Sign Out</span>
+                </a>
+            </div>
+
+        </nav>
+        {% endif %}
+
+        <!-- Main Body Content -->
+        <main class="main-content" style="{% if not user.is_authenticated %}margin-left: 0; padding: 0;{% endif %}">
+            {% block content %}{% endblock %}
+        </main>
+    </div>
+
+    <script>
+        // Initialize Lucide icons
+        lucide.createIcons();
+
+        // Auto-fade toasts after 4 seconds
+        setTimeout(() => {
+            const toasts = document.querySelectorAll('.alert-message');
+            toasts.forEach(toast => {
+                toast.style.transition = 'opacity 0.5s ease';
+                toast.style.opacity = '0';
+                setTimeout(() => toast.remove(), 500);
+            });
+        }, 4000);
+
+        // Global Helper for displaying JS Toast Notifications
+        function showNotification(message, type = 'success') {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            toast.className = `alert-message ${type === 'success' ? 'alert-success' : 'alert-error'}`;
+            toast.innerHTML = `
+                <span>${message}</span>
+                <button style="color: white; font-weight: bold; font-size: 1.2rem; cursor: pointer; border: none; background: transparent; margin-left: 10px;" onclick="this.parentElement.remove()">&times;</button>
+            `;
+            container.appendChild(toast);
+            lucide.createIcons();
+            
+            setTimeout(() => {
+                toast.style.transition = 'opacity 0.5s ease';
+                toast.style.opacity = '0';
+                setTimeout(() => toast.remove(), 500);
+            }, 4000);
+        }
+    </script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,157 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}POS Checkout - viARMS{% endblock %}
+
+{% block content %}
+<div class="pos-layout">
+
+    <!-- LEFT PANEL: Products Catalog -->
+    <div class="pos-products-panel">
+
+        <!-- Search & Filter Controls -->
+        <div class="glass-panel" style="padding: 1rem; display: flex; flex-direction: column; gap: 0.75rem;">
+            <div class="search-filter-bar" style="display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap;">
+                <div style="position: relative; flex-grow: 1;">
+                    <i data-lucide="search"
+                        style="position: absolute; left: 0.75rem; top: 50%; transform: translateY(-50%); width: 16px; height: 16px; color: var(--text-muted);"></i>
+                    <input type="text" id="search-input" class="form-control"
+                        placeholder="Search product name or scan SKU barcode..." style="padding-left: 2.5rem;">
+                </div>
+                {% if is_admin %}
+                <div style="min-width: 200px;">
+                    <form method="GET" id="pos-shop-form" style="margin: 0;">
+                        <select name="shop_id" class="form-control" onchange="document.getElementById('pos-shop-form').submit()">
+                            {% for s in shops %}
+                                <option value="{{ s.id }}" {% if user_shop.id == s.id %}selected{% endif %}>{{ s.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </form>
+                </div>
+                {% endif %}
+            </div>
+
+            <div class="category-chips">
+                <div class="category-chip active" data-category-id="all">All Categories</div>
+                {% for cat in categories %}
+                <div class="category-chip" data-category-id="{{ cat.id }}">{{ cat.name }}</div>
+                {% endfor %}
+            </div>
+        </div>
+
+        <!-- Products Grid -->
+        <div class="products-grid" id="products-catalog">
+            <!-- Dynamic products injected here by JS -->
+        </div>
+    </div>
+
+    <!-- RIGHT PANEL: Floating Checkout Cart -->
+    <div class="pos-cart-panel glass-panel">
+        <div class="cart-header" style="flex-wrap: wrap; gap: 0.5rem;">
+            <h2 class="panel-title" style="display: flex; align-items: center; gap: 8px; flex-grow: 1;">
+                <i data-lucide="shopping-cart" style="color: var(--color-primary);"></i>
+                Checkout Cart
+            </h2>
+            <div style="display: flex; gap: 0.5rem; align-items: center;">
+                <span class="badge" id="network-status-badge" style="background: rgba(16,185,129,0.15); color: var(--color-success); border: 1px solid rgba(16,185,129,0.3);">
+                    <i data-lucide="wifi" style="width: 12px; height: 12px; display: inline-block; vertical-align: middle;"></i> Online
+                </span>
+                <span class="badge badge-warning" id="unsynced-badge" style="display: none;">
+                    <i data-lucide="refresh-cw" style="width: 12px; height: 12px; display: inline-block; vertical-align: middle;"></i> Unsynced: 0
+                </span>
+                <span class="badge badge-info" id="cart-count-badge">0 items</span>
+            </div>
+        </div>
+
+        <!-- Cart Items List -->
+        <div class="cart-items-container" id="cart-items-list">
+            <!-- Dynamic cart items injected here by JS -->
+            <div id="cart-empty-message"
+                style="text-align: center; color: var(--text-muted); padding: 3rem 1rem; margin-top: auto; margin-bottom: auto; display: flex; flex-direction: column; align-items: center; gap: 10px;">
+                <i data-lucide="shopping-bag" style="width: 48px; height: 48px; opacity: 0.3;"></i>
+                <p>Your shopping cart is empty.<br>Click on products in the catalog to add them.</p>
+            </div>
+        </div>
+
+        <!-- Checkout Summary Form -->
+        <div class="cart-totals">
+            <div class="form-group" style="margin-bottom: 0.75rem; display: flex; gap: 0.5rem; align-items: center;">
+                <label for="cart-discount" class="form-label"
+                    style="margin-bottom: 0; white-space: nowrap; width: 80px;">Discount (₦)</label>
+                <input type="number" id="cart-discount" class="form-control" style="padding: 0.4rem 0.75rem;" min="0"
+                    step="0.01" value="0.00">
+            </div>
+
+            <div class="form-group" style="margin-bottom: 0.75rem; display: flex; gap: 0.5rem; align-items: center;">
+                <label for="payment-method" class="form-label"
+                    style="margin-bottom: 0; white-space: nowrap; width: 80px;">Payment</label>
+                <select id="payment-method" class="form-control" style="padding: 0.4rem 0.75rem;">
+                    <option value="CASH">Cash</option>
+                    <option value="CARD">Card</option>
+                    <option value="MOBILE_MONEY">Mobile Money</option>
+                </select>
+            </div>
+
+            <div class="receipt-divider" style="margin: 0.5rem 0; border-bottom: 1px solid var(--border-color);"></div>
+
+            <div class="totals-row">
+                <span>Subtotal</span>
+                <span id="summary-subtotal">₦0.00</span>
+            </div>
+            <div class="totals-row">
+                <span>Discount</span>
+                <span id="summary-discount">-₦0.00</span>
+            </div>
+            <div class="totals-row">
+                <span>Tax (<span id="tax-rate-label">{{ settings.tax_rate }}</span>%)</span>
+                <span id="summary-tax">₦0.00</span>
+            </div>
+            <div class="totals-row grand-total">
+                <span>Total Due</span>
+                <span id="summary-total">₦0.00</span>
+            </div>
+
+            <button class="btn btn-primary btn-block" id="checkout-btn" style="margin-top: 1rem; padding: 0.85rem;"
+                disabled>
+                <i data-lucide="check-circle"></i> Complete Checkout
+            </button>
+        </div>
+
+    </div>
+</div>
+
+<!-- MODAL: Checkout / Print Receipt -->
+<div class="modal-backdrop" id="receipt-modal">
+    <div class="modal-window glass-panel" style="max-width: 400px; padding: 1.5rem;">
+        <div class="modal-header">
+            <h3 class="panel-title" style="display: flex; align-items: center; gap: 8px;">
+                <i data-lucide="check-square" style="color: var(--color-success)"></i>
+                Sale Completed!
+            </h3>
+            <button class="modal-close" onclick="closeReceiptModal()">&times;</button>
+        </div>
+
+        <!-- Print layout container -->
+        <div id="receipt-print-area" class="receipt-print">
+            <!-- Dynamically populated Courier-styled invoice -->
+        </div>
+
+        <div style="display: flex; gap: 0.75rem; margin-top: 1.5rem;">
+            <button class="btn btn-secondary flex-grow" style="flex: 1;" onclick="closeReceiptModal()">Close</button>
+            <button class="btn btn-success" style="flex: 1;" onclick="printReceipt()"><i data-lucide="printer"></i>
+                Print Invoice</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // Embed products list from django context view safely into JS variable
+    const productsData = {{ products_json| safe }};
+    const defaultTaxRate = parseFloat("{{ settings.tax_rate }}");
+    const checkoutUrl = "{% url 'checkout_api' %}";
+    const csrfToken = "{{ csrf_token }}";
+</script>
+<script src="{% static 'js/pos.js' %}"></script>
+{% endblock %}

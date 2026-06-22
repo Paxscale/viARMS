@@ -1,0 +1,223 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Shop Branches - viARMS{% endblock %}
+
+{% block content %}
+<div class="panel-header" style="flex-wrap: wrap; gap: 1rem;">
+    <div>
+        <h1 style="font-size: 1.75rem; font-weight: 700;">Shop Branches</h1>
+        <p style="color: var(--text-secondary); font-size: 0.9rem;">Create, edit, and manage all shop branch locations. Assign managers and configure branch details.</p>
+    </div>
+    <button class="btn btn-primary" onclick="openModal('add-shop-modal')">
+        <i data-lucide="plus-circle"></i> Add Shop Branch
+    </button>
+</div>
+
+<!-- Shop Cards Grid -->
+{% if shops %}
+<div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 1.25rem; margin-bottom: 1.5rem;">
+    {% for shop in shops %}
+    <div class="glass-panel" style="padding: 1.5rem; display: flex; flex-direction: column; gap: 1rem; position: relative; overflow: hidden;">
+        <!-- Decorative accent -->
+        <div style="position: absolute; top: 0; left: 0; right: 0; height: 3px; background: linear-gradient(90deg, var(--color-primary), #818cf8);"></div>
+
+        <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+            <div style="display: flex; align-items: center; gap: 0.75rem;">
+                <div style="width: 48px; height: 48px; border-radius: 12px; background: linear-gradient(135deg, rgba(99,102,241,0.2), rgba(129,140,248,0.1)); border: 1px solid rgba(99,102,241,0.3); display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+                    <i data-lucide="store" style="width: 22px; height: 22px; color: var(--color-primary);"></i>
+                </div>
+                <div>
+                    <h3 style="font-size: 1.05rem; font-weight: 700; margin: 0;">{{ shop.name }}</h3>
+                    <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 2px;">
+                        Added {{ shop.created_at|date:"Y-m-d" }}
+                    </div>
+                </div>
+            </div>
+            <div style="display: flex; gap: 0.4rem;">
+                <button class="btn btn-secondary btn-sm"
+                    onclick="openEditShopModal('{{ shop.id }}', '{{ shop.name|escapejs }}', '{{ shop.location|escapejs|default:'' }}', '{{ shop.phone|escapejs|default:'' }}', '{{ shop.manager.id|default:'' }}')">
+                    <i data-lucide="edit" style="width: 12px; height: 12px;"></i>
+                </button>
+                <form method="POST" style="display: inline-block;"
+                    onsubmit="return confirm('Delete shop branch \'{{ shop.name }}\' and all associated data? This cannot be undone.');">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="delete_shop">
+                    <input type="hidden" name="shop_id" value="{{ shop.id }}">
+                    <button type="submit" class="btn btn-danger btn-sm" style="padding: 0.35rem;">
+                        <i data-lucide="trash" style="width: 12px; height: 12px;"></i>
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <!-- Branch Details -->
+        <div style="display: flex; flex-direction: column; gap: 0.6rem;">
+            <div style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; color: var(--text-secondary);">
+                <i data-lucide="map-pin" style="width: 14px; height: 14px; color: var(--color-primary); flex-shrink: 0;"></i>
+                <span>{{ shop.location|default:"No address set" }}</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; color: var(--text-secondary);">
+                <i data-lucide="phone" style="width: 14px; height: 14px; color: var(--color-success); flex-shrink: 0;"></i>
+                <span>{{ shop.phone|default:"No phone set" }}</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem;">
+                <i data-lucide="user-check" style="width: 14px; height: 14px; color: var(--color-warning); flex-shrink: 0;"></i>
+                {% if shop.manager %}
+                    <span style="font-weight: 500; color: #f59e0b;">{{ shop.manager.username|title }}</span>
+                    <span class="badge badge-warning" style="font-size: 0.65rem; padding: 0.1rem 0.35rem;">Manager</span>
+                {% else %}
+                    <span style="color: var(--text-muted); font-style: italic;">No manager assigned</span>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Branch Stats -->
+        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem; margin-top: 0.25rem;">
+            <div style="text-align: center; padding: 0.6rem; background: rgba(15,23,42,0.5); border-radius: 8px; border: 1px solid var(--border-color);">
+                <div style="font-size: 1.1rem; font-weight: 700; color: var(--color-primary);">{{ shop.staff.count }}</div>
+                <div style="font-size: 0.65rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;">Staff</div>
+            </div>
+            <div style="text-align: center; padding: 0.6rem; background: rgba(15,23,42,0.5); border-radius: 8px; border: 1px solid var(--border-color);">
+                <div style="font-size: 1.1rem; font-weight: 700; color: var(--color-success);">{{ shop.products.count }}</div>
+                <div style="font-size: 0.65rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;">Products</div>
+            </div>
+            <div style="text-align: center; padding: 0.6rem; background: rgba(15,23,42,0.5); border-radius: 8px; border: 1px solid var(--border-color);">
+                <div style="font-size: 1.1rem; font-weight: 700; color: var(--color-warning);">{{ shop.sales.count }}</div>
+                <div style="font-size: 0.65rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;">Sales</div>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<div class="glass-panel" style="padding: 4rem; text-align: center; color: var(--text-muted);">
+    <i data-lucide="store" style="width: 56px; height: 56px; opacity: 0.25; margin-bottom: 1rem;"></i>
+    <p style="font-size: 1rem; margin-bottom: 0.5rem;">No shop branches created yet.</p>
+    <p style="font-size: 0.85rem;">Click <strong>"Add Shop Branch"</strong> above to register your first branch location.</p>
+</div>
+{% endif %}
+
+
+<!-- MODAL: Add Shop Branch -->
+<div class="modal-backdrop" id="add-shop-modal">
+    <div class="modal-window glass-panel" style="max-width: 480px;">
+        <div class="modal-header">
+            <h3 class="panel-title">
+                <i data-lucide="plus-circle" style="color: var(--color-primary);"></i>
+                Add New Shop Branch
+            </h3>
+            <button class="modal-close" onclick="closeModal('add-shop-modal')">&times;</button>
+        </div>
+        <form method="POST">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="add_shop">
+
+            <div class="form-group">
+                <label class="form-label">Branch Name <span style="color: var(--color-danger);">*</span></label>
+                <input type="text" name="name" class="form-control" placeholder="e.g. Lagos Main Branch" required>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Branch Address / Location</label>
+                <textarea name="location" class="form-control" rows="2" placeholder="e.g. 45 Broad Street, Lagos Island, Lagos"></textarea>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Branch Phone</label>
+                <input type="text" name="phone" class="form-control" placeholder="e.g. 0801 234 5678">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Assign Manager</label>
+                <select name="manager_id" class="form-control">
+                    <option value="">-- No Manager Yet --</option>
+                    {% for m in managers %}
+                        <option value="{{ m.id }}">{{ m.username|title }} ({{ m.profile.get_role_display }})</option>
+                    {% endfor %}
+                </select>
+                <span style="font-size: 0.75rem; color: var(--text-muted); display: block; margin-top: 0.3rem;">You can add a manager later by editing the branch.</span>
+            </div>
+
+            <div style="display: flex; gap: 0.75rem; margin-top: 1.5rem;">
+                <button type="button" class="btn btn-secondary" onclick="closeModal('add-shop-modal')" style="flex: 1;">Cancel</button>
+                <button type="submit" class="btn btn-primary" style="flex: 1;">
+                    <i data-lucide="check-circle"></i> Create Branch
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+
+<!-- MODAL: Edit Shop Branch -->
+<div class="modal-backdrop" id="edit-shop-modal">
+    <div class="modal-window glass-panel" style="max-width: 480px;">
+        <div class="modal-header">
+            <h3 class="panel-title">
+                <i data-lucide="edit" style="color: var(--color-warning);"></i>
+                Edit Shop Branch
+            </h3>
+            <button class="modal-close" onclick="closeModal('edit-shop-modal')">&times;</button>
+        </div>
+        <form method="POST">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="edit_shop">
+            <input type="hidden" name="shop_id" id="edit-shop-id">
+
+            <div class="form-group">
+                <label class="form-label">Branch Name <span style="color: var(--color-danger);">*</span></label>
+                <input type="text" name="name" id="edit-shop-name" class="form-control" required>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Branch Address / Location</label>
+                <textarea name="location" id="edit-shop-location" class="form-control" rows="2"></textarea>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Branch Phone</label>
+                <input type="text" name="phone" id="edit-shop-phone" class="form-control">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Assign Manager</label>
+                <select name="manager_id" id="edit-shop-manager" class="form-control">
+                    <option value="">-- Remove Manager --</option>
+                    {% for m in managers %}
+                        <option value="{{ m.id }}">{{ m.username|title }} ({{ m.profile.get_role_display }})</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div style="display: flex; gap: 0.75rem; margin-top: 1.5rem;">
+                <button type="button" class="btn btn-secondary" onclick="closeModal('edit-shop-modal')" style="flex: 1;">Cancel</button>
+                <button type="submit" class="btn btn-primary" style="flex: 1;">
+                    <i data-lucide="save"></i> Save Changes
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+    function openModal(id) {
+        document.getElementById(id).classList.add('active');
+        lucide.createIcons();
+    }
+    function closeModal(id) {
+        document.getElementById(id).classList.remove('active');
+    }
+
+    function openEditShopModal(shopId, name, location, phone, managerId) {
+        document.getElementById('edit-shop-id').value = shopId;
+        document.getElementById('edit-shop-name').value = name;
+        document.getElementById('edit-shop-location').value = location;
+        document.getElementById('edit-shop-phone').value = phone;
+        const managerSelect = document.getElementById('edit-shop-manager');
+        if (managerId) {
+            managerSelect.value = managerId;
+        } else {
+            managerSelect.value = '';
+        }
+        openModal('edit-shop-modal');
+    }
+</script>
+{% endblock %}

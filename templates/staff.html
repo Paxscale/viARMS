@@ -1,0 +1,339 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Staff Directory - viARMS{% endblock %}
+
+{% block content %}
+<div class="panel-header" style="flex-wrap: wrap; gap: 1rem;">
+    <div>
+        <h1 style="font-size: 1.75rem; font-weight: 700;">Staff Directory</h1>
+        <p style="color: var(--text-secondary); font-size: 0.9rem;">
+            {% if is_admin %}Manage all staff accounts — admins, managers, and cashiers across all shop branches.
+            {% else %}Manage cashier accounts assigned to your shop branch.{% endif %}
+        </p>
+    </div>
+    <button class="btn btn-primary" onclick="openModal('add-staff-modal')">
+        <i data-lucide="user-plus"></i> Add Staff Account
+    </button>
+</div>
+
+<!-- Staff Table -->
+<div class="glass-panel" style="padding: 1.5rem;">
+    <div style="display: flex; gap: 1rem; margin-bottom: 1.25rem; flex-wrap: wrap; align-items: center;">
+        <div style="position: relative; flex-grow: 1; min-width: 250px;">
+            <i data-lucide="search" style="position: absolute; left: 0.75rem; top: 50%; transform: translateY(-50%); width: 16px; height: 16px; color: var(--text-muted);"></i>
+            <input type="text" id="staff-search" class="form-control" placeholder="Search by username or email..." style="padding-left: 2.5rem;" oninput="filterStaff()">
+        </div>
+        <div style="min-width: 160px;">
+            <select id="role-filter" class="form-control" onchange="filterStaff()">
+                <option value="all">All Roles</option>
+                {% for role_val, role_label in roles_choices %}
+                    <option value="{{ role_val }}">{{ role_label }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        {% if is_admin %}
+        <div style="min-width: 180px;">
+            <select id="shop-filter" class="form-control" onchange="filterStaff()">
+                <option value="all">All Branches</option>
+                {% for s in shops %}
+                    <option value="{{ s.name }}">{{ s.name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        {% endif %}
+    </div>
+
+    <div class="table-responsive">
+        <table class="custom-table" id="staff-table">
+            <thead>
+                <tr>
+                    <th>User</th>
+                    <th>Role</th>
+                    <th>Assigned Branch</th>
+                    <th>Email</th>
+                    <th>Date Joined</th>
+                    <th>Last Login</th>
+                    <th style="text-align: right;">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% if staff_profiles %}
+                    {% for profile in staff_profiles %}
+                    <tr class="staff-row"
+                        data-username="{{ profile.user.username|lower }}"
+                        data-email="{{ profile.user.email|lower }}"
+                        data-role="{{ profile.role }}"
+                        data-shop="{{ profile.shop.name|default:'' }}">
+                        <td>
+                            <div style="display: flex; align-items: center; gap: 0.75rem;">
+                                <div style="width: 36px; height: 36px; border-radius: 50%; background: linear-gradient(135deg, var(--color-primary), #818cf8); display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 0.9rem; flex-shrink: 0;">
+                                    {{ profile.user.username|make_list|first|upper }}
+                                </div>
+                                <div>
+                                    <div style="font-weight: 600;">{{ profile.user.username|title }}</div>
+                                    {% if profile.user.first_name or profile.user.last_name %}
+                                    <div style="font-size: 0.75rem; color: var(--text-muted);">{{ profile.user.first_name }} {{ profile.user.last_name }}</div>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </td>
+                        <td>
+                            {% if profile.role == 'ADMIN' %}
+                                <span class="badge badge-info" style="background: rgba(99,102,241,0.2); color: #818cf8; border: 1px solid rgba(99,102,241,0.3);">Admin</span>
+                            {% elif profile.role == 'MANAGER' %}
+                                <span class="badge badge-warning">Manager</span>
+                            {% else %}
+                                <span class="badge" style="background: rgba(16,185,129,0.15); color: var(--color-success); border: 1px solid rgba(16,185,129,0.3);">Cashier</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if profile.shop %}
+                                <div style="display: flex; align-items: center; gap: 6px; font-size: 0.85rem;">
+                                    <i data-lucide="store" style="width: 12px; height: 12px; color: var(--color-primary);"></i>
+                                    {{ profile.shop.name }}
+                                </div>
+                            {% else %}
+                                <span style="color: var(--text-muted); font-size: 0.8rem; font-style: italic;">No Branch</span>
+                            {% endif %}
+                        </td>
+                        <td style="color: var(--text-secondary); font-size: 0.85rem;">{{ profile.user.email|default:"—" }}</td>
+                        <td style="color: var(--text-secondary); font-size: 0.8rem;">{{ profile.user.date_joined|date:"Y-m-d" }}</td>
+                        <td style="color: var(--text-secondary); font-size: 0.8rem;">
+                            {% if profile.user.last_login %}
+                                {{ profile.user.last_login|date:"Y-m-d H:i" }}
+                            {% else %}
+                                <span style="color: var(--text-muted); font-style: italic;">Never</span>
+                            {% endif %}
+                        </td>
+                        <td style="text-align: right; white-space: nowrap;">
+                            {% if profile.user != request.user %}
+                            <button class="btn btn-secondary btn-sm"
+                                onclick="openEditStaffModal('{{ profile.id }}', '{{ profile.user.username|escapejs }}', '{{ profile.user.email|escapejs }}', '{{ profile.role }}', '{{ profile.shop.id|default:'' }}')">
+                                <i data-lucide="edit" style="width: 12px; height: 12px;"></i>
+                            </button>
+                            <form method="POST" style="display: inline-block;"
+                                onsubmit="return confirm('Delete account for {{ profile.user.username }}? This action cannot be undone.');">
+                                {% csrf_token %}
+                                <input type="hidden" name="action" value="delete_staff">
+                                <input type="hidden" name="profile_id" value="{{ profile.id }}">
+                                <button type="submit" class="btn btn-danger btn-sm" style="padding: 0.35rem; margin-left: 4px;">
+                                    <i data-lucide="trash" style="width: 12px; height: 12px;"></i>
+                                </button>
+                            </form>
+                            {% else %}
+                            <span style="font-size: 0.75rem; color: var(--text-muted); font-style: italic;">(You)</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                {% else %}
+                    <tr>
+                        <td colspan="7" style="text-align: center; color: var(--text-muted); padding: 3rem;">
+                            No staff accounts found. Click "Add Staff Account" to create one.
+                        </td>
+                    </tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+
+<!-- MODAL: Add Staff Account -->
+<div class="modal-backdrop" id="add-staff-modal">
+    <div class="modal-window glass-panel" style="max-width: 480px;">
+        <div class="modal-header">
+            <h3 class="panel-title">
+                <i data-lucide="user-plus" style="color: var(--color-primary);"></i>
+                Add Staff Account
+            </h3>
+            <button class="modal-close" onclick="closeModal('add-staff-modal')">&times;</button>
+        </div>
+        <form method="POST">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="add_staff">
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                <div class="form-group" style="grid-column: 1 / -1;">
+                    <label class="form-label">Username <span style="color: var(--color-danger);">*</span></label>
+                    <input type="text" name="username" class="form-control" placeholder="e.g. john_cashier" required autocomplete="off">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">First Name</label>
+                    <input type="text" name="first_name" class="form-control" placeholder="John">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Last Name</label>
+                    <input type="text" name="last_name" class="form-control" placeholder="Doe">
+                </div>
+                <div class="form-group" style="grid-column: 1 / -1;">
+                    <label class="form-label">Email Address</label>
+                    <input type="email" name="email" class="form-control" placeholder="john@example.com" autocomplete="off">
+                </div>
+                <div class="form-group" style="grid-column: 1 / -1;">
+                    <label class="form-label">Password <span style="color: var(--color-danger);">*</span></label>
+                    <input type="password" name="password" class="form-control" placeholder="Set a strong password" required autocomplete="new-password">
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Role <span style="color: var(--color-danger);">*</span></label>
+                    <select name="role" class="form-control" id="add-role-select" onchange="toggleShopField('add')">
+                        {% for role_val, role_label in roles_choices %}
+                            <option value="{{ role_val }}">{{ role_label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="form-group" id="add-shop-field">
+                    <label class="form-label">Assign to Branch <span style="color: var(--color-danger);">*</span></label>
+                    <select name="shop_id" class="form-control">
+                        <option value="">-- Select Branch --</option>
+                        {% for s in shops %}
+                            <option value="{{ s.id }}">{{ s.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+
+            <div style="display: flex; gap: 0.75rem; margin-top: 1.5rem;">
+                <button type="button" class="btn btn-secondary flex-grow" onclick="closeModal('add-staff-modal')" style="flex: 1;">Cancel</button>
+                <button type="submit" class="btn btn-primary" style="flex: 1;">
+                    <i data-lucide="user-check"></i> Create Account
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+
+<!-- MODAL: Edit Staff Account -->
+<div class="modal-backdrop" id="edit-staff-modal">
+    <div class="modal-window glass-panel" style="max-width: 480px;">
+        <div class="modal-header">
+            <h3 class="panel-title">
+                <i data-lucide="edit" style="color: var(--color-warning);"></i>
+                Edit Staff Account
+            </h3>
+            <button class="modal-close" onclick="closeModal('edit-staff-modal')">&times;</button>
+        </div>
+        <form method="POST">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="edit_staff">
+            <input type="hidden" name="profile_id" id="edit-profile-id">
+
+            <div class="form-group">
+                <label class="form-label">Username</label>
+                <input type="text" id="edit-username-display" class="form-control" disabled style="opacity: 0.6;">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Email Address</label>
+                <input type="email" name="email" id="edit-email" class="form-control" placeholder="user@example.com">
+            </div>
+            <div class="form-group">
+                <label class="form-label">New Password <span style="color: var(--text-muted); font-weight: 400; font-size: 0.8rem;">(Leave blank to keep current)</span></label>
+                <input type="password" name="password" class="form-control" placeholder="Enter new password to change" autocomplete="new-password">
+            </div>
+
+            {% if is_admin %}
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                <div class="form-group">
+                    <label class="form-label">Role</label>
+                    <select name="role" class="form-control" id="edit-role-select" onchange="toggleShopField('edit')">
+                        {% for role_val, role_label in roles_choices %}
+                            <option value="{{ role_val }}">{{ role_label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="form-group" id="edit-shop-field">
+                    <label class="form-label">Assigned Branch</label>
+                    <select name="shop_id" class="form-control" id="edit-shop-select">
+                        <option value="">-- No Branch --</option>
+                        {% for s in shops %}
+                            <option value="{{ s.id }}">{{ s.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+            {% endif %}
+
+            <div style="display: flex; gap: 0.75rem; margin-top: 1.5rem;">
+                <button type="button" class="btn btn-secondary" onclick="closeModal('edit-staff-modal')" style="flex: 1;">Cancel</button>
+                <button type="submit" class="btn btn-primary" style="flex: 1;">
+                    <i data-lucide="save"></i> Save Changes
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // --- Filter staff table ---
+    function filterStaff() {
+        const query = document.getElementById('staff-search').value.toLowerCase();
+        const roleFilter = document.getElementById('role-filter').value;
+        const shopFilterEl = document.getElementById('shop-filter');
+        const shopFilter = shopFilterEl ? shopFilterEl.value : 'all';
+
+        document.querySelectorAll('.staff-row').forEach(row => {
+            const username = row.dataset.username;
+            const email = row.dataset.email;
+            const role = row.dataset.role;
+            const shop = row.dataset.shop;
+
+            const matchSearch = username.includes(query) || email.includes(query);
+            const matchRole = roleFilter === 'all' || role === roleFilter;
+            const matchShop = shopFilter === 'all' || shop === shopFilter;
+
+            row.style.display = (matchSearch && matchRole && matchShop) ? '' : 'none';
+        });
+    }
+
+    // --- Open/close modals ---
+    function openModal(id) {
+        document.getElementById(id).classList.add('active');
+        lucide.createIcons();
+    }
+    function closeModal(id) {
+        document.getElementById(id).classList.remove('active');
+    }
+
+    // --- Edit staff modal population ---
+    function openEditStaffModal(profileId, username, email, role, shopId) {
+        document.getElementById('edit-profile-id').value = profileId;
+        document.getElementById('edit-username-display').value = username;
+        document.getElementById('edit-email').value = email;
+
+        const roleSelect = document.getElementById('edit-role-select');
+        const shopSelect = document.getElementById('edit-shop-select');
+
+        if (roleSelect) {
+            roleSelect.value = role;
+            toggleShopField('edit');
+        }
+        if (shopSelect && shopId) {
+            shopSelect.value = shopId;
+        }
+
+        openModal('edit-staff-modal');
+    }
+
+    // --- Show/hide shop field based on role ---
+    function toggleShopField(prefix) {
+        const roleSelect = document.getElementById(`${prefix}-role-select`);
+        const shopField = document.getElementById(`${prefix}-shop-field`);
+        if (roleSelect && shopField) {
+            shopField.style.display = roleSelect.value === 'ADMIN' ? 'none' : 'block';
+        }
+    }
+
+    // Initialize shop field visibility
+    document.addEventListener('DOMContentLoaded', () => {
+        toggleShopField('add');
+        toggleShopField('edit');
+    });
+</script>
+{% endblock %}

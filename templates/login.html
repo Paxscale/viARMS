@@ -1,0 +1,39 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Sign In - viARMS{% endblock %}
+
+{% block content %}
+<div class="login-container">
+    <div class="login-card glass-panel">
+        <div class="login-header">
+            <div class="login-logo">
+                <i data-lucide="shopping-bag" style="vertical-align: middle; margin-right: 8px;"></i>viARMS
+            </div>
+            <p style="color: var(--text-secondary); font-size: 0.9rem;">Sales & Records Manager Login</p>
+        </div>
+
+        <form method="POST" action="{% url 'login' %}">
+            {% csrf_token %}
+            
+            <div class="form-group">
+                <label for="username" class="form-label">Username</label>
+                <input type="text" name="username" id="username" class="form-control" placeholder="Enter username" required autofocus>
+            </div>
+            
+            <div class="form-group" style="margin-bottom: 1.75rem;">
+                <label for="password" class="form-label">Password</label>
+                <input type="password" name="password" id="password" class="form-control" placeholder="Enter password" required>
+            </div>
+
+            <button type="submit" class="btn btn-primary btn-block" style="padding: 0.85rem;">
+                <i data-lucide="log-in"></i> Sign In to Account
+            </button>
+        </form>
+
+        <div style="margin-top: 1.5rem; text-align: center; font-size: 0.8rem; color: var(--text-muted);">
+            <p>Protected by viARMS security system.</p>
+        </div>
+    </div>
+</div>
+{% endblock %}

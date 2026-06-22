@@ -1,0 +1,350 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Dashboard - viARMS{% endblock %}
+
+{% block content %}
+<div class="panel-header" style="flex-wrap: wrap; gap: 1rem;">
+    <div>
+        <h1 style="font-size: 1.75rem; font-weight: 700;">Sales Dashboard</h1>
+        <p style="color: var(--text-secondary); font-size: 0.9rem;">Overview of retail operations, metrics, and shelf monitoring.</p>
+    </div>
+    <div style="display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap;">
+        <form method="GET" id="dashboard-filter-form" style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+            {% if is_admin %}
+            <div style="min-width: 180px;">
+                <select name="shop_id" class="form-control" onchange="document.getElementById('dashboard-filter-form').submit()">
+                    <option value="">All Shops (Combined)</option>
+                    {% for s in shops %}
+                        <option value="{{ s.id }}" {% if current_shop_id == s.id|stringformat:"i" %}selected{% endif %}>{{ s.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            {% endif %}
+            
+            <div style="display: flex; gap: 0.5rem; align-items: center; background: var(--bg-surface-solid); padding: 0.25rem; border-radius: 8px; border: 1px solid var(--border-color);">
+                <input type="date" name="start_date" class="form-control" value="{{ start_date }}" style="border: none; background: transparent; padding: 0.25rem 0.5rem;" onchange="document.getElementById('dashboard-filter-form').submit()">
+                <span style="color: var(--text-muted);">to</span>
+                <input type="date" name="end_date" class="form-control" value="{{ end_date }}" style="border: none; background: transparent; padding: 0.25rem 0.5rem;" onchange="document.getElementById('dashboard-filter-form').submit()">
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Metrics Summary Cards -->
+<div class="metrics-grid">
+    <div class="metric-card glass-panel" style="--glow-color: rgba(99, 102, 241, 0.15)">
+        <div style="position: absolute; right: 1.5rem; top: 1.5rem; color: var(--color-primary); opacity: 0.3;">
+            <i data-lucide="wallet" style="width: 32px; height: 32px;"></i>
+        </div>
+        <div class="metric-title">Period Revenue</div>
+        <div class="metric-value">₦{{ today_revenue|floatformat:2 }}</div>
+        <div class="metric-subtext">Total sales value in selected period</div>
+    </div>
+
+    <div class="metric-card glass-panel" style="--glow-color: rgba(16, 185, 129, 0.15)">
+        <div style="position: absolute; right: 1.5rem; top: 1.5rem; color: var(--color-success); opacity: 0.3;">
+            <i data-lucide="shopping-bag" style="width: 32px; height: 32px;"></i>
+        </div>
+        <div class="metric-title">Period Transactions</div>
+        <div class="metric-value">{{ today_count }}</div>
+        <div class="metric-subtext">Completed invoices in selected period</div>
+    </div>
+
+    {% if is_admin %}
+    <div class="metric-card glass-panel" style="--glow-color: rgba(16, 185, 129, 0.15)">
+        <div style="position: absolute; right: 1.5rem; top: 1.5rem; color: var(--color-success); opacity: 0.3;">
+            <i data-lucide="trending-up" style="width: 32px; height: 32px;"></i>
+        </div>
+        <div class="metric-title">Today's Net Profit</div>
+        <div class="metric-value" style="color: var(--color-success);">₦{{ today_profit|floatformat:2 }}</div>
+        <div class="metric-subtext">Excludes cost price and tax liabilities</div>
+    </div>
+    {% else %}
+    <div class="metric-card glass-panel" style="--glow-color: rgba(99, 102, 241, 0.15)">
+        <div style="position: absolute; right: 1.5rem; top: 1.5rem; color: var(--color-primary); opacity: 0.3;">
+            <i data-lucide="user-check" style="width: 32px; height: 32px;"></i>
+        </div>
+        <div class="metric-title">Staff Profile</div>
+        <div class="metric-value" style="font-size: 1.5rem; margin-top: 0.45rem;">Active</div>
+        <div class="metric-subtext">Store checkout access enabled</div>
+    </div>
+    {% endif %}
+
+    <div class="metric-card glass-panel" style="--glow-color: {% if expired_count > 0 or low_stock_count > 0 %}rgba(244, 63, 94, 0.15){% else %}rgba(99, 102, 241, 0.15){% endif %}">
+        <div style="position: absolute; right: 1.5rem; top: 1.5rem; color: {% if expired_count > 0 or low_stock_count > 0 %}var(--color-danger){% else %}var(--color-primary){% endif %}; opacity: 0.3;">
+            <i data-lucide="alert-triangle" style="width: 32px; height: 32px;"></i>
+        </div>
+        <div class="metric-title">Alert Center</div>
+        <div class="metric-value" style="display: flex; gap: 10px; font-size: 1.5rem; margin-top: 0.35rem;">
+            <span style="color: var(--color-danger);" title="Low Stock"><i data-lucide="package" style="width:16px; height:16px; vertical-align:middle;"></i> {{ low_stock_count }}</span>
+            <span style="color: var(--color-danger);" title="Expired"><i data-lucide="calendar-x" style="width:16px; height:16px; vertical-align:middle;"></i> {{ expired_count }}</span>
+        </div>
+        <div class="metric-subtext">Requires immediate stock adjustments</div>
+    </div>
+</div>
+
+<!-- Main Section: Charts and Lists -->
+<div class="dashboard-layout">
+    <!-- Sales trends chart -->
+    <div class="chart-container glass-panel">
+        <div class="panel-header">
+            <h2 class="panel-title">Weekly Sales Trend</h2>
+            <div style="display: flex; gap: 10px; font-size: 0.75rem;">
+                <span style="display: flex; align-items: center; gap: 4px; color: var(--text-secondary);">
+                    <span style="width: 10px; height: 10px; border-radius: 50%; background: #6366f1; display: inline-block;"></span> Revenue
+                </span>
+                {% if is_admin %}
+                <span style="display: flex; align-items: center; gap: 4px; color: var(--text-secondary);">
+                    <span style="width: 10px; height: 10px; border-radius: 50%; background: #10b981; display: inline-block;"></span> Net Profit
+                </span>
+                {% endif %}
+            </div>
+        </div>
+        <div style="position: relative; height: 260px; width: 100%;">
+            <canvas id="salesChart"></canvas>
+        </div>
+    </div>
+
+    <!-- Right Side Sidebar Panels: Alerts & Popular Products -->
+    <div style="display: flex; flex-direction: column; gap: 1.5rem;">
+        
+        <!-- Expiry Alerts List Panel -->
+        <div class="glass-panel" style="padding: 1.25rem; border-color: {% if expired_count > 0 %}rgba(244, 63, 94, 0.3){% else %}var(--border-color){% endif %};">
+            <div class="panel-header" style="margin-bottom: 0.85rem;">
+                <h2 class="panel-title" style="font-size: 1rem;"><i data-lucide="calendar-days" style="width: 16px; height: 16px; vertical-align: middle; margin-right: 6px; color: var(--color-danger)"></i>Shelf Expiry Watch</h2>
+            </div>
+            
+            {% if expired_products or expiring_soon_products %}
+                <ul style="list-style: none; display: flex; flex-direction: column; gap: 0.65rem; max-height: 220px; overflow-y: auto;">
+                    <!-- Expired items -->
+                    {% for p in expired_products %}
+                        <li style="display: flex; justify-content: space-between; align-items: center; padding: 0.5rem; background: rgba(244, 63, 94, 0.08); border-radius: 6px; border: 1px solid rgba(244, 63, 94, 0.2);">
+                            <div>
+                                <span style="font-size: 0.85rem; font-weight: 600; display: block; text-decoration: line-through; color: var(--text-secondary);">{{ p.name }}</span>
+                                <span style="font-size: 0.7rem; color: var(--color-danger); font-weight: 500;">Expired: {{ p.expiry_date|date:"Y-m-d" }}</span>
+                            </div>
+                            <span class="badge badge-danger">EXPIRED</span>
+                        </li>
+                    {% endfor %}
+                    <!-- Expiring soon items -->
+                    {% for p in expiring_soon_products %}
+                        <li style="display: flex; justify-content: space-between; align-items: center; padding: 0.5rem; background: rgba(245, 158, 11, 0.08); border-radius: 6px; border: 1px solid rgba(245, 158, 11, 0.2);">
+                            <div>
+                                <span style="font-size: 0.85rem; font-weight: 600; display: block;">{{ p.name }}</span>
+                                <span style="font-size: 0.7rem; color: var(--color-warning); font-weight: 500;">Expires: {{ p.expiry_date|date:"Y-m-d" }}</span>
+                            </div>
+                            <span class="badge badge-warning">SOON</span>
+                        </li>
+                    {% endfor %}
+                </ul>
+            {% else %}
+                <p style="font-size: 0.8rem; color: var(--text-muted); text-align: center; padding: 1rem 0;">No expired or expiring products found.</p>
+            {% endif %}
+        </div>
+
+        <!-- Low Stock list panel -->
+        <div class="glass-panel" style="padding: 1.25rem;">
+            <div class="panel-header" style="margin-bottom: 0.85rem;">
+                <h2 class="panel-title" style="font-size: 1rem;"><i data-lucide="alert-circle" style="width: 16px; height: 16px; vertical-align: middle; margin-right: 6px; color: var(--color-danger)"></i>Low Stock Alerts</h2>
+                <a href="{% url 'products' %}" style="font-size: 0.75rem; color: var(--color-primary); text-decoration: none;">View All</a>
+            </div>
+            {% if low_stock_products %}
+                <ul style="list-style: none; display: flex; flex-direction: column; gap: 0.75rem;">
+                    {% for p in low_stock_products %}
+                        <li style="display: flex; justify-content: space-between; align-items: center; padding: 0.5rem; background: rgba(15, 23, 42, 0.4); border-radius: 6px; border: 1px solid var(--border-color);">
+                            <div>
+                                <span style="font-size: 0.85rem; font-weight: 600; display: block;">{{ p.name }}</span>
+                                <span style="font-size: 0.72rem; color: var(--text-muted);">{% if is_admin and p.shop %}{{ p.shop.name }} | {% endif %}Qty: {{ p.stock_quantity }}</span>
+                            </div>
+                            <span class="badge badge-danger">{{ p.stock_quantity }} left</span>
+                        </li>
+                    {% endfor %}
+                </ul>
+            {% else %}
+                <p style="font-size: 0.8rem; color: var(--text-muted); text-align: center; padding: 1rem 0;">All items have sufficient stock levels.</p>
+            {% endif %}
+        </div>
+
+        <!-- Top Selling Panel -->
+        <div class="glass-panel" style="padding: 1.25rem;">
+            <div class="panel-header" style="margin-bottom: 0.85rem;">
+                <h2 class="panel-title" style="font-size: 1rem;"><i data-lucide="award" style="width: 16px; height: 16px; vertical-align: middle; margin-right: 6px; color: var(--color-success)"></i>Top Products (30 Days)</h2>
+            </div>
+            {% if top_selling %}
+                <ul style="list-style: none; display: flex; flex-direction: column; gap: 0.75rem;">
+                    {% for item in top_selling %}
+                        <li style="display: flex; justify-content: space-between; align-items: center; padding: 0.5rem; background: rgba(15, 23, 42, 0.4); border-radius: 6px; border: 1px solid var(--border-color);">
+                            <div>
+                                <span style="font-size: 0.85rem; font-weight: 600; display: block;">{{ item.product__name }}</span>
+                                <span style="font-size: 0.75rem; color: var(--text-muted);">Qty sold: {{ item.total_qty }}</span>
+                            </div>
+                            <span style="font-size: 0.85rem; font-weight: 700; color: var(--color-primary);">₦{{ item.total_rev|floatformat:2 }}</span>
+                        </li>
+                    {% endfor %}
+                </ul>
+            {% else %}
+                <p style="font-size: 0.8rem; color: var(--text-muted); text-align: center; padding: 1rem 0;">No sales recorded in the last 30 days.</p>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- Bottom Section: Recent Transactions -->
+<div class="glass-panel" style="padding: 1.5rem;">
+    <div class="panel-header">
+        <h2 class="panel-title">Recent Transactions</h2>
+        <a href="{% url 'sales_history' %}" class="btn btn-secondary btn-sm">
+            <i data-lucide="arrow-right" style="width: 14px; height: 14px;"></i> View Sales Ledger
+        </a>
+    </div>
+    <div class="table-responsive">
+        <table class="custom-table">
+            <thead>
+                <tr>
+                    <th>Receipt Number</th>
+                    <th>Date/Time</th>
+                    <th>Shop Branch</th>
+                    <th>Cashier</th>
+                    <th>Payment Method</th>
+                    <th>Total amount</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% if recent_sales %}
+                    {% for s in recent_sales %}
+                        <tr>
+                            <td style="font-family: monospace; font-weight: 600; color: var(--color-primary);">{{ s.receipt_number }}</td>
+                            <td>{{ s.timestamp|date:"Y-m-d H:i" }}</td>
+                            <td><span style="font-size: 0.8rem; font-weight:500;">{{ s.shop.name|default:"-" }}</span></td>
+                            <td>{{ s.cashier.username|title }}</td>
+                            <td>
+                                <span class="badge badge-info">{{ s.get_payment_method_display }}</span>
+                            </td>
+                            <td style="font-weight: 700;">₦{{ s.total_amount|floatformat:2 }}</td>
+                        </tr>
+                    {% endfor %}
+                {% else %}
+                    <tr>
+                        <td colspan="6" style="text-align: center; color: var(--text-muted); padding: 2rem;">No recent transactions. Go to the POS checkout screen to complete a sale!</td>
+                    </tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<!-- Chart.js from CDN -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+    document.addEventListener("DOMContentLoaded", function () {
+        const labels = {{ chart_labels|safe }};
+        const revenueData = {{ chart_revenue|safe }};
+        const profitData = {{ chart_profit|safe }};
+        const isAdmin = {{ is_admin|yesno:"true,false" }};
+
+        const ctx = document.getElementById('salesChart').getContext('2d');
+        
+        // Define gradients
+        const revGradient = ctx.createLinearGradient(0, 0, 0, 250);
+        revGradient.addColorStop(0, 'rgba(99, 102, 241, 0.4)');
+        revGradient.addColorStop(1, 'rgba(99, 102, 241, 0.0)');
+
+        const profGradient = ctx.createLinearGradient(0, 0, 0, 250);
+        profGradient.addColorStop(0, 'rgba(16, 185, 129, 0.4)');
+        profGradient.addColorStop(1, 'rgba(16, 185, 129, 0.0)');
+
+        const datasets = [{
+            label: 'Revenue',
+            data: revenueData,
+            borderColor: '#6366f1',
+            borderWidth: 3,
+            backgroundColor: revGradient,
+            fill: true,
+            tension: 0.3,
+            pointBackgroundColor: '#6366f1',
+            pointRadius: 4,
+            pointHoverRadius: 6
+        }];
+
+        if (isAdmin) {
+            datasets.push({
+                label: 'Net Profit',
+                data: profitData,
+                borderColor: '#10b981',
+                borderWidth: 3,
+                backgroundColor: profGradient,
+                fill: true,
+                tension: 0.3,
+                pointBackgroundColor: '#10b981',
+                pointRadius: 4,
+                pointHoverRadius: 6
+            });
+        }
+
+        new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: datasets
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        display: false
+                    },
+                    tooltip: {
+                        mode: 'index',
+                        intersect: false,
+                        padding: 12,
+                        backgroundColor: '#151e2e',
+                        titleFont: { family: 'Outfit', size: 13 },
+                        bodyFont: { family: 'Outfit', size: 13 },
+                        borderColor: 'rgba(255, 255, 255, 0.08)',
+                        borderWidth: 1,
+                        callbacks: {
+                            label: function(context) {
+                                let label = context.dataset.label || '';
+                                if (label) {
+                                    label += ': ';
+                                }
+                                if (context.parsed.y !== null) {
+                                    label += new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN' }).format(context.parsed.y);
+                                }
+                                return label;
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        grid: {
+                            display: false
+                        },
+                        ticks: {
+                            color: '#94a3b8',
+                            font: { family: 'Outfit', size: 11 }
+                        }
+                    },
+                    y: {
+                        grid: {
+                            color: 'rgba(255, 255, 255, 0.05)'
+                        },
+                        ticks: {
+                            color: '#94a3b8',
+                            font: { family: 'Outfit', size: 11 },
+                            callback: function(value, index, values) {
+                                return '₦' + value.toLocaleString();
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    });
+</script>
+{% endblock %}

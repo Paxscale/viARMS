@@ -1,0 +1,484 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Products & Stock - viARMS{% endblock %}
+
+{% block content %}
+<div class="panel-header" style="flex-wrap: wrap; gap: 1rem;">
+    <div>
+        <h1 style="font-size: 1.75rem; font-weight: 700;">Products & Stock</h1>
+        <p style="color: var(--text-secondary); font-size: 0.9rem;">Manage inventory stock levels, categories, shelf expiry dates, and pricing sheets.</p>
+    </div>
+    <div style="display: flex; gap: 0.75rem; align-items: center;">
+        {% if is_admin %}
+        <div style="min-width: 180px;">
+            <form method="GET" id="shop-filter-form">
+                <select name="shop_id" class="form-control" onchange="document.getElementById('shop-filter-form').submit()">
+                    <option value="">All Shops (Combined)</option>
+                    {% for s in shops %}
+                        <option value="{{ s.id }}" {% if current_shop_filter == s.id|stringformat:"i" %}selected{% endif %}>{{ s.name }}</option>
+                    {% endfor %}
+                </select>
+            </form>
+        </div>
+        {% endif %}
+        
+        {% if is_admin or is_manager %}
+        <div style="display: flex; gap: 0.75rem;">
+            {% if is_admin %}
+            <button class="btn btn-secondary" onclick="openModal('add-category-modal')">
+                <i data-lucide="plus-circle" style="width: 16px; height: 16px; color: var(--color-primary);"></i> Category
+            </button>
+            {% endif %}
+            <button class="btn btn-primary" onclick="openModal('add-product-modal')">
+                <i data-lucide="plus"></i> Add Product
+            </button>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<div class="dashboard-layout" style="grid-template-columns: 3fr 1fr;">
+    <!-- LEFT COLUMN: Product Catalog Table -->
+    <div class="glass-panel" style="padding: 1.5rem;">
+        <div style="display: flex; gap: 1rem; margin-bottom: 1.25rem; flex-wrap: wrap;">
+            <div style="position: relative; flex-grow: 1; min-width: 250px;">
+                <i data-lucide="search" style="position: absolute; left: 0.75rem; top: 50%; transform: translateY(-50%); width: 16px; height: 16px; color: var(--text-muted);"></i>
+                <input type="text" id="prod-search" class="form-control" placeholder="Search product name or SKU..." style="padding-left: 2.5rem;" oninput="filterTable()">
+            </div>
+            
+            <div style="min-width: 180px;">
+                <select id="prod-cat-filter" class="form-control" onchange="filterTable()">
+                    <option value="all">All Categories</option>
+                    {% for cat in categories %}
+                        <option value="{{ cat.name }}">{{ cat.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+
+        <div class="table-responsive">
+            <table class="custom-table" id="products-table">
+                <thead>
+                    <tr>
+                        <th>Product Details</th>
+                        <th>SKU/Barcode</th>
+                        <th>Category</th>
+                        {% if is_admin %}
+                        <th>Shop Branch</th>
+                        <th>Cost Price</th>
+                        {% endif %}
+                        <th>Selling Price</th>
+                        <th>Expiry Date</th>
+                        <th>Stock Level</th>
+                        {% if is_admin or is_manager %}
+                        <th style="text-align: right;">Actions</th>
+                        {% endif %}
+                    </tr>
+                </thead>
+                <tbody>
+                    {% if products %}
+                        {% for p in products %}
+                            <tr class="product-row" data-name="{{ p.name|lower }}" data-sku="{{ p.sku|lower }}" data-category="{% if p.category %}{{ p.category.name }}{% else %}Uncategorized{% endif %}">
+                                <td>
+                                    <div style="font-weight: 600; {% if p.is_expired %}text-decoration: line-through; color: var(--text-muted);{% endif %}">{{ p.name }}</div>
+                                    {% if p.description %}
+                                        <div style="font-size: 0.75rem; color: var(--text-muted); max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ p.description }}</div>
+                                    {% endif %}
+                                </td>
+                                <td style="font-family: monospace; font-size: 0.85rem; font-weight: 600;">{{ p.sku }}</td>
+                                <td>
+                                    <span class="badge badge-info">{% if p.category %}{{ p.category.name }}{% else %}Uncategorized{% endif %}</span>
+                                </td>
+                                {% if is_admin %}
+                                <td>
+                                    <span style="font-size: 0.8rem; font-weight: 500;">{{ p.shop.name|default:"Unassigned" }}</span>
+                                </td>
+                                <td style="color: var(--text-secondary);">₦{{ p.cost_price|floatformat:2 }}</td>
+                                {% endif %}
+                                <td style="font-weight: 600; color: var(--color-primary);">₦{{ p.selling_price|floatformat:2 }}</td>
+                                <td>
+                                    {% if p.expiry_date %}
+                                        {% if p.is_expired %}
+                                            <div style="color: var(--color-danger); font-weight: 600; display: flex; align-items: center; gap: 4px;">
+                                                <span>{{ p.expiry_date|date:"Y-m-d" }}</span>
+                                                <span class="badge badge-danger" style="font-size: 0.6rem; padding: 0.1rem 0.25rem;">Expired</span>
+                                            </div>
+                                        {% elif p.is_expiring_soon %}
+                                            <div style="color: var(--color-warning); font-weight: 600; display: flex; align-items: center; gap: 4px;">
+                                                <span>{{ p.expiry_date|date:"Y-m-d" }}</span>
+                                                <span class="badge badge-warning" style="font-size: 0.6rem; padding: 0.1rem 0.25rem;">Soon</span>
+                                            </div>
+                                        {% else %}
+                                            <span style="font-size: 0.85rem;">{{ p.expiry_date|date:"Y-m-d" }}</span>
+                                        {% endif %}
+                                    {% else %}
+                                        <span style="color: var(--text-muted); font-size: 0.8rem; font-style: italic;">No Expiry</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if p.is_low_stock %}
+                                        <div style="display: flex; align-items: center; gap: 6px;">
+                                            <span style="font-weight: 700; color: var(--color-danger);">{{ p.stock_quantity }}</span>
+                                            <span class="badge badge-danger" style="font-size: 0.65rem; padding: 0.15rem 0.35rem;">Low</span>
+                                        </div>
+                                    {% else %}
+                                        <span style="font-weight: 600;">{{ p.stock_quantity }}</span>
+                                    {% endif %}
+                                </td>
+                                {% if is_admin or is_manager %}
+                                <td style="text-align: right; white-space: nowrap;">
+                                    <button class="btn btn-secondary btn-sm" onclick="editProductPopup('{{ p.id }}', '{{ p.name|escapejs }}', '{{ p.sku|escapejs }}', '{{ p.category.id }}', '{{ p.cost_price }}', '{{ p.selling_price }}', '{{ p.stock_quantity }}', '{{ p.min_stock_level }}', '{{ p.description|escapejs }}', '{{ p.expiry_date|date:'Y-m-d' }}', '{{ p.shop.id }}')">
+                                        <i data-lucide="edit" style="width: 12px; height: 12px;"></i>
+                                    </button>
+                                    <form method="POST" style="display: inline-block;" onsubmit="return confirm('Are you sure you want to delete this product? This will preserve its sales history.');">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="action" value="delete_product">
+                                        <input type="hidden" name="product_id" value="{{ p.id }}">
+                                        <button type="submit" class="btn btn-danger btn-sm" style="padding: 0.35rem; margin-left: 4px;">
+                                            <i data-lucide="trash" style="width: 12px; height: 12px;"></i>
+                                        </button>
+                                    </form>
+                                </td>
+                                {% endif %}
+                            </tr>
+                        {% endfor %}
+                    {% else %}
+                        <tr>
+                            <td colspan="{% if is_admin %}9{% else %}7{% endif %}" style="text-align: center; color: var(--text-muted); padding: 3rem;">No products in database. Click "Add Product" to populate stock catalog.</td>
+                        </tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- RIGHT COLUMN: Category List -->
+    <div class="glass-panel" style="padding: 1.25rem; height: fit-content;">
+        <div class="panel-header" style="margin-bottom: 1rem;">
+            <h2 class="panel-title" style="font-size: 1rem;"><i data-lucide="folder" style="width: 16px; height: 16px; vertical-align: middle; margin-right: 6px; color: var(--color-primary)"></i>Categories</h2>
+        </div>
+        {% if categories %}
+            <ul style="list-style: none; display: flex; flex-direction: column; gap: 0.5rem;">
+                {% for c in categories %}
+                    <li style="display: flex; justify-content: space-between; align-items: center; padding: 0.5rem 0.75rem; background: rgba(15, 23, 42, 0.4); border-radius: 8px; border: 1px solid var(--border-color);">
+                        <div style="max-width: 60%;">
+                            <span style="font-size: 0.85rem; font-weight: 600; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ c.name }}</span>
+                            <span style="font-size: 0.7rem; color: var(--text-muted);">{{ c.products.count }} items</span>
+                        </div>
+                        {% if is_admin %}
+                        <div style="display: flex; gap: 4px;">
+                            <button class="btn btn-secondary btn-sm" style="padding: 0.2rem 0.4rem;" onclick="editCategoryPopup('{{ c.id }}', '{{ c.name|escapejs }}', '{{ c.description|escapejs }}')">
+                                <i data-lucide="edit" style="width: 10px; height: 10px;"></i>
+                            </button>
+                            <form method="POST" style="display: inline-block;" onsubmit="return confirm('Are you sure you want to delete category {{ c.name }}? Products belonging to it will become Uncategorized.');">
+                                {% csrf_token %}
+                                <input type="hidden" name="action" value="delete_category">
+                                <input type="hidden" name="category_id" value="{{ c.id }}">
+                                <button type="submit" class="btn btn-danger btn-sm" style="padding: 0.2rem 0.4rem;">
+                                    <i data-lucide="trash" style="width: 10px; height: 10px;"></i>
+                                </button>
+                            </form>
+                        </div>
+                        {% endif %}
+                    </li>
+                {% endfor %}
+            </ul>
+        {% else %}
+            <p style="font-size: 0.8rem; color: var(--text-muted); text-align: center; padding: 1rem 0;">No categories registered.</p>
+        {% endif %}
+    </div>
+</div>
+
+{% if is_admin or is_manager %}
+<!-- MODAL: Add Category (Admin only) -->
+{% if is_admin %}
+<div class="modal-backdrop" id="add-category-modal">
+    <div class="modal-window glass-panel">
+        <div class="modal-header">
+            <h3 class="panel-title">Add Category</h3>
+            <button class="modal-close" onclick="closeModal('add-category-modal')">&times;</button>
+        </div>
+        <form method="POST">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="add_category">
+            <div class="form-group">
+                <label for="cat-name" class="form-label">Category Name</label>
+                <input type="text" name="name" id="cat-name" class="form-control" required placeholder="e.g. Beverages, Electronics">
+            </div>
+            <div class="form-group">
+                <label for="cat-desc" class="form-label">Description (Optional)</label>
+                <textarea name="description" id="cat-desc" class="form-control" rows="3" placeholder="Category notes..."></textarea>
+            </div>
+            <div style="display: flex; justify-content: flex-end; gap: 0.75rem; margin-top: 1.5rem;">
+                <button type="button" class="btn btn-secondary" onclick="closeModal('add-category-modal')">Cancel</button>
+                <button type="submit" class="btn btn-primary">Create Category</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- MODAL: Edit Category (Admin only) -->
+<div class="modal-backdrop" id="edit-category-modal">
+    <div class="modal-window glass-panel">
+        <div class="modal-header">
+            <h3 class="panel-title">Edit Category</h3>
+            <button class="modal-close" onclick="closeModal('edit-category-modal')">&times;</button>
+        </div>
+        <form method="POST">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="edit_category">
+            <input type="hidden" name="category_id" id="edit-cat-id">
+            <div class="form-group">
+                <label for="edit-cat-name" class="form-label">Category Name</label>
+                <input type="text" name="name" id="edit-cat-name" class="form-control" required>
+            </div>
+            <div class="form-group">
+                <label for="edit-cat-desc" class="form-label">Description (Optional)</label>
+                <textarea name="description" id="edit-cat-desc" class="form-control" rows="3"></textarea>
+            </div>
+            <div style="display: flex; justify-content: flex-end; gap: 0.75rem; margin-top: 1.5rem;">
+                <button type="button" class="btn btn-secondary" onclick="closeModal('edit-category-modal')">Cancel</button>
+                <button type="submit" class="btn btn-primary">Save Changes</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endif %}
+
+<!-- MODAL: Add Product -->
+<div class="modal-backdrop" id="add-product-modal">
+    <div class="modal-window glass-panel" style="max-width: 550px;">
+        <div class="modal-header">
+            <h3 class="panel-title">Add New Product</h3>
+            <button class="modal-close" onclick="closeModal('add-product-modal')">&times;</button>
+        </div>
+        <form method="POST">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="add_product">
+            
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                <div class="form-group">
+                    <label for="prod-name" class="form-label">Product Name</label>
+                    <input type="text" name="name" id="prod-name" class="form-control" required placeholder="e.g. Basmati Rice 1kg">
+                </div>
+                <div class="form-group">
+                    <label for="prod-sku" class="form-label">SKU / Barcode</label>
+                    <input type="text" name="sku" id="prod-sku" class="form-control" required placeholder="e.g. 5449000131805">
+                </div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                <div class="form-group">
+                    <label for="prod-cat" class="form-label">Category</label>
+                    <select name="category_id" id="prod-cat" class="form-control">
+                        <option value="">Uncategorized</option>
+                        {% for cat in categories %}
+                            <option value="{{ cat.id }}">{{ cat.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="prod-expiry" class="form-label">Expiry Date</label>
+                    <input type="date" name="expiry_date" id="prod-expiry" class="form-control">
+                </div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: {% if is_admin %}1fr 1fr 1fr{% else %}1fr 1fr{% endif %}; gap: 1rem;">
+                {% if is_admin %}
+                <div class="form-group">
+                    <label for="prod-shop" class="form-label">Assign to Shop</label>
+                    <select name="shop_id" id="prod-shop" class="form-control" required>
+                        {% for s in shops %}
+                            <option value="{{ s.id }}">{{ s.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                {% endif %}
+                <div class="form-group">
+                    <label for="prod-min" class="form-label">Min Stock (Alert)</label>
+                    <input type="number" name="min_stock_level" id="prod-min" class="form-control" value="5" min="0" required>
+                </div>
+                {% if not is_admin %}
+                <div style="display:none;"></div> <!-- Filler grid space -->
+                {% endif %}
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.75rem;">
+                <div class="form-group">
+                    <label for="prod-cost" class="form-label">Cost Price (₦)</label>
+                    <input type="number" name="cost_price" id="prod-cost" class="form-control" step="0.01" min="0" required placeholder="0.00">
+                </div>
+                <div class="form-group">
+                    <label for="prod-sell" class="form-label">Selling Price (₦)</label>
+                    <input type="number" name="selling_price" id="prod-sell" class="form-control" step="0.01" min="0" required placeholder="0.00">
+                </div>
+                <div class="form-group">
+                    <label for="prod-qty" class="form-label">Initial Stock</label>
+                    <input type="number" name="stock_quantity" id="prod-qty" class="form-control" min="0" required placeholder="0">
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label for="prod-desc" class="form-label">Description (Optional)</label>
+                <textarea name="description" id="prod-desc" class="form-control" rows="2" placeholder="Product details..."></textarea>
+            </div>
+
+            <div style="display: flex; justify-content: flex-end; gap: 0.75rem; margin-top: 1.5rem;">
+                <button type="button" class="btn btn-secondary" onclick="closeModal('add-product-modal')">Cancel</button>
+                <button type="submit" class="btn btn-primary">Create Product</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- MODAL: Edit Product -->
+<div class="modal-backdrop" id="edit-product-modal">
+    <div class="modal-window glass-panel" style="max-width: 550px;">
+        <div class="modal-header">
+            <h3 class="panel-title">Edit Product Details</h3>
+            <button class="modal-close" onclick="closeModal('edit-product-modal')">&times;</button>
+        </div>
+        <form method="POST">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="edit_product">
+            <input type="hidden" name="product_id" id="edit-prod-id">
+            
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                <div class="form-group">
+                    <label for="edit-prod-name" class="form-label">Product Name</label>
+                    <input type="text" name="name" id="edit-prod-name" class="form-control" required>
+                </div>
+                <div class="form-group">
+                    <label for="edit-prod-sku" class="form-label">SKU / Barcode</label>
+                    <input type="text" name="sku" id="edit-prod-sku" class="form-control" required>
+                </div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                <div class="form-group">
+                    <label for="edit-prod-cat" class="form-label">Category</label>
+                    <select name="category_id" id="edit-prod-cat" class="form-control">
+                        <option value="">Uncategorized</option>
+                        {% for cat in categories %}
+                            <option value="{{ cat.id }}">{{ cat.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="edit-prod-expiry" class="form-label">Expiry Date</label>
+                    <input type="date" name="expiry_date" id="edit-prod-expiry" class="form-control">
+                </div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: {% if is_admin %}1fr 1fr 1fr{% else %}1fr 1fr{% endif %}; gap: 1rem;">
+                {% if is_admin %}
+                <div class="form-group">
+                    <label for="edit-prod-shop" class="form-label">Assigned Shop</label>
+                    <select name="shop_id" id="edit-prod-shop" class="form-control" required>
+                        {% for s in shops %}
+                            <option value="{{ s.id }}">{{ s.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                {% endif %}
+                <div class="form-group">
+                    <label for="edit-prod-min" class="form-label">Min Stock (Alert)</label>
+                    <input type="number" name="min_stock_level" id="edit-prod-min" class="form-control" min="0" required>
+                </div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.75rem;">
+                <div class="form-group">
+                    <label for="edit-prod-cost" class="form-label">Cost Price (₦)</label>
+                    <input type="number" name="cost_price" id="edit-prod-cost" class="form-control" step="0.01" min="0" required>
+                </div>
+                <div class="form-group">
+                    <label for="edit-prod-sell" class="form-label">Selling Price (₦)</label>
+                    <input type="number" name="selling_price" id="edit-prod-sell" class="form-control" step="0.01" min="0" required>
+                </div>
+                <div class="form-group">
+                    <label for="edit-prod-qty" class="form-label">Stock Quantity</label>
+                    <input type="number" name="stock_quantity" id="edit-prod-qty" class="form-control" min="0" required>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label for="edit-prod-desc" class="form-label">Description (Optional)</label>
+                <textarea name="description" id="edit-prod-desc" class="form-control" rows="2"></textarea>
+            </div>
+
+            <div style="display: flex; justify-content: flex-end; gap: 0.75rem; margin-top: 1.5rem;">
+                <button type="button" class="btn btn-secondary" onclick="closeModal('edit-product-modal')">Cancel</button>
+                <button type="submit" class="btn btn-primary">Save Changes</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+    function openModal(modalId) {
+        document.getElementById(modalId).classList.add('active');
+    }
+
+    function closeModal(modalId) {
+        document.getElementById(modalId).classList.remove('active');
+    }
+
+    function editCategoryPopup(id, name, desc) {
+        document.getElementById('edit-cat-id').value = id;
+        document.getElementById('edit-cat-name').value = name;
+        document.getElementById('edit-cat-desc').value = desc;
+        openModal('edit-category-modal');
+    }
+
+    function editProductPopup(id, name, sku, categoryId, cost, sell, qty, min, desc, expiry, shopId) {
+        document.getElementById('edit-prod-id').value = id;
+        document.getElementById('edit-prod-name').value = name;
+        document.getElementById('edit-prod-sku').value = sku;
+        document.getElementById('edit-prod-cat').value = categoryId !== 'None' ? categoryId : '';
+        document.getElementById('edit-prod-cost').value = cost;
+        document.getElementById('edit-prod-sell').value = sell;
+        document.getElementById('edit-prod-qty').value = qty;
+        document.getElementById('edit-prod-min').value = min;
+        document.getElementById('edit-prod-desc').value = desc !== 'None' ? desc : '';
+        
+        // Expiry & Shop Fields
+        const expiryField = document.getElementById('edit-prod-expiry');
+        if (expiryField) {
+            expiryField.value = expiry && expiry !== 'None' ? expiry : '';
+        }
+
+        const shopField = document.getElementById('edit-prod-shop');
+        if (shopField) {
+            shopField.value = shopId && shopId !== 'None' ? shopId : '';
+        }
+
+        openModal('edit-product-modal');
+    }
+
+    function filterTable() {
+        const query = document.getElementById('prod-search').value.toLowerCase();
+        const categoryFilter = document.getElementById('prod-cat-filter').value;
+        const rows = document.querySelectorAll('.product-row');
+
+        rows.forEach(row => {
+            const name = row.getAttribute('data-name');
+            const sku = row.getAttribute('data-sku');
+            const category = row.getAttribute('data-category');
+
+            const matchesSearch = name.includes(query) || sku.includes(query);
+            const matchesCategory = categoryFilter === 'all' || category === categoryFilter;
+
+            if (matchesSearch && matchesCategory) {
+                row.style.display = '';
+            } else {
+                row.style.display = 'none';
+            }
+        });
+    }
+</script>
+{% endblock %}
