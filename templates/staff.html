@@ -154,7 +154,7 @@
             {% csrf_token %}
             <input type="hidden" name="action" value="add_staff">
 
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+            <div class="form-row-grid-2">
                 <div class="form-group" style="grid-column: 1 / -1;">
                     <label class="form-label">Username <span style="color: var(--color-danger);">*</span></label>
                     <input type="text" name="username" class="form-control" placeholder="e.g. john_cashier" required autocomplete="off">
@@ -236,7 +236,7 @@
             </div>
 
             {% if is_admin %}
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+            <div class="form-row-grid-2">
                 <div class="form-group">
                     <label class="form-label">Role</label>
                     <select name="role" class="form-control" id="edit-role-select" onchange="toggleShopField('edit')">

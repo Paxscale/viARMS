@@ -1,7 +1,9 @@
 import csv
 import json
+import uuid
 from datetime import datetime, timedelta
 from decimal import Decimal
+from PIL import Image
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required, user_passes_test
 from django.contrib.auth import login, logout, authenticate
@@ -9,10 +11,41 @@ from django.contrib.auth.forms import AuthenticationForm
 from django.contrib import messages
 from django.http import JsonResponse, HttpResponse
 from django.db import transaction
-from django.db.models import Sum, F, Count
+from django.db.models import Sum, F, Count, Q
 from django.utils import timezone
 from django.contrib.auth.models import User
-from .models import Category, Product, Sale, SaleItem, StoreSettings, Shop, UserProfile
+from .models import Category, Product, Sale, SaleItem, StoreSettings, Shop, UserProfile, Advertisement
+
+MAX_PRODUCT_IMAGE_SIZE = 5 * 1024 * 1024
+PRODUCT_IMAGE_FORMATS = {
+    'JPEG': 'jpg',
+    'PNG': 'png',
+    'WEBP': 'webp',
+    'GIF': 'gif',
+}
+
+
+def prepare_product_image(uploaded_image):
+    if uploaded_image.size > MAX_PRODUCT_IMAGE_SIZE:
+        raise ValueError("Product images must be 5 MB or smaller.")
+
+    try:
+        image = Image.open(uploaded_image)
+        image_format = image.format
+        if image.width * image.height > 20_000_000:
+            raise ValueError("Product image dimensions must not exceed 20 megapixels.")
+        image.verify()
+    except (Image.DecompressionBombError, OSError) as exc:
+        raise ValueError("Upload a valid JPEG, PNG, WebP, or GIF image.") from exc
+
+    extension = PRODUCT_IMAGE_FORMATS.get(image_format)
+    if not extension:
+        raise ValueError("Upload a JPEG, PNG, WebP, or GIF image.")
+
+    uploaded_image.seek(0)
+    uploaded_image.name = f"{uuid.uuid4().hex}.{extension}"
+    return uploaded_image
+
 
 def is_admin(user):
     return user.is_superuser or (hasattr(user, 'profile') and user.profile.role == 'ADMIN')
@@ -23,8 +56,68 @@ def is_manager(user):
 def is_admin_or_manager(user):
     return is_admin(user) or is_manager(user)
 
+def get_tenant_scope(user):
+    if user.is_superuser:
+        return None
+    profile = getattr(user, 'profile', None)
+    if profile:
+        return profile.tenant_owner if profile.tenant_owner else user
+    return user
+
+def register_view(request):
+    if request.user.is_authenticated:
+        return redirect('dashboard')
+
+    if request.method == 'POST':
+        username = request.POST.get('username', '').strip().lower()
+        email = request.POST.get('email', '').strip()
+        password = request.POST.get('password')
+        confirm_password = request.POST.get('confirm_password')
+        business_name = request.POST.get('business_name', '').strip()
+        business_type = request.POST.get('business_type', 'GENERAL')
+        plan = request.POST.get('plan', 'FREE')
+        kyc_document_type = request.POST.get('kyc_document_type', '').strip()
+        kyc_document_number = request.POST.get('kyc_document_number', '').strip()
+
+        if password != confirm_password:
+            messages.error(request, "Passwords do not match.")
+            return render(request, 'register.html')
+
+        if User.objects.filter(username=username).exists():
+            messages.error(request, f"Username '{username}' already exists.")
+            return render(request, 'register.html')
+
+        with transaction.atomic():
+            user = User.objects.create_user(username=username, email=email, password=password)
+            profile, created = UserProfile.objects.get_or_create(user=user)
+            profile.role = 'ADMIN'
+            profile.tenant_owner = user
+            profile.plan = plan
+            profile.business_type = business_type
+            profile.is_approved = False
+            profile.kyc_document_type = kyc_document_type
+            profile.kyc_document_number = kyc_document_number
+            profile.kyc_status = 'PENDING'
+            profile.save()
+
+            # Create first Shop branch automatically
+            shop = Shop.objects.create(
+                name=business_name,
+                tenant_owner=user,
+                manager=user
+            )
+            profile.shop = shop
+            profile.save()
+
+        messages.success(request, "Your account has been created successfully! It is pending administrator approval.")
+        return redirect('login')
+
+    return render(request, 'register.html')
+
 def login_view(request):
     if request.user.is_authenticated:
+        if request.user.is_superuser:
+            return redirect('admin_panel')
         return redirect('dashboard')
     
     if request.method == 'POST':
@@ -34,9 +127,16 @@ def login_view(request):
             password = form.cleaned_data.get('password')
             user = authenticate(username=username, password=password)
             if user is not None:
+                # Check approval status
+                profile, created = UserProfile.objects.get_or_create(user=user, defaults={'role': 'ADMIN' if user.is_superuser else 'CASHIER'})
+                owner = profile.tenant_owner if profile.tenant_owner else user
+                if not owner.is_superuser and not owner.profile.is_approved:
+                    messages.error(request, "Your account is pending administrator approval.")
+                    return redirect('login')
+
                 login(request, user)
-                # Ensure profile exists
-                UserProfile.objects.get_or_create(user=user, defaults={'role': 'ADMIN' if user.is_superuser else 'CASHIER'})
+                if user.is_superuser:
+                    return redirect('admin_panel')
                 return redirect('dashboard')
         else:
             messages.error(request, "Invalid username or password.")
@@ -48,8 +148,99 @@ def logout_view(request):
     logout(request)
     return redirect('login')
 
+def landing_view(request):
+    if request.user.is_authenticated:
+        if request.user.is_superuser:
+            return redirect('admin_panel')
+        return redirect('dashboard')
+    return render(request, 'landing.html')
+
+@login_required
+@user_passes_test(lambda u: u.is_superuser)
+def admin_panel_view(request):
+    if request.method == 'POST':
+        action = request.POST.get('action')
+        if action == 'approve_user':
+            user_id = request.POST.get('user_id')
+            user_profile = get_object_or_404(UserProfile, user__id=user_id)
+            if user_profile.kyc_status != 'VERIFIED':
+                messages.error(request, f"Verify KYC for {user_profile.user.username} before approving the account.")
+            else:
+                user_profile.is_approved = True
+                user_profile.save()
+                messages.success(request, f"User {user_profile.user.username} has been approved.")
+        elif action == 'verify_kyc':
+            user_profile = get_object_or_404(UserProfile, user__id=request.POST.get('user_id'))
+            user_profile.kyc_status = 'VERIFIED'
+            user_profile.kyc_notes = request.POST.get('kyc_notes', '').strip()
+            user_profile.kyc_reviewed_at = timezone.now()
+            user_profile.save(update_fields=['kyc_status', 'kyc_notes', 'kyc_reviewed_at'])
+            messages.success(request, f"KYC verified for {user_profile.user.username}.")
+        elif action == 'return_kyc':
+            user_profile = get_object_or_404(UserProfile, user__id=request.POST.get('user_id'))
+            user_profile.kyc_status = 'RETURNED'
+            user_profile.kyc_notes = request.POST.get('kyc_notes', '').strip()
+            user_profile.kyc_reviewed_at = timezone.now()
+            user_profile.save(update_fields=['kyc_status', 'kyc_notes', 'kyc_reviewed_at'])
+            messages.success(request, f"KYC returned to {user_profile.user.username} for more information.")
+        elif action == 'reject_user':
+            user_id = request.POST.get('user_id')
+            user = get_object_or_404(User, id=user_id)
+            user.delete() # Cascade deletes profile and shop
+            messages.success(request, "User registration rejected and deleted.")
+        elif action == 'update_plan':
+            user_id = request.POST.get('user_id')
+            new_plan = request.POST.get('plan')
+            user_profile = get_object_or_404(UserProfile, user__id=user_id)
+            user_profile.plan = new_plan
+            user_profile.save()
+            messages.success(request, f"Plan updated to {new_plan} for {user_profile.user.username}.")
+        elif action == 'create_ad':
+            title = request.POST.get('title')
+            content = request.POST.get('content')
+            image_url = request.POST.get('image_url')
+            Advertisement.objects.create(title=title, content=content, image_url=image_url)
+            messages.success(request, "Advertisement created successfully.")
+        elif action == 'delete_ad':
+            ad_id = request.POST.get('ad_id')
+            ad = get_object_or_404(Advertisement, id=ad_id)
+            ad.delete()
+            messages.success(request, "Advertisement deleted.")
+
+        return redirect('admin_panel')
+
+    pending_users = UserProfile.objects.filter(is_approved=False).select_related('user', 'shop')
+    pending_kyc = pending_users.exclude(kyc_status='VERIFIED')
+    all_tenants = UserProfile.objects.filter(tenant_owner=F('user')).select_related('user', 'shop').order_by('-user__date_joined')
+    ads = Advertisement.objects.all()
+
+    context = {
+        'pending_users': pending_users,
+        'pending_kyc': pending_kyc,
+        'all_tenants': all_tenants,
+        'ads': ads
+    }
+    return render(request, 'admin_panel.html', context)
+
+def ads_api(request):
+    # Campaign creation is restricted to the company super-admin panel. Serve
+    # every active company campaign, including existing records that were
+    # previously associated with a branch.
+    ads = Advertisement.objects.filter(is_active=True)
+    ads_data = [
+        {
+            'id': ad.id,
+            'title': ad.title,
+            'content': ad.content,
+            'image_url': ad.image_url
+        } for ad in ads
+    ]
+    return JsonResponse({'ads': ads_data})
+
 @login_required
 def dashboard_view(request):
+    if request.user.is_superuser:
+        return redirect('admin_panel')
     user_profile = request.user.profile
     user_role = user_profile.role
     user_shop = user_profile.shop
@@ -76,18 +267,33 @@ def dashboard_view(request):
     # If Admin, default is all shops, but can filter by ?shop_id=X
     selected_shop = None
     shop_filter_id = request.GET.get('shop_id')
+    tenant = get_tenant_scope(request.user)
     
     if user_role == 'ADMIN':
-        shops = Shop.objects.all().order_by('name')
+        if tenant:
+            shops = Shop.objects.filter(tenant_owner=tenant).order_by('name')
+        else:
+            shops = Shop.objects.all().order_by('name')
+
         if shop_filter_id:
-            selected_shop = get_object_or_404(Shop, id=shop_filter_id)
+            if tenant:
+                selected_shop = get_object_or_404(Shop, id=shop_filter_id, tenant_owner=tenant)
+            else:
+                selected_shop = get_object_or_404(Shop, id=shop_filter_id)
     else:
-        shops = Shop.objects.filter(id=user_shop.id) if user_shop else Shop.objects.none()
+        if tenant:
+            shops = Shop.objects.filter(id=user_shop.id, tenant_owner=tenant) if user_shop else Shop.objects.none()
+        else:
+            shops = Shop.objects.filter(id=user_shop.id) if user_shop else Shop.objects.none()
         selected_shop = user_shop
 
     # Base Querysets filtered by shop
-    sales_qs = Sale.objects.all()
-    products_qs = Product.objects.filter(is_active=True)
+    if tenant:
+        sales_qs = Sale.objects.filter(shop__tenant_owner=tenant)
+        products_qs = Product.objects.filter(is_active=True, shop__tenant_owner=tenant)
+    else:
+        sales_qs = Sale.objects.all()
+        products_qs = Product.objects.filter(is_active=True)
 
     if selected_shop:
         sales_qs = sales_qs.filter(shop=selected_shop)
@@ -121,6 +327,7 @@ def dashboard_view(request):
 
     # Recent Sales
     recent_sales = sales_qs.select_related('cashier', 'shop').order_by('-timestamp')[:5]
+    dashboard_products = products_qs.select_related('category').order_by('name')[:5]
 
     # Weekly chart data
     chart_labels = []
@@ -151,6 +358,21 @@ def dashboard_view(request):
         .annotate(total_qty=Sum('quantity'), total_rev=Sum('subtotal')) \
         .order_by('-total_qty')[:5]
 
+    # Pharmaceutical specific metrics
+    pharmaceutical_metrics = {}
+    if user_profile.business_type == 'PHARMACEUTICAL':
+        rx_sales = sum(item.subtotal for item in period_items if item.product and item.product.prescription_required)
+        otc_sales = sum(item.subtotal for item in period_items if item.product and not item.product.prescription_required)
+        radar_90_days = products_qs.filter(expiry_date__gt=today, expiry_date__lte=today + timedelta(days=90)).order_by('expiry_date')
+
+        pharmaceutical_metrics = {
+            'rx_revenue': rx_sales,
+            'otc_revenue': otc_sales,
+            'rx_percentage': int((rx_sales / today_revenue * 100)) if today_revenue > 0 else 0,
+            'otc_percentage': int((otc_sales / today_revenue * 100)) if today_revenue > 0 else 0,
+            'radar_batches': radar_90_days[:10]
+        }
+
     context = {
         'today_revenue': today_revenue,
         'today_count': today_count,
@@ -167,6 +389,9 @@ def dashboard_view(request):
         'chart_revenue': json.dumps(chart_revenue),
         'chart_profit': json.dumps(chart_profit),
         'top_selling': top_selling,
+        'business_type': user_profile.business_type,
+        'dashboard_products': dashboard_products,
+        'pharmaceutical_metrics': pharmaceutical_metrics,
         'is_admin': is_admin(request.user),
         'is_manager': is_manager(request.user),
         'shops': shops,
@@ -179,16 +404,25 @@ def dashboard_view(request):
 
 @login_required
 def pos_view(request):
+    if request.user.is_superuser:
+        return redirect('admin_panel')
     user_profile = request.user.profile
     user_shop = user_profile.shop
     user_is_admin = is_admin(request.user)
+    tenant = get_tenant_scope(request.user)
     
     if user_is_admin:
         shop_id = request.GET.get('shop_id')
         if shop_id:
-            user_shop = get_object_or_404(Shop, id=shop_id)
+            if tenant:
+                user_shop = get_object_or_404(Shop, id=shop_id, tenant_owner=tenant)
+            else:
+                user_shop = get_object_or_404(Shop, id=shop_id)
         elif not user_shop:
-            user_shop = Shop.objects.first() # Default to first shop if admin has none
+            if tenant:
+                user_shop = Shop.objects.filter(tenant_owner=tenant).first()
+            else:
+                user_shop = Shop.objects.first()
             
     if not user_shop and not user_is_admin:
         messages.error(request, "Your profile is not assigned to any shop branch. Please contact an admin.")
@@ -197,16 +431,29 @@ def pos_view(request):
     # Query products active in this shop
     # Expired items are excluded from sales!
     today = timezone.localdate()
-    products_query = Product.objects.filter(is_active=True)
+    if tenant:
+        products_query = Product.objects.filter(is_active=True, shop__tenant_owner=tenant)
+    else:
+        products_query = Product.objects.filter(is_active=True)
+
     if user_shop:
         products_query = products_query.filter(shop=user_shop)
     
-    # Hide expired items
-    products = products_query.exclude(expiry_date__lte=today).order_by('name')
-    categories = Category.objects.all().order_by('name')
+    # Hide expired items (keep products with no expiry date or future expiry)
+    products = products_query.filter(
+        Q(expiry_date__isnull=True) | Q(expiry_date__gt=today)
+    ).order_by('name')
+
+    if tenant:
+        categories = Category.objects.filter(tenant_owner=tenant).order_by('name')
+        shops = Shop.objects.filter(tenant_owner=tenant).order_by('name') if user_is_admin else None
+    else:
+        categories = Category.objects.all().order_by('name')
+        shops = Shop.objects.all().order_by('name') if user_is_admin else None
+
     settings = StoreSettings.get_settings()
     
-    # Format products for JS search, adding expiry warning flags
+    # Format products for JS search, adding expiry warning flags and custom attributes
     products_json = []
     for p in products:
         products_json.append({
@@ -219,7 +466,26 @@ def pos_view(request):
             'category_name': p.category.name if p.category else 'Uncategorized',
             'is_low_stock': p.is_low_stock,
             'is_expiring_soon': p.is_expiring_soon,
-            'expiry_date': p.expiry_date.strftime('%Y-%m-%d') if p.expiry_date else 'No Expiry'
+            'expiry_date': p.expiry_date.strftime('%Y-%m-%d') if p.expiry_date else 'No Expiry',
+
+            # Custom attributes
+            'dosage_form': p.dosage_form or '',
+            'generic_name': p.generic_name or '',
+            'prescription_required': p.prescription_required,
+            'manufacturer': p.manufacturer or '',
+            'strength': p.strength or '',
+            'batch_number': p.batch_number or '',
+            'nafdac_reg_no': p.nafdac_reg_no or '',
+            'storage_conditions': p.storage_conditions or '',
+            'author': p.author or '',
+            'publisher': p.publisher or '',
+            'isbn': p.isbn or '',
+            'color': p.color or '',
+            'size': p.size or '',
+            'warranty_period': p.warranty_period or '',
+            'material': p.material,
+            'material_display': p.get_material_display() if p.material else '',
+            'image_url': p.image.url if p.image else '',
         })
 
     context = {
@@ -230,7 +496,8 @@ def pos_view(request):
         'is_admin': user_is_admin,
         'is_manager': is_manager(request.user),
         'user_shop': user_shop,
-        'shops': Shop.objects.all().order_by('name') if user_is_admin else None,
+        'shops': shops,
+        'business_type': user_profile.business_type,
     }
     return render(request, 'pos.html', context)
 
@@ -346,8 +613,11 @@ def checkout_api(request):
         # Build receipt response details
         receipt_items = []
         for item in sale.items.all():
+            name_str = item.product.name if item.product else 'Deleted Product'
+            if item.product and item.product.strength:
+                name_str = f"{name_str} ({item.product.strength})"
             receipt_items.append({
-                'name': item.product.name if item.product else 'Deleted Product',
+                'name': name_str,
                 'quantity': item.quantity,
                 'unit_price': f"{item.unit_price:.2f}",
                 'subtotal': f"{item.subtotal:.2f}"
@@ -379,25 +649,38 @@ def checkout_api(request):
 
 @login_required
 def product_list_view(request):
+    if request.user.is_superuser:
+        return redirect('admin_panel')
     user_profile = request.user.profile
     user_role = user_profile.role
     user_shop = user_profile.shop
     is_user_admin = is_admin(request.user)
+    tenant = get_tenant_scope(request.user)
 
-    categories = Category.objects.all().order_by('name')
-
-    # Define inventory scope
-    # Admin sees all but can filter by shop; Manager/Cashier restricted to their own shop
-    if is_user_admin:
-        shops = Shop.objects.all().order_by('name')
-        shop_filter = request.GET.get('shop_id')
-        if shop_filter:
-            products = Product.objects.filter(is_active=True, shop_id=shop_filter)
+    if tenant:
+        categories = Category.objects.filter(tenant_owner=tenant).order_by('name')
+        if is_user_admin:
+            shops = Shop.objects.filter(tenant_owner=tenant).order_by('name')
+            shop_filter = request.GET.get('shop_id')
+            if shop_filter:
+                products = Product.objects.filter(is_active=True, shop_id=shop_filter, shop__tenant_owner=tenant)
+            else:
+                products = Product.objects.filter(is_active=True, shop__tenant_owner=tenant)
         else:
-            products = Product.objects.filter(is_active=True)
+            shops = Shop.objects.filter(id=user_shop.id, tenant_owner=tenant) if user_shop else Shop.objects.none()
+            products = Product.objects.filter(is_active=True, shop=user_shop) if user_shop else Product.objects.none()
     else:
-        shops = Shop.objects.filter(id=user_shop.id) if user_shop else Shop.objects.none()
-        products = Product.objects.filter(is_active=True, shop=user_shop) if user_shop else Product.objects.none()
+        categories = Category.objects.all().order_by('name')
+        if is_user_admin:
+            shops = Shop.objects.all().order_by('name')
+            shop_filter = request.GET.get('shop_id')
+            if shop_filter:
+                products = Product.objects.filter(is_active=True, shop_id=shop_filter)
+            else:
+                products = Product.objects.filter(is_active=True)
+        else:
+            shops = Shop.objects.filter(id=user_shop.id) if user_shop else Shop.objects.none()
+            products = Product.objects.filter(is_active=True, shop=user_shop) if user_shop else Product.objects.none()
 
     products = products.select_related('category', 'shop').order_by('name')
 
@@ -418,7 +701,7 @@ def product_list_view(request):
                 name = request.POST.get('name')
                 desc = request.POST.get('description')
                 if name:
-                    Category.objects.create(name=name, description=desc)
+                    Category.objects.create(name=name, description=desc, tenant_owner=tenant)
                     messages.success(request, f"Category '{name}' created successfully.")
             
         elif action == 'edit_category':
@@ -426,7 +709,10 @@ def product_list_view(request):
                 messages.error(request, "Only Admins can manage categories.")
             else:
                 cat_id = request.POST.get('category_id')
-                cat = get_object_or_404(Category, id=cat_id)
+                if tenant:
+                    cat = get_object_or_404(Category, id=cat_id, tenant_owner=tenant)
+                else:
+                    cat = get_object_or_404(Category, id=cat_id)
                 cat.name = request.POST.get('name')
                 cat.description = request.POST.get('description')
                 cat.save()
@@ -437,7 +723,10 @@ def product_list_view(request):
                 messages.error(request, "Only Admins can manage categories.")
             else:
                 cat_id = request.POST.get('category_id')
-                cat = get_object_or_404(Category, id=cat_id)
+                if tenant:
+                    cat = get_object_or_404(Category, id=cat_id, tenant_owner=tenant)
+                else:
+                    cat = get_object_or_404(Category, id=cat_id)
                 cat.delete()
                 messages.success(request, "Category deleted successfully.")
 
@@ -453,10 +742,41 @@ def product_list_view(request):
             desc = request.POST.get('description')
             expiry = request.POST.get('expiry_date') or None
 
+            # Custom business-specific attributes
+            dosage_form = request.POST.get('dosage_form', '')
+            generic_name = request.POST.get('generic_name', '')
+            prescription_required = request.POST.get('prescription_required') in ('on', 'true')
+            manufacturer = request.POST.get('manufacturer', '')
+            strength = request.POST.get('strength', '')
+            batch_number = request.POST.get('batch_number', '')
+            nafdac_reg_no = request.POST.get('nafdac_reg_no', '')
+            storage_conditions = request.POST.get('storage_conditions', '')
+            author = request.POST.get('author', '')
+            publisher = request.POST.get('publisher', '')
+            isbn = request.POST.get('isbn', '')
+            color = request.POST.get('color', '')
+            size = request.POST.get('size', '')
+            warranty_period = request.POST.get('warranty_period', '')
+            material = request.POST.get('material', '')
+            uploaded_image = request.FILES.get('image')
+
+            if uploaded_image:
+                try:
+                    uploaded_image = prepare_product_image(uploaded_image)
+                except ValueError as exc:
+                    messages.error(request, str(exc))
+                    return redirect('products')
+
+            if user_profile.business_type == 'UTENSILS' and material == 'PLASTIC':
+                expiry = None
+
             # Determine product shop binding
             if is_user_admin:
                 prod_shop_id = request.POST.get('shop_id')
-                prod_shop = get_object_or_404(Shop, id=prod_shop_id) if prod_shop_id else None
+                if tenant:
+                    prod_shop = get_object_or_404(Shop, id=prod_shop_id, tenant_owner=tenant) if prod_shop_id else None
+                else:
+                    prod_shop = get_object_or_404(Shop, id=prod_shop_id) if prod_shop_id else None
             else:
                 prod_shop = user_shop
 
@@ -464,16 +784,29 @@ def product_list_view(request):
                 messages.error(request, "Failed to create product. Shop assignment is required.")
                 return redirect('products')
 
-            category = Category.objects.get(id=cat_id) if cat_id else None
+            if tenant:
+                category = get_object_or_404(Category, id=cat_id, tenant_owner=tenant) if cat_id else None
+            else:
+                category = Category.objects.get(id=cat_id) if cat_id else None
 
             if name and sku:
-                if Product.objects.filter(sku=sku, is_active=True).exists():
-                    messages.error(request, f"SKU/Barcode '{sku}' already exists.")
+                # New rule: same SKU allowed in same shop if expiry date differs
+                duplicate = Product.objects.filter(
+                    sku=sku, shop=prod_shop, expiry_date=expiry, is_active=True
+                ).exists()
+                if duplicate:
+                    messages.error(request, f"A product with SKU '{sku}' and the same expiry date already exists in this shop. Use a different expiry date or adjust the existing stock.")
                 else:
                     Product.objects.create(
                         name=name, sku=sku, category=category, cost_price=cost,
                         selling_price=sell, stock_quantity=qty, min_stock_level=min_lvl,
-                        description=desc, expiry_date=expiry, shop=prod_shop
+                        description=desc, expiry_date=expiry, shop=prod_shop,
+                        dosage_form=dosage_form, generic_name=generic_name, prescription_required=prescription_required,
+                        manufacturer=manufacturer, strength=strength, batch_number=batch_number,
+                        nafdac_reg_no=nafdac_reg_no, storage_conditions=storage_conditions,
+                        author=author, publisher=publisher, isbn=isbn,
+                        color=color, size=size, warranty_period=warranty_period,
+                        material=material, image=uploaded_image
                     )
                     messages.success(request, f"Product '{name}' created successfully under '{prod_shop.name}'.")
 
@@ -481,34 +814,91 @@ def product_list_view(request):
             prod_id = request.POST.get('product_id')
             # Fetch checking scope to prevent editing other shops' products if manager
             if is_user_admin:
-                prod = get_object_or_404(Product, id=prod_id)
+                if tenant:
+                    prod = get_object_or_404(Product, id=prod_id, shop__tenant_owner=tenant)
+                else:
+                    prod = get_object_or_404(Product, id=prod_id)
                 prod_shop_id = request.POST.get('shop_id')
                 if prod_shop_id:
-                    prod.shop = get_object_or_404(Shop, id=prod_shop_id)
+                    if tenant:
+                        prod.shop = get_object_or_404(Shop, id=prod_shop_id, tenant_owner=tenant)
+                    else:
+                        prod.shop = get_object_or_404(Shop, id=prod_shop_id)
             else:
                 prod = get_object_or_404(Product, id=prod_id, shop=user_shop)
 
             prod.name = request.POST.get('name')
             sku = request.POST.get('sku')
-            if prod.sku != sku and Product.objects.filter(sku=sku, is_active=True).exists():
-                messages.error(request, f"SKU/Barcode '{sku}' already exists.")
+            new_expiry = request.POST.get('expiry_date') or None
+            new_material = request.POST.get('material', '')
+            uploaded_image = request.FILES.get('image')
+
+            if uploaded_image:
+                try:
+                    uploaded_image = prepare_product_image(uploaded_image)
+                except ValueError as exc:
+                    messages.error(request, str(exc))
+                    return redirect('products')
+
+            if user_profile.business_type == 'UTENSILS' and new_material == 'PLASTIC':
+                new_expiry = None
+            target_shop = prod.shop
+            # Check uniqueness: same sku + shop + expiry but a DIFFERENT product
+            conflict = Product.objects.filter(
+                sku=sku, shop=target_shop, expiry_date=new_expiry, is_active=True
+            ).exclude(id=prod.id).exists()
+            if conflict:
+                messages.error(request, f"Another product with SKU '{sku}' and the same expiry date already exists in this shop.")
             else:
                 prod.sku = sku
-                cat_id = request.POST.get('category_id')
-                prod.category = Category.objects.get(id=cat_id) if cat_id else None
+                if cat_id := request.POST.get('category_id'):
+                    if tenant:
+                        prod.category = get_object_or_404(Category, id=cat_id, tenant_owner=tenant)
+                    else:
+                        prod.category = Category.objects.get(id=cat_id)
+                else:
+                    prod.category = None
                 prod.cost_price = Decimal(request.POST.get('cost_price', 0.00))
                 prod.selling_price = Decimal(request.POST.get('selling_price', 0.00))
                 prod.stock_quantity = int(request.POST.get('stock_quantity', 0))
                 prod.min_stock_level = int(request.POST.get('min_stock_level', 5))
                 prod.description = request.POST.get('description')
-                prod.expiry_date = request.POST.get('expiry_date') or None
+                prod.expiry_date = new_expiry
+
+                # Custom business-specific attributes
+                prod.dosage_form = request.POST.get('dosage_form', '')
+                prod.generic_name = request.POST.get('generic_name', '')
+                prod.prescription_required = request.POST.get('prescription_required') in ('on', 'true')
+                prod.manufacturer = request.POST.get('manufacturer', '')
+                prod.strength = request.POST.get('strength', '')
+                prod.batch_number = request.POST.get('batch_number', '')
+                prod.nafdac_reg_no = request.POST.get('nafdac_reg_no', '')
+                prod.storage_conditions = request.POST.get('storage_conditions', '')
+                prod.author = request.POST.get('author', '')
+                prod.publisher = request.POST.get('publisher', '')
+                prod.isbn = request.POST.get('isbn', '')
+                prod.color = request.POST.get('color', '')
+                prod.size = request.POST.get('size', '')
+                prod.warranty_period = request.POST.get('warranty_period', '')
+                prod.material = new_material
+                old_image_name = prod.image.name if prod.image else None
+                if uploaded_image:
+                    prod.image = uploaded_image
+                elif request.POST.get('remove_image') == 'on':
+                    prod.image = None
+
                 prod.save()
+                if old_image_name and old_image_name != (prod.image.name if prod.image else None):
+                    prod.image.storage.delete(old_image_name)
                 messages.success(request, f"Product '{prod.name}' updated successfully.")
 
         elif action == 'delete_product':
             prod_id = request.POST.get('product_id')
             if is_user_admin:
-                prod = get_object_or_404(Product, id=prod_id)
+                if tenant:
+                    prod = get_object_or_404(Product, id=prod_id, shop__tenant_owner=tenant)
+                else:
+                    prod = get_object_or_404(Product, id=prod_id)
             else:
                 prod = get_object_or_404(Product, id=prod_id, shop=user_shop)
             
@@ -518,6 +908,21 @@ def product_list_view(request):
 
         return redirect('products')
 
+    # --- Stock Summary Aggregates ---
+    from django.db.models import Sum as DSum, F as DF, ExpressionWrapper, DecimalField
+    stock_summary = products.aggregate(
+        total_units=DSum('stock_quantity'),
+        total_cost_value=DSum(ExpressionWrapper(DF('cost_price') * DF('stock_quantity'), output_field=DecimalField(max_digits=14, decimal_places=2))),
+        total_sell_value=DSum(ExpressionWrapper(DF('selling_price') * DF('stock_quantity'), output_field=DecimalField(max_digits=14, decimal_places=2))),
+    )
+    total_units = stock_summary['total_units'] or 0
+    total_cost_value = stock_summary['total_cost_value'] or Decimal('0.00')
+    total_sell_value = stock_summary['total_sell_value'] or Decimal('0.00')
+    total_potential_profit = total_sell_value - total_cost_value
+    total_skus = products.count()
+    low_stock_count = products.filter(stock_quantity__lte=F('min_stock_level')).count()
+    expired_count = products.filter(expiry_date__lte=timezone.localdate()).count()
+
     context = {
         'products': products,
         'categories': categories,
@@ -526,17 +931,33 @@ def product_list_view(request):
         'shops': shops,
         'current_shop_filter': request.GET.get('shop_id', ''),
         'user_shop': user_shop,
+        # Stock summary
+        'total_skus': total_skus,
+        'total_units': total_units,
+        'total_cost_value': total_cost_value,
+        'total_sell_value': total_sell_value,
+        'total_potential_profit': total_potential_profit,
+        'low_stock_count': low_stock_count,
+        'expired_count': expired_count,
+        'business_type': user_profile.business_type,
+        'material_choices': Product.MATERIAL_CHOICES,
     }
     return render(request, 'products.html', context)
 
 @login_required
 def sales_history_view(request):
+    if request.user.is_superuser:
+        return redirect('admin_panel')
     user_profile = request.user.profile
     user_role = user_profile.role
     user_shop = user_profile.shop
     is_user_admin = is_admin(request.user)
+    tenant = get_tenant_scope(request.user)
 
-    sales = Sale.objects.select_related('cashier', 'shop').prefetch_related('items__product').order_by('-timestamp')
+    if tenant:
+        sales = Sale.objects.filter(shop__tenant_owner=tenant).select_related('cashier', 'shop').prefetch_related('items__product').order_by('-timestamp')
+    else:
+        sales = Sale.objects.select_related('cashier', 'shop').prefetch_related('items__product').order_by('-timestamp')
     
     # Scope check
     if not is_user_admin:
@@ -561,14 +982,24 @@ def sales_history_view(request):
     if search_query:
         sales = sales.filter(receipt_number__icontains=search_query)
     if is_user_admin and shop_id:
-        sales = sales.filter(shop_id=shop_id)
+        if tenant:
+            sales = sales.filter(shop_id=shop_id, shop__tenant_owner=tenant)
+        else:
+            sales = sales.filter(shop_id=shop_id)
 
     # Filter dropdowns lists
     if is_user_admin:
-        cashiers = User.objects.filter(sales__isnull=False).distinct()
-        shops = Shop.objects.all().order_by('name')
+        if tenant:
+            cashiers = User.objects.filter(sales__isnull=False, profile__tenant_owner=tenant).distinct()
+            shops = Shop.objects.filter(tenant_owner=tenant).order_by('name')
+        else:
+            cashiers = User.objects.filter(sales__isnull=False).distinct()
+            shops = Shop.objects.all().order_by('name')
     else:
-        cashiers = User.objects.filter(sales__isnull=False, profile__shop=user_shop).distinct()
+        if tenant:
+            cashiers = User.objects.filter(sales__isnull=False, profile__shop=user_shop, profile__tenant_owner=tenant).distinct()
+        else:
+            cashiers = User.objects.filter(sales__isnull=False, profile__shop=user_shop).distinct()
         shops = Shop.objects.none()
 
     payment_choices = Sale.PAYMENT_METHODS
@@ -588,11 +1019,18 @@ def sale_detail_json(request, sale_id):
     user_profile = request.user.profile
     is_user_admin = is_admin(request.user)
     user_shop = user_profile.shop
+    tenant = get_tenant_scope(request.user)
 
     if is_user_admin:
-        sale = get_object_or_404(Sale, id=sale_id)
+        if tenant:
+            sale = get_object_or_404(Sale, id=sale_id, shop__tenant_owner=tenant)
+        else:
+            sale = get_object_or_404(Sale, id=sale_id)
     else:
-        sale = get_object_or_404(Sale, id=sale_id, shop=user_shop)
+        if tenant:
+            sale = get_object_or_404(Sale, id=sale_id, shop=user_shop, shop__tenant_owner=tenant)
+        else:
+            sale = get_object_or_404(Sale, id=sale_id, shop=user_shop)
 
     items_data = []
     for item in sale.items.all():
@@ -626,8 +1064,13 @@ def export_sales_csv(request):
     user_profile = request.user.profile
     is_user_admin = is_admin(request.user)
     user_shop = user_profile.shop
+    tenant = get_tenant_scope(request.user)
 
-    sales = Sale.objects.select_related('cashier', 'shop').order_by('-timestamp')
+    if tenant:
+        sales = Sale.objects.filter(shop__tenant_owner=tenant).select_related('cashier', 'shop').order_by('-timestamp')
+    else:
+        sales = Sale.objects.select_related('cashier', 'shop').order_by('-timestamp')
+
     if not is_user_admin:
         sales = sales.filter(shop=user_shop) if user_shop else sales.none()
 
@@ -649,7 +1092,10 @@ def export_sales_csv(request):
     if search_query:
         sales = sales.filter(receipt_number__icontains=search_query)
     if is_user_admin and shop_id:
-        sales = sales.filter(shop_id=shop_id)
+        if tenant:
+            sales = sales.filter(shop_id=shop_id, shop__tenant_owner=tenant)
+        else:
+            sales = sales.filter(shop_id=shop_id)
 
     response = HttpResponse(content_type='text/csv')
     response['Content-Disposition'] = f'attachment; filename="sales_report_{datetime.now().strftime("%Y%m%d")}.csv"'
@@ -684,6 +1130,8 @@ def export_sales_csv(request):
 @login_required
 @user_passes_test(is_admin)
 def settings_view(request):
+    if request.user.is_superuser:
+        return redirect('admin_panel')
     settings = StoreSettings.get_settings()
     
     if request.method == 'POST':
@@ -711,19 +1159,30 @@ def settings_view(request):
 @login_required
 @user_passes_test(is_admin_or_manager)
 def staff_management_view(request):
+    if request.user.is_superuser:
+        return redirect('admin_panel')
     user_profile = request.user.profile
     is_user_admin = is_admin(request.user)
     user_shop = user_profile.shop
+    tenant = get_tenant_scope(request.user)
 
     # Fetch users list based on role
     # Admin sees all; Manager sees only cashiers in their shop
     if is_user_admin:
-        staff_profiles = UserProfile.objects.select_related('user', 'shop').all().order_by('role', 'user__username')
-        shops = Shop.objects.all().order_by('name')
+        if tenant:
+            staff_profiles = UserProfile.objects.filter(tenant_owner=tenant).select_related('user', 'shop').order_by('role', 'user__username')
+            shops = Shop.objects.filter(tenant_owner=tenant).order_by('name')
+        else:
+            staff_profiles = UserProfile.objects.select_related('user', 'shop').all().order_by('role', 'user__username')
+            shops = Shop.objects.all().order_by('name')
         roles_choices = UserProfile.ROLES
     else:
-        staff_profiles = UserProfile.objects.select_related('user', 'shop').filter(shop=user_shop, role='CASHIER').order_by('user__username')
-        shops = Shop.objects.filter(id=user_shop.id) if user_shop else Shop.objects.none()
+        if tenant:
+            staff_profiles = UserProfile.objects.filter(shop=user_shop, role='CASHIER', tenant_owner=tenant).select_related('user', 'shop').order_by('user__username')
+            shops = Shop.objects.filter(id=user_shop.id, tenant_owner=tenant) if user_shop else Shop.objects.none()
+        else:
+            staff_profiles = UserProfile.objects.select_related('user', 'shop').filter(shop=user_shop, role='CASHIER').order_by('user__username')
+            shops = Shop.objects.filter(id=user_shop.id) if user_shop else Shop.objects.none()
         # Manager can only add Cashier
         roles_choices = [('CASHIER', 'Cashier')]
 
@@ -745,7 +1204,10 @@ def staff_management_view(request):
                 role = 'CASHIER'
                 staff_shop = user_shop
             else:
-                staff_shop = get_object_or_404(Shop, id=shop_id) if shop_id else None
+                if tenant:
+                    staff_shop = get_object_or_404(Shop, id=shop_id, tenant_owner=tenant) if shop_id else None
+                else:
+                    staff_shop = get_object_or_404(Shop, id=shop_id) if shop_id else None
 
             if not staff_shop and role != 'ADMIN':
                 messages.error(request, "Staff creation failed. A shop assignment is required.")
@@ -759,6 +1221,19 @@ def staff_management_view(request):
                 messages.error(request, f"User '{username}' already exists.")
                 return redirect('staff_management')
 
+            # Plan limit checks
+            if tenant and tenant.profile.plan == 'FREE':
+                if role == 'MANAGER':
+                    manager_count = UserProfile.objects.filter(tenant_owner=tenant, role='MANAGER').count()
+                    if manager_count >= 1:
+                        messages.error(request, "Free plan limit reached: Maximum 1 Manager allowed. Please upgrade to Premium.")
+                        return redirect('staff_management')
+                elif role == 'CASHIER':
+                    cashier_count = UserProfile.objects.filter(tenant_owner=tenant, role='CASHIER').count()
+                    if cashier_count >= 1:
+                        messages.error(request, "Free plan limit reached: Maximum 1 Cashier allowed. Please upgrade to Premium.")
+                        return redirect('staff_management')
+
             # Create User with optional first/last name
             new_user = User.objects.create_user(
                 username=username, email=email, password=password,
@@ -768,6 +1243,8 @@ def staff_management_view(request):
             profile = new_user.profile
             profile.role = role
             profile.shop = staff_shop
+            profile.tenant_owner = tenant
+            profile.is_approved = True # Staff accounts are auto-approved under owner
             profile.save()
 
             messages.success(request, f"Account for '{username}' ({profile.get_role_display()}) onboarded successfully.")
@@ -775,9 +1252,15 @@ def staff_management_view(request):
         elif action == 'edit_staff':
             profile_id = request.POST.get('profile_id')
             if is_user_admin:
-                profile_to_edit = get_object_or_404(UserProfile, id=profile_id)
+                if tenant:
+                    profile_to_edit = get_object_or_404(UserProfile, id=profile_id, tenant_owner=tenant)
+                else:
+                    profile_to_edit = get_object_or_404(UserProfile, id=profile_id)
             else:
-                profile_to_edit = get_object_or_404(UserProfile, id=profile_id, shop=user_shop, role='CASHIER')
+                if tenant:
+                    profile_to_edit = get_object_or_404(UserProfile, id=profile_id, shop=user_shop, role='CASHIER', tenant_owner=tenant)
+                else:
+                    profile_to_edit = get_object_or_404(UserProfile, id=profile_id, shop=user_shop, role='CASHIER')
 
             email = request.POST.get('email', '').strip()
             password = request.POST.get('password')
@@ -793,7 +1276,10 @@ def staff_management_view(request):
                 if role:
                     profile_to_edit.role = role
                 if shop_id:
-                    profile_to_edit.shop = get_object_or_404(Shop, id=shop_id)
+                    if tenant:
+                        profile_to_edit.shop = get_object_or_404(Shop, id=shop_id, tenant_owner=tenant)
+                    else:
+                        profile_to_edit.shop = get_object_or_404(Shop, id=shop_id)
                 elif role == 'ADMIN':
                     profile_to_edit.shop = None
 
@@ -803,9 +1289,15 @@ def staff_management_view(request):
         elif action == 'delete_staff':
             profile_id = request.POST.get('profile_id')
             if is_user_admin:
-                profile_to_delete = get_object_or_404(UserProfile, id=profile_id)
+                if tenant:
+                    profile_to_delete = get_object_or_404(UserProfile, id=profile_id, tenant_owner=tenant)
+                else:
+                    profile_to_delete = get_object_or_404(UserProfile, id=profile_id)
             else:
-                profile_to_delete = get_object_or_404(UserProfile, id=profile_id, shop=user_shop, role='CASHIER')
+                if tenant:
+                    profile_to_delete = get_object_or_404(UserProfile, id=profile_id, shop=user_shop, role='CASHIER', tenant_owner=tenant)
+                else:
+                    profile_to_delete = get_object_or_404(UserProfile, id=profile_id, shop=user_shop, role='CASHIER')
 
             user_to_delete = profile_to_delete.user
             if user_to_delete == request.user:
@@ -828,9 +1320,16 @@ def staff_management_view(request):
 @login_required
 @user_passes_test(is_admin)
 def shop_management_view(request):
-    shops = Shop.objects.all().order_by('name')
-    # Filter managers for selection (Admins or Managers)
-    managers = User.objects.filter(profile__role__in=['ADMIN', 'MANAGER']).order_by('username')
+    if request.user.is_superuser:
+        return redirect('admin_panel')
+    tenant = get_tenant_scope(request.user)
+
+    if tenant:
+        shops = Shop.objects.filter(tenant_owner=tenant).order_by('name')
+        managers = User.objects.filter(profile__role__in=['ADMIN', 'MANAGER'], profile__tenant_owner=tenant).order_by('username')
+    else:
+        shops = Shop.objects.all().order_by('name')
+        managers = User.objects.filter(profile__role__in=['ADMIN', 'MANAGER']).order_by('username')
 
     if request.method == 'POST' and 'action' in request.POST:
         action = request.POST.get('action')
@@ -841,10 +1340,20 @@ def shop_management_view(request):
             phone = request.POST.get('phone')
             manager_id = request.POST.get('manager_id')
 
-            manager_user = get_object_or_404(User, id=manager_id) if manager_id else None
+            # Enforce FREE plan limit
+            if tenant and tenant.profile.plan == 'FREE':
+                shop_count = Shop.objects.filter(tenant_owner=tenant).count()
+                if shop_count >= 1:
+                    messages.error(request, "Free plan limit reached: Maximum 1 Shop branch allowed. Please upgrade to Premium.")
+                    return redirect('shops')
+
+            if tenant:
+                manager_user = get_object_or_404(User, id=manager_id, profile__tenant_owner=tenant) if manager_id else None
+            else:
+                manager_user = get_object_or_404(User, id=manager_id) if manager_id else None
 
             if name:
-                shop = Shop.objects.create(name=name, location=location, phone=phone, manager=manager_user)
+                shop = Shop.objects.create(name=name, location=location, phone=phone, manager=manager_user, tenant_owner=tenant)
                 # Link manager's profile to this shop automatically if not linked
                 if manager_user and not manager_user.profile.shop:
                     manager_user.profile.shop = shop
@@ -853,7 +1362,10 @@ def shop_management_view(request):
 
         elif action == 'edit_shop':
             shop_id = request.POST.get('shop_id')
-            shop = get_object_or_404(Shop, id=shop_id)
+            if tenant:
+                shop = get_object_or_404(Shop, id=shop_id, tenant_owner=tenant)
+            else:
+                shop = get_object_or_404(Shop, id=shop_id)
 
             shop.name = request.POST.get('name', shop.name)
             shop.location = request.POST.get('location', shop.location)
@@ -861,7 +1373,10 @@ def shop_management_view(request):
             
             manager_id = request.POST.get('manager_id')
             if manager_id:
-                manager_user = get_object_or_404(User, id=manager_id)
+                if tenant:
+                    manager_user = get_object_or_404(User, id=manager_id, profile__tenant_owner=tenant)
+                else:
+                    manager_user = get_object_or_404(User, id=manager_id)
                 shop.manager = manager_user
                 
                 # Update manager's shop binding
@@ -875,7 +1390,10 @@ def shop_management_view(request):
 
         elif action == 'delete_shop':
             shop_id = request.POST.get('shop_id')
-            shop = get_object_or_404(Shop, id=shop_id)
+            if tenant:
+                shop = get_object_or_404(Shop, id=shop_id, tenant_owner=tenant)
+            else:
+                shop = get_object_or_404(Shop, id=shop_id)
             messages.success(request, f"Shop Branch '{shop.name}' deleted successfully.")
             shop.delete()
 
@@ -887,3 +1405,17 @@ def shop_management_view(request):
         'is_admin': True,
     }
     return render(request, 'shops.html', context)
+
+
+@login_required
+def customer_display_view(request):
+    """A secondary display page intended to face the customer during checkout.
+    Receives live cart data via BroadcastChannel from the POS tab — no server calls needed."""
+    settings = StoreSettings.get_settings()
+    active_ads = list(Advertisement.objects.filter(is_active=True).values('id', 'title', 'content', 'image_url'))
+    context = {
+        'store_name': settings.store_name,
+        'store_address': settings.address or '',
+        'customer_ads_json': json.dumps(active_ads),
+    }
+    return render(request, 'customer_display.html', context)

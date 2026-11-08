@@ -4,6 +4,7 @@
 {% block title %}Products & Stock - viARMS{% endblock %}
 
 {% block content %}
+<div class="products-page">
 <div class="panel-header" style="flex-wrap: wrap; gap: 1rem;">
     <div>
         <h1 style="font-size: 1.75rem; font-weight: 700;">Products & Stock</h1>
@@ -38,7 +39,37 @@
     </div>
 </div>
 
-<div class="dashboard-layout" style="grid-template-columns: 3fr 1fr;">
+<!-- Stock Summary Strip -->
+<div class="glass-panel" style="margin-bottom: 1.5rem; padding: 1.25rem;">
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem;">
+        <div style="display: flex; flex-direction: column; gap: 4px; padding: 0.5rem 1rem; border-right: 1px solid var(--border-color);">
+            <span style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; font-weight: 600; letter-spacing: 0.5px;">Total SKUs</span>
+            <span style="font-size: 1.5rem; font-weight: 700; color: var(--text-primary);">{{ total_skus }}</span>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 4px; padding: 0.5rem 1rem; border-right: 1px solid var(--border-color);">
+            <span style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; font-weight: 600; letter-spacing: 0.5px;">Total Stock Units</span>
+            <span style="font-size: 1.5rem; font-weight: 700; color: var(--color-primary);">{{ total_units }}</span>
+        </div>
+        {% if is_admin %}
+        <div style="display: flex; flex-direction: column; gap: 4px; padding: 0.5rem 1rem; border-right: 1px solid var(--border-color);">
+            <span style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; font-weight: 600; letter-spacing: 0.5px;">Total Cost Value</span>
+            <span style="font-size: 1.5rem; font-weight: 700; color: var(--text-primary);">₦{{ total_cost_value|floatformat:2 }}</span>
+        </div>
+        {% endif %}
+        <div style="display: flex; flex-direction: column; gap: 4px; padding: 0.5rem 1rem; {% if is_admin %}border-right: 1px solid var(--border-color);{% endif %}">
+            <span style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; font-weight: 600; letter-spacing: 0.5px;">Total Retail Value</span>
+            <span style="font-size: 1.5rem; font-weight: 700; color: var(--color-success);">₦{{ total_sell_value|floatformat:2 }}</span>
+        </div>
+        {% if is_admin %}
+        <div style="display: flex; flex-direction: column; gap: 4px; padding: 0.5rem 1rem;">
+            <span style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; font-weight: 600; letter-spacing: 0.5px;">Potential Profit</span>
+            <span style="font-size: 1.5rem; font-weight: 700; color: #a5b4fc;">₦{{ total_potential_profit|floatformat:2 }}</span>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<div class="dashboard-layout layout-3-1">
     <!-- LEFT COLUMN: Product Catalog Table -->
     <div class="glass-panel" style="padding: 1.5rem;">
         <div style="display: flex; gap: 1rem; margin-bottom: 1.25rem; flex-wrap: wrap;">
@@ -69,6 +100,23 @@
                         <th>Cost Price</th>
                         {% endif %}
                         <th>Selling Price</th>
+                        {% if business_type == 'PHARMACEUTICAL' %}
+                        <th>Generic / Form</th>
+                        <th>Manufacturer</th>
+                        <th>Strength</th>
+                        <th>Batch / NAFDAC</th>
+                        <th>Storage</th>
+                        <th>Rx Required</th>
+                        {% elif business_type == 'BOOK_ACCESSORIES' %}
+                        <th>Author</th>
+                        <th>Publisher</th>
+                        <th>ISBN</th>
+                        <th>Color</th>
+                        <th>Size</th>
+                        <th>Warranty</th>
+                        {% elif business_type == 'UTENSILS' %}
+                        <th>Material</th>
+                        {% endif %}
                         <th>Expiry Date</th>
                         <th>Stock Level</th>
                         {% if is_admin or is_manager %}
@@ -81,6 +129,9 @@
                         {% for p in products %}
                             <tr class="product-row" data-name="{{ p.name|lower }}" data-sku="{{ p.sku|lower }}" data-category="{% if p.category %}{{ p.category.name }}{% else %}Uncategorized{% endif %}">
                                 <td>
+                                    {% if p.image %}
+                                    <img src="{{ p.image.url }}" alt="{{ p.name }}" loading="lazy" style="width: 48px; height: 48px; object-fit: cover; border-radius: 6px; margin-bottom: 0.35rem;">
+                                    {% endif %}
                                     <div style="font-weight: 600; {% if p.is_expired %}text-decoration: line-through; color: var(--text-muted);{% endif %}">{{ p.name }}</div>
                                     {% if p.description %}
                                         <div style="font-size: 0.75rem; color: var(--text-muted); max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ p.description }}</div>
@@ -97,6 +148,35 @@
                                 <td style="color: var(--text-secondary);">₦{{ p.cost_price|floatformat:2 }}</td>
                                 {% endif %}
                                 <td style="font-weight: 600; color: var(--color-primary);">₦{{ p.selling_price|floatformat:2 }}</td>
+                                {% if business_type == 'PHARMACEUTICAL' %}
+                                <td style="font-size: 0.85rem;">
+                                    <strong>{{ p.generic_name|default:"-" }}</strong>
+                                    <div style="font-size: 0.75rem; color: var(--text-muted);">{{ p.dosage_form|default:"-" }}</div>
+                                </td>
+                                <td style="font-size: 0.85rem;">{{ p.manufacturer|default:"-" }}</td>
+                                <td style="font-size: 0.85rem;">{{ p.strength|default:"-" }}</td>
+                                <td style="font-size: 0.85rem;">
+                                    Batch: <code>{{ p.batch_number|default:"-" }}</code>
+                                    <div style="font-size: 0.75rem; color: var(--text-muted);">NAFDAC: {{ p.nafdac_reg_no|default:"-" }}</div>
+                                </td>
+                                <td style="font-size: 0.85rem; font-style: italic;">{{ p.storage_conditions|default:"-" }}</td>
+                                <td>
+                                    {% if p.prescription_required %}
+                                        <span class="badge badge-danger" style="font-size: 0.7rem;">Rx</span>
+                                    {% else %}
+                                        <span class="badge badge-info" style="font-size: 0.7rem; opacity: 0.6;">OTC</span>
+                                    {% endif %}
+                                </td>
+                                {% elif business_type == 'BOOK_ACCESSORIES' %}
+                                <td style="font-size: 0.85rem;">{{ p.author|default:"-" }}</td>
+                                <td style="font-size: 0.85rem;">{{ p.publisher|default:"-" }}</td>
+                                <td style="font-family: monospace; font-size: 0.8rem;">{{ p.isbn|default:"-" }}</td>
+                                <td style="font-size: 0.85rem;">{{ p.color|default:"-" }}</td>
+                                <td style="font-size: 0.85rem;">{{ p.size|default:"-" }}</td>
+                                <td style="font-size: 0.85rem;">{{ p.warranty_period|default:"-" }}</td>
+                                {% elif business_type == 'UTENSILS' %}
+                                <td style="font-size: 0.85rem;">{{ p.get_material_display|default:"-" }}</td>
+                                {% endif %}
                                 <td>
                                     {% if p.expiry_date %}
                                         {% if p.is_expired %}
@@ -128,7 +208,7 @@
                                 </td>
                                 {% if is_admin or is_manager %}
                                 <td style="text-align: right; white-space: nowrap;">
-                                    <button class="btn btn-secondary btn-sm" onclick="editProductPopup('{{ p.id }}', '{{ p.name|escapejs }}', '{{ p.sku|escapejs }}', '{{ p.category.id }}', '{{ p.cost_price }}', '{{ p.selling_price }}', '{{ p.stock_quantity }}', '{{ p.min_stock_level }}', '{{ p.description|escapejs }}', '{{ p.expiry_date|date:'Y-m-d' }}', '{{ p.shop.id }}')">
+                                     <button class="btn btn-secondary btn-sm" onclick="editProductPopup('{{ p.id }}', '{{ p.name|escapejs }}', '{{ p.sku|escapejs }}', '{{ p.category.id }}', '{{ p.cost_price }}', '{{ p.selling_price }}', '{{ p.stock_quantity }}', '{{ p.min_stock_level }}', '{{ p.description|escapejs }}', '{{ p.expiry_date|date:'Y-m-d' }}', '{{ p.shop.id }}', '{{ p.dosage_form|escapejs }}', '{{ p.generic_name|escapejs }}', '{{ p.prescription_required }}', '{{ p.author|escapejs }}', '{{ p.publisher|escapejs }}', '{{ p.isbn|escapejs }}', '{{ p.color|escapejs }}', '{{ p.size|escapejs }}', '{{ p.warranty_period|escapejs }}', '{{ p.manufacturer|escapejs }}', '{{ p.strength|escapejs }}', '{{ p.batch_number|escapejs }}', '{{ p.nafdac_reg_no|escapejs }}', '{{ p.storage_conditions|escapejs }}', '{{ p.material|escapejs }}', '{% if p.image %}{{ p.image.url|escapejs }}{% endif %}')">
                                         <i data-lucide="edit" style="width: 12px; height: 12px;"></i>
                                     </button>
                                     <form method="POST" style="display: inline-block;" onsubmit="return confirm('Are you sure you want to delete this product? This will preserve its sales history.');">
@@ -253,22 +333,27 @@
             <h3 class="panel-title">Add New Product</h3>
             <button class="modal-close" onclick="closeModal('add-product-modal')">&times;</button>
         </div>
-        <form method="POST">
+        <form method="POST" enctype="multipart/form-data">
             {% csrf_token %}
             <input type="hidden" name="action" value="add_product">
             
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+            <div class="form-row-grid-2">
                 <div class="form-group">
                     <label for="prod-name" class="form-label">Product Name</label>
                     <input type="text" name="name" id="prod-name" class="form-control" required placeholder="e.g. Basmati Rice 1kg">
                 </div>
                 <div class="form-group">
                     <label for="prod-sku" class="form-label">SKU / Barcode</label>
-                    <input type="text" name="sku" id="prod-sku" class="form-control" required placeholder="e.g. 5449000131805">
+                    <div style="display: flex; gap: 0.5rem; align-items: center;">
+                        <input type="text" name="sku" id="prod-sku" class="form-control" required placeholder="e.g. 5449000131805" style="flex-grow: 1;">
+                        <button type="button" class="btn btn-secondary" onclick="startSkuScanner('prod-sku')" style="padding: 0.5rem; display: flex; align-items: center; justify-content: center; height: 38px; width: 38px;" title="Scan Barcode with Camera">
+                            <i data-lucide="camera" style="width: 16px; height: 16px;"></i>
+                        </button>
+                    </div>
                 </div>
             </div>
 
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+            <div class="form-row-grid-2">
                 <div class="form-group">
                     <label for="prod-cat" class="form-label">Category</label>
                     <select name="category_id" id="prod-cat" class="form-control">
@@ -278,13 +363,13 @@
                         {% endfor %}
                     </select>
                 </div>
-                <div class="form-group">
+                <div class="form-group" id="prod-expiry-group">
                     <label for="prod-expiry" class="form-label">Expiry Date</label>
                     <input type="date" name="expiry_date" id="prod-expiry" class="form-control">
                 </div>
             </div>
 
-            <div style="display: grid; grid-template-columns: {% if is_admin %}1fr 1fr 1fr{% else %}1fr 1fr{% endif %}; gap: 1rem;">
+            <div class="{% if is_admin %}form-row-grid-3{% else %}form-row-grid-2{% endif %}">
                 {% if is_admin %}
                 <div class="form-group">
                     <label for="prod-shop" class="form-label">Assign to Shop</label>
@@ -304,7 +389,7 @@
                 {% endif %}
             </div>
 
-            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.75rem;">
+            <div class="form-row-grid-3" style="gap: 0.75rem;">
                 <div class="form-group">
                     <label for="prod-cost" class="form-label">Cost Price (₦)</label>
                     <input type="number" name="cost_price" id="prod-cost" class="form-control" step="0.01" min="0" required placeholder="0.00">
@@ -323,6 +408,107 @@
                 <label for="prod-desc" class="form-label">Description (Optional)</label>
                 <textarea name="description" id="prod-desc" class="form-control" rows="2" placeholder="Product details..."></textarea>
             </div>
+            <div class="form-group">
+                <label for="prod-image" class="form-label">Product Image (Optional, max 5 MB)</label>
+                <div style="display: flex; align-items: flex-start; gap: 0.75rem;">
+                    <div style="flex: 1; min-width: 0;">
+                        <input type="file" name="image" id="prod-image" class="form-control" accept="image/jpeg,image/png,image/webp,image/gif">
+                        <img id="prod-image-preview" alt="Selected product image preview"
+                            style="display: none; width: 96px; height: 96px; object-fit: contain; border-radius: 8px; margin-top: 0.5rem; background: var(--bg-surface-solid);">
+                    </div>
+                    <button type="button" class="btn btn-secondary" id="prod-image-camera-button"
+                        style="display: inline-flex; align-items: center; gap: 0.4rem; white-space: nowrap;">
+                        <i data-lucide="camera" style="width: 16px; height: 16px;"></i>
+                        Use Camera
+                    </button>
+                </div>
+            </div>
+
+            {% if business_type == 'PHARMACEUTICAL' %}
+            <hr style="border-color: var(--border-color); margin: 1rem 0;">
+            <div style="font-size: 0.75rem; font-weight: 700; text-transform: uppercase; color: var(--color-primary); letter-spacing: 0.5px; margin-bottom: 0.75rem;"><i data-lucide="pill" style="width:12px;height:12px;vertical-align:middle;margin-right:4px;"></i> Pharmaceutical Details</div>
+            <div class="form-row-grid-2">
+                <div class="form-group">
+                    <label class="form-label">Generic Name (API)</label>
+                    <input type="text" name="generic_name" class="form-control" placeholder="Active ingredient">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Dosage Form</label>
+                    <input type="text" name="dosage_form" class="form-control" placeholder="e.g. Tablet, Syrup, Injection">
+                </div>
+            </div>
+            <div class="form-row-grid-2" style="margin-top: 0.5rem;">
+                <div class="form-group">
+                    <label class="form-label">Manufacturer / Company</label>
+                    <input type="text" name="manufacturer" class="form-control" placeholder="e.g. Emzor, Pfizer">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Strength / Grams</label>
+                    <input type="text" name="strength" class="form-control" placeholder="e.g. 500mg, 10mg/5ml">
+                </div>
+            </div>
+            <div class="form-row-grid-3" style="margin-top: 0.5rem;">
+                <div class="form-group">
+                    <label class="form-label">Batch Number</label>
+                    <input type="text" name="batch_number" class="form-control" placeholder="e.g. B1234">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">NAFDAC Reg. No</label>
+                    <input type="text" name="nafdac_reg_no" class="form-control" placeholder="e.g. A4-1234">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Storage Conditions</label>
+                    <input type="text" name="storage_conditions" class="form-control" placeholder="e.g. Store below 25°C">
+                </div>
+            </div>
+            <div class="form-group" style="margin-top: 0.5rem;">
+                <label class="form-label" style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+                    <input type="checkbox" name="prescription_required" value="true" style="width:16px;height:16px;accent-color:var(--color-primary);">
+                    <span>Prescription Required (Rx)</span>
+                </label>
+            </div>
+            {% elif business_type == 'BOOK_ACCESSORIES' %}
+            <hr style="border-color: var(--border-color); margin: 1rem 0;">
+            <div style="font-size: 0.75rem; font-weight: 700; text-transform: uppercase; color: var(--color-primary); letter-spacing: 0.5px; margin-bottom: 0.75rem;"><i data-lucide="book" style="width:12px;height:12px;vertical-align:middle;margin-right:4px;"></i> Book & Accessory Details</div>
+            <div class="form-row-grid-2">
+                <div class="form-group">
+                    <label class="form-label">Author</label>
+                    <input type="text" name="author" class="form-control" placeholder="Author name">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Publisher</label>
+                    <input type="text" name="publisher" class="form-control" placeholder="Publisher name">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">ISBN</label>
+                    <input type="text" name="isbn" class="form-control" placeholder="e.g. 978-3-16-148410-0">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Color</label>
+                    <input type="text" name="color" class="form-control" placeholder="e.g. Black, Red">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Size</label>
+                    <input type="text" name="size" class="form-control" placeholder="e.g. M, L, XL">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Warranty Period</label>
+                    <input type="text" name="warranty_period" class="form-control" placeholder="e.g. 1 Year">
+                </div>
+            </div>
+            {% elif business_type == 'UTENSILS' %}
+            <hr style="border-color: var(--border-color); margin: 1rem 0;">
+            <div style="font-size: 0.75rem; font-weight: 700; text-transform: uppercase; color: var(--color-primary); letter-spacing: 0.5px; margin-bottom: 0.75rem;">Utensil Details</div>
+            <div class="form-group">
+                <label class="form-label">Material</label>
+                <select name="material" id="prod-material" class="form-control">
+                    <option value="">Select material</option>
+                    {% for value, label in material_choices %}
+                    <option value="{{ value }}">{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            {% endif %}
 
             <div style="display: flex; justify-content: flex-end; gap: 0.75rem; margin-top: 1.5rem;">
                 <button type="button" class="btn btn-secondary" onclick="closeModal('add-product-modal')">Cancel</button>
@@ -339,23 +525,28 @@
             <h3 class="panel-title">Edit Product Details</h3>
             <button class="modal-close" onclick="closeModal('edit-product-modal')">&times;</button>
         </div>
-        <form method="POST">
+        <form method="POST" enctype="multipart/form-data">
             {% csrf_token %}
             <input type="hidden" name="action" value="edit_product">
             <input type="hidden" name="product_id" id="edit-prod-id">
             
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+            <div class="form-row-grid-2">
                 <div class="form-group">
                     <label for="edit-prod-name" class="form-label">Product Name</label>
                     <input type="text" name="name" id="edit-prod-name" class="form-control" required>
                 </div>
                 <div class="form-group">
                     <label for="edit-prod-sku" class="form-label">SKU / Barcode</label>
-                    <input type="text" name="sku" id="edit-prod-sku" class="form-control" required>
+                    <div style="display: flex; gap: 0.5rem; align-items: center;">
+                        <input type="text" name="sku" id="edit-prod-sku" class="form-control" required style="flex-grow: 1;">
+                        <button type="button" class="btn btn-secondary" onclick="startSkuScanner('edit-prod-sku')" style="padding: 0.5rem; display: flex; align-items: center; justify-content: center; height: 38px; width: 38px;" title="Scan Barcode with Camera">
+                            <i data-lucide="camera" style="width: 16px; height: 16px;"></i>
+                        </button>
+                    </div>
                 </div>
             </div>
 
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+            <div class="form-row-grid-2">
                 <div class="form-group">
                     <label for="edit-prod-cat" class="form-label">Category</label>
                     <select name="category_id" id="edit-prod-cat" class="form-control">
@@ -365,13 +556,13 @@
                         {% endfor %}
                     </select>
                 </div>
-                <div class="form-group">
+                <div class="form-group" id="edit-prod-expiry-group">
                     <label for="edit-prod-expiry" class="form-label">Expiry Date</label>
                     <input type="date" name="expiry_date" id="edit-prod-expiry" class="form-control">
                 </div>
             </div>
 
-            <div style="display: grid; grid-template-columns: {% if is_admin %}1fr 1fr 1fr{% else %}1fr 1fr{% endif %}; gap: 1rem;">
+            <div class="{% if is_admin %}form-row-grid-3{% else %}form-row-grid-2{% endif %}">
                 {% if is_admin %}
                 <div class="form-group">
                     <label for="edit-prod-shop" class="form-label">Assigned Shop</label>
@@ -388,7 +579,7 @@
                 </div>
             </div>
 
-            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.75rem;">
+            <div class="form-row-grid-3" style="gap: 0.75rem;">
                 <div class="form-group">
                     <label for="edit-prod-cost" class="form-label">Cost Price (₦)</label>
                     <input type="number" name="cost_price" id="edit-prod-cost" class="form-control" step="0.01" min="0" required>
@@ -407,6 +598,102 @@
                 <label for="edit-prod-desc" class="form-label">Description (Optional)</label>
                 <textarea name="description" id="edit-prod-desc" class="form-control" rows="2"></textarea>
             </div>
+            <div class="form-group">
+                <label for="edit-prod-image" class="form-label">Product Image (Optional, max 5 MB)</label>
+                <div style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.5rem;">
+                    <img id="edit-prod-image-preview" alt="Current product image" style="display: none; width: 64px; height: 64px; object-fit: cover; border-radius: 6px;">
+                    <label id="remove-prod-image-wrap" style="display: none; font-size: 0.85rem;">
+                        <input type="checkbox" name="remove_image" id="remove-prod-image"> Remove current image
+                    </label>
+                </div>
+                <input type="file" name="image" id="edit-prod-image" class="form-control" accept="image/jpeg,image/png,image/webp,image/gif">
+            </div>
+
+            {% if business_type == 'PHARMACEUTICAL' %}
+            <hr style="border-color: var(--border-color); margin: 1rem 0;">
+            <div style="font-size: 0.75rem; font-weight: 700; text-transform: uppercase; color: var(--color-primary); letter-spacing: 0.5px; margin-bottom: 0.75rem;"><i data-lucide="pill" style="width:12px;height:12px;vertical-align:middle;margin-right:4px;"></i> Pharmaceutical Details</div>
+            <div class="form-row-grid-2">
+                <div class="form-group">
+                    <label class="form-label">Generic Name (API)</label>
+                    <input type="text" name="generic_name" id="edit-prod-generic" class="form-control" placeholder="Active ingredient">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Dosage Form</label>
+                    <input type="text" name="dosage_form" id="edit-prod-dosage" class="form-control" placeholder="e.g. Tablet, Syrup">
+                </div>
+            </div>
+            <div class="form-row-grid-2" style="margin-top: 0.5rem;">
+                <div class="form-group">
+                    <label class="form-label">Manufacturer / Company</label>
+                    <input type="text" name="manufacturer" id="edit-prod-manufacturer" class="form-control" placeholder="e.g. Emzor, Pfizer">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Strength / Grams</label>
+                    <input type="text" name="strength" id="edit-prod-strength" class="form-control" placeholder="e.g. 500mg, 10mg/5ml">
+                </div>
+            </div>
+            <div class="form-row-grid-3" style="margin-top: 0.5rem;">
+                <div class="form-group">
+                    <label class="form-label">Batch Number</label>
+                    <input type="text" name="batch_number" id="edit-prod-batch" class="form-control" placeholder="e.g. B1234">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">NAFDAC Reg. No</label>
+                    <input type="text" name="nafdac_reg_no" id="edit-prod-nafdac" class="form-control" placeholder="e.g. A4-1234">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Storage Conditions</label>
+                    <input type="text" name="storage_conditions" id="edit-prod-storage" class="form-control" placeholder="e.g. Store below 25°C">
+                </div>
+            </div>
+            <div class="form-group" style="margin-top: 0.5rem;">
+                <label class="form-label" style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+                    <input type="checkbox" name="prescription_required" id="edit-prod-rx" value="true" style="width:16px;height:16px;accent-color:var(--color-primary);">
+                    <span>Prescription Required (Rx)</span>
+                </label>
+            </div>
+            {% elif business_type == 'BOOK_ACCESSORIES' %}
+            <hr style="border-color: var(--border-color); margin: 1rem 0;">
+            <div style="font-size: 0.75rem; font-weight: 700; text-transform: uppercase; color: var(--color-primary); letter-spacing: 0.5px; margin-bottom: 0.75rem;"><i data-lucide="book" style="width:12px;height:12px;vertical-align:middle;margin-right:4px;"></i> Book & Accessory Details</div>
+            <div class="form-row-grid-2">
+                <div class="form-group">
+                    <label class="form-label">Author</label>
+                    <input type="text" name="author" id="edit-prod-author" class="form-control">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Publisher</label>
+                    <input type="text" name="publisher" id="edit-prod-publisher" class="form-control">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">ISBN</label>
+                    <input type="text" name="isbn" id="edit-prod-isbn" class="form-control">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Color</label>
+                    <input type="text" name="color" id="edit-prod-color" class="form-control">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Size</label>
+                    <input type="text" name="size" id="edit-prod-size" class="form-control">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Warranty Period</label>
+                    <input type="text" name="warranty_period" id="edit-prod-warranty" class="form-control">
+                </div>
+            </div>
+            {% elif business_type == 'UTENSILS' %}
+            <hr style="border-color: var(--border-color); margin: 1rem 0;">
+            <div style="font-size: 0.75rem; font-weight: 700; text-transform: uppercase; color: var(--color-primary); letter-spacing: 0.5px; margin-bottom: 0.75rem;">Utensil Details</div>
+            <div class="form-group">
+                <label class="form-label">Material</label>
+                <select name="material" id="edit-prod-material" class="form-control">
+                    <option value="">Select material</option>
+                    {% for value, label in material_choices %}
+                    <option value="{{ value }}">{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            {% endif %}
 
             <div style="display: flex; justify-content: flex-end; gap: 0.75rem; margin-top: 1.5rem;">
                 <button type="button" class="btn btn-secondary" onclick="closeModal('edit-product-modal')">Cancel</button>
@@ -415,7 +702,42 @@
         </form>
     </div>
 </div>
+
+<!-- MODAL: Barcode Scanner -->
+<div class="modal-backdrop" id="product-image-camera-modal" style="z-index: 1200;">
+    <div class="modal-window glass-panel" style="max-width: 520px; padding: 1.5rem;">
+        <div class="modal-header">
+            <h3 class="panel-title">Take Product Photo</h3>
+            <button type="button" class="modal-close" id="product-image-camera-close" aria-label="Close camera">&times;</button>
+        </div>
+        <video id="product-image-camera-video" autoplay playsinline
+            style="display: block; width: 100%; max-height: 60dvh; border-radius: 8px; background: #000; object-fit: contain;"></video>
+        <p id="product-image-camera-error" role="alert" style="display: none; color: var(--color-danger); margin-top: 0.75rem;"></p>
+        <div style="display: flex; justify-content: flex-end; gap: 0.75rem; margin-top: 1rem;">
+            <button type="button" class="btn btn-secondary" id="product-image-camera-cancel">Cancel</button>
+            <button type="button" class="btn btn-primary" id="product-image-camera-capture">Take Photo</button>
+        </div>
+    </div>
+</div>
+
+<!-- MODAL: Barcode Scanner -->
+<div class="modal-backdrop" id="barcode-scanner-modal" style="z-index: 1100;">
+    <div class="modal-window glass-panel" style="max-width: 450px; padding: 1.5rem;">
+        <div class="modal-header">
+            <h3 class="panel-title" style="display: flex; align-items: center; gap: 8px;">
+                <i data-lucide="scan-barcode" style="color: var(--color-primary);"></i>
+                Scan Barcode
+            </h3>
+            <button class="modal-close" onclick="stopSkuScanner()">&times;</button>
+        </div>
+        <div id="barcode-reader" style="width: 100%; border-radius: 8px; overflow: hidden; background: #000; margin-top: 1rem; border: 1px solid var(--border-color);"></div>
+        <div style="display: flex; justify-content: flex-end; margin-top: 1.5rem;">
+            <button type="button" class="btn btn-secondary" onclick="stopSkuScanner()">Cancel</button>
+        </div>
+    </div>
+</div>
 {% endif %}
+</div>
 {% endblock %}
 
 {% block scripts %}
@@ -426,6 +748,84 @@
 
     function closeModal(modalId) {
         document.getElementById(modalId).classList.remove('active');
+        if (modalId === 'product-image-camera-modal') stopProductImageCamera();
+    }
+
+    let productImageCameraStream = null;
+
+    async function startProductImageCamera() {
+        const errorMessage = document.getElementById('product-image-camera-error');
+        errorMessage.textContent = '';
+        errorMessage.style.display = 'none';
+
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            errorMessage.textContent = 'Camera access is not supported by this browser. Choose an image file instead.';
+            errorMessage.style.display = 'block';
+            openModal('product-image-camera-modal');
+            return;
+        }
+
+        try {
+            productImageCameraStream = await navigator.mediaDevices.getUserMedia({
+                video: { facingMode: 'environment' },
+                audio: false
+            });
+            document.getElementById('product-image-camera-video').srcObject = productImageCameraStream;
+            openModal('product-image-camera-modal');
+        } catch (error) {
+            console.error('Unable to access product image camera:', error);
+            errorMessage.textContent = 'Unable to access the camera. Check browser permissions, or choose an image file instead.';
+            errorMessage.style.display = 'block';
+            openModal('product-image-camera-modal');
+        }
+    }
+
+    function stopProductImageCamera() {
+        if (productImageCameraStream) {
+            productImageCameraStream.getTracks().forEach(track => track.stop());
+            productImageCameraStream = null;
+        }
+        const video = document.getElementById('product-image-camera-video');
+        if (video) video.srcObject = null;
+    }
+
+    function captureProductImage() {
+        const video = document.getElementById('product-image-camera-video');
+        if (!productImageCameraStream || !video.videoWidth || !video.videoHeight) {
+            const errorMessage = document.getElementById('product-image-camera-error');
+            errorMessage.textContent = 'The camera is not ready yet. Wait a moment and try again.';
+            errorMessage.style.display = 'block';
+            return;
+        }
+
+        const scale = Math.min(1, 1920 / Math.max(video.videoWidth, video.videoHeight));
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.round(video.videoWidth * scale);
+        canvas.height = Math.round(video.videoHeight * scale);
+        canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
+
+        canvas.toBlob(blob => {
+            if (!blob) {
+                const errorMessage = document.getElementById('product-image-camera-error');
+                errorMessage.textContent = 'The photo could not be captured. Please try again.';
+                errorMessage.style.display = 'block';
+                return;
+            }
+            if (blob.size > 5 * 1024 * 1024) {
+                const errorMessage = document.getElementById('product-image-camera-error');
+                errorMessage.textContent = 'This photo is larger than 5 MB. Try again or choose a smaller image.';
+                errorMessage.style.display = 'block';
+                return;
+            }
+
+            const capturedFile = new File([blob], `product-${Date.now()}.jpg`, { type: 'image/jpeg' });
+            const fileInput = document.getElementById('prod-image');
+            const transfer = new DataTransfer();
+            transfer.items.add(capturedFile);
+            fileInput.files = transfer.files;
+            fileInput.dispatchEvent(new Event('change', { bubbles: true }));
+            closeModal('product-image-camera-modal');
+        }, 'image/jpeg', 0.85);
     }
 
     function editCategoryPopup(id, name, desc) {
@@ -435,7 +835,9 @@
         openModal('edit-category-modal');
     }
 
-    function editProductPopup(id, name, sku, categoryId, cost, sell, qty, min, desc, expiry, shopId) {
+    function editProductPopup(id, name, sku, categoryId, cost, sell, qty, min, desc, expiry, shopId,
+                             dosageForm, genericName, rxRequired, author, publisher, isbn, color, size, warranty,
+                             manufacturer, strength, batchNumber, nafdacRegNo, storageConditions, material, imageUrl) {
         document.getElementById('edit-prod-id').value = id;
         document.getElementById('edit-prod-name').value = name;
         document.getElementById('edit-prod-sku').value = sku;
@@ -445,20 +847,123 @@
         document.getElementById('edit-prod-qty').value = qty;
         document.getElementById('edit-prod-min').value = min;
         document.getElementById('edit-prod-desc').value = desc !== 'None' ? desc : '';
-        
+
         // Expiry & Shop Fields
         const expiryField = document.getElementById('edit-prod-expiry');
-        if (expiryField) {
-            expiryField.value = expiry && expiry !== 'None' ? expiry : '';
-        }
+        if (expiryField) expiryField.value = expiry && expiry !== 'None' ? expiry : '';
 
         const shopField = document.getElementById('edit-prod-shop');
-        if (shopField) {
-            shopField.value = shopId && shopId !== 'None' ? shopId : '';
-        }
+        if (shopField) shopField.value = shopId && shopId !== 'None' ? shopId : '';
 
+        // Pharmaceutical fields
+        const dosageField = document.getElementById('edit-prod-dosage');
+        if (dosageField) dosageField.value = dosageForm && dosageForm !== 'None' ? dosageForm : '';
+        const genericField = document.getElementById('edit-prod-generic');
+        if (genericField) genericField.value = genericName && genericName !== 'None' ? genericName : '';
+        const rxField = document.getElementById('edit-prod-rx');
+        if (rxField) rxField.checked = rxRequired === 'True' || rxRequired === true;
+
+        const manufacturerField = document.getElementById('edit-prod-manufacturer');
+        if (manufacturerField) manufacturerField.value = manufacturer && manufacturer !== 'None' ? manufacturer : '';
+        const strengthField = document.getElementById('edit-prod-strength');
+        if (strengthField) strengthField.value = strength && strength !== 'None' ? strength : '';
+        const batchField = document.getElementById('edit-prod-batch');
+        if (batchField) batchField.value = batchNumber && batchNumber !== 'None' ? batchNumber : '';
+        const nafdacField = document.getElementById('edit-prod-nafdac');
+        if (nafdacField) nafdacField.value = nafdacRegNo && nafdacRegNo !== 'None' ? nafdacRegNo : '';
+        const storageField = document.getElementById('edit-prod-storage');
+        if (storageField) storageField.value = storageConditions && storageConditions !== 'None' ? storageConditions : '';
+
+        // Bookshop fields
+        const authorField = document.getElementById('edit-prod-author');
+        if (authorField) authorField.value = author && author !== 'None' ? author : '';
+        const publisherField = document.getElementById('edit-prod-publisher');
+        if (publisherField) publisherField.value = publisher && publisher !== 'None' ? publisher : '';
+        const isbnField = document.getElementById('edit-prod-isbn');
+        if (isbnField) isbnField.value = isbn && isbn !== 'None' ? isbn : '';
+
+        // Accessory fields
+        const colorField = document.getElementById('edit-prod-color');
+        if (colorField) colorField.value = color && color !== 'None' ? color : '';
+        const sizeField = document.getElementById('edit-prod-size');
+        if (sizeField) sizeField.value = size && size !== 'None' ? size : '';
+        const warrantyField = document.getElementById('edit-prod-warranty');
+        if (warrantyField) warrantyField.value = warranty && warranty !== 'None' ? warranty : '';
+        const materialField = document.getElementById('edit-prod-material');
+        if (materialField) materialField.value = material && material !== 'None' ? material : '';
+
+        const imagePreview = document.getElementById('edit-prod-image-preview');
+        const removeImageWrap = document.getElementById('remove-prod-image-wrap');
+        const removeImageField = document.getElementById('remove-prod-image');
+        const imageInput = document.getElementById('edit-prod-image');
+        if (imagePreview) {
+            imagePreview.src = imageUrl || '';
+            imagePreview.style.display = imageUrl ? 'block' : 'none';
+        }
+        if (removeImageWrap) removeImageWrap.style.display = imageUrl ? 'block' : 'none';
+        if (removeImageField) removeImageField.checked = false;
+        if (imageInput) imageInput.value = '';
+
+        updatePlasticExpiry('edit-prod-material', 'edit-prod-expiry-group', 'edit-prod-expiry');
         openModal('edit-product-modal');
     }
+
+    function updatePlasticExpiry(materialId, expiryGroupId, expiryInputId) {
+        const materialField = document.getElementById(materialId);
+        const expiryGroup = document.getElementById(expiryGroupId);
+        const expiryInput = document.getElementById(expiryInputId);
+        if (!materialField || !expiryGroup || !expiryInput) return;
+
+        const isPlastic = materialField.value === 'PLASTIC';
+        expiryGroup.style.display = isPlastic ? 'none' : '';
+        if (isPlastic) expiryInput.value = '';
+    }
+
+    document.addEventListener('DOMContentLoaded', function () {
+        document.getElementById('prod-image-camera-button').addEventListener('click', startProductImageCamera);
+        document.getElementById('product-image-camera-close').addEventListener('click', function () {
+            closeModal('product-image-camera-modal');
+        });
+        document.getElementById('product-image-camera-cancel').addEventListener('click', function () {
+            closeModal('product-image-camera-modal');
+        });
+        document.getElementById('product-image-camera-capture').addEventListener('click', captureProductImage);
+
+        const createImageInput = document.getElementById('prod-image');
+        createImageInput.addEventListener('change', function () {
+            const preview = document.getElementById('prod-image-preview');
+            if (this.files.length) {
+                preview.src = URL.createObjectURL(this.files[0]);
+                preview.style.display = 'block';
+            } else {
+                preview.removeAttribute('src');
+                preview.style.display = 'none';
+            }
+        });
+
+        [['prod-material', 'prod-expiry-group', 'prod-expiry'],
+         ['edit-prod-material', 'edit-prod-expiry-group', 'edit-prod-expiry']].forEach(function (ids) {
+            const materialField = document.getElementById(ids[0]);
+            if (materialField) {
+                materialField.addEventListener('change', function () {
+                    updatePlasticExpiry(ids[0], ids[1], ids[2]);
+                });
+            }
+        });
+
+        const imageInput = document.getElementById('edit-prod-image');
+        if (imageInput) {
+            imageInput.addEventListener('change', function () {
+                const preview = document.getElementById('edit-prod-image-preview');
+                const removeImage = document.getElementById('remove-prod-image');
+                if (this.files.length && preview) {
+                    preview.src = URL.createObjectURL(this.files[0]);
+                    preview.style.display = 'block';
+                    if (removeImage) removeImage.checked = false;
+                }
+            });
+        }
+    });
 
     function filterTable() {
         const query = document.getElementById('prod-search').value.toLowerCase();
@@ -479,6 +984,55 @@
                 row.style.display = 'none';
             }
         });
+    }
+</script>
+<script src="https://unpkg.com/html5-qrcode"></script>
+<script>
+    let html5QrcodeScanner = null;
+    let activeSkuInputId = null;
+
+    function startSkuScanner(targetInputId) {
+        activeSkuInputId = targetInputId;
+        openModal('barcode-scanner-modal');
+
+        // Initialize scanner
+        html5QrcodeScanner = new Html5Qrcode("barcode-reader");
+
+        // Start scanning with environment camera (default back camera)
+        const config = { fps: 10, qrbox: { width: 250, height: 150 } };
+
+        html5QrcodeScanner.start(
+            { facingMode: "environment" },
+            config,
+            (decodedText, decodedResult) => {
+                // Success callback
+                document.getElementById(activeSkuInputId).value = decodedText;
+                stopSkuScanner();
+                showNotification("Barcode scanned successfully: " + decodedText, "success");
+            },
+            (errorMessage) => {
+                // error callback (silenced to prevent logs flooding)
+            }
+        ).catch(err => {
+            console.error("Camera access failed: ", err);
+            alert("Failed to access camera. Please ensure permissions are granted and you are on a secure (HTTPS) connection.");
+            stopSkuScanner();
+        });
+    }
+
+    function stopSkuScanner() {
+        if (html5QrcodeScanner) {
+            html5QrcodeScanner.stop().then(() => {
+                html5QrcodeScanner = null;
+                closeModal('barcode-scanner-modal');
+            }).catch(err => {
+                console.error("Failed to stop scanner: ", err);
+                html5QrcodeScanner = null;
+                closeModal('barcode-scanner-modal');
+            });
+        } else {
+            closeModal('barcode-scanner-modal');
+        }
     }
 </script>
 {% endblock %}

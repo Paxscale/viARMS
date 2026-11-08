@@ -10,6 +10,7 @@ class Shop(models.Model):
     location = models.TextField(blank=True, null=True)
     phone = models.CharField(max_length=50, blank=True, null=True)
     manager = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='managed_shops')
+    tenant_owner = models.ForeignKey(User, on_delete=models.CASCADE, related_name='shops', null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
@@ -24,6 +25,28 @@ class UserProfile(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='profile')
     role = models.CharField(max_length=20, choices=ROLES, default='CASHIER')
     shop = models.ForeignKey(Shop, on_delete=models.SET_NULL, null=True, blank=True, related_name='staff')
+
+    # SaaS Fields
+    tenant_owner = models.ForeignKey(User, on_delete=models.CASCADE, related_name='tenant_members', null=True, blank=True)
+    plan = models.CharField(max_length=20, choices=[('FREE', 'Free'), ('PREMIUM', 'Premium'), ('GOLDEN_PREMIUM', 'Golden Premium')], default='FREE')
+    is_approved = models.BooleanField(default=False)
+    KYC_STATUSES = [
+        ('PENDING', 'Pending review'),
+        ('VERIFIED', 'Verified'),
+        ('RETURNED', 'More information needed'),
+    ]
+    kyc_status = models.CharField(max_length=20, choices=KYC_STATUSES, default='PENDING')
+    kyc_document_type = models.CharField(max_length=60, blank=True)
+    kyc_document_number = models.CharField(max_length=120, blank=True)
+    kyc_notes = models.TextField(blank=True)
+    kyc_reviewed_at = models.DateTimeField(null=True, blank=True)
+    onboarding_completed = models.BooleanField(default=False)
+    business_type = models.CharField(max_length=30, choices=[
+        ('GENERAL', 'General Retail / Provision Store'),
+        ('PHARMACEUTICAL', 'Pharmaceuticals'),
+        ('BOOK_ACCESSORIES', 'Bookshop & Accessories'),
+        ('UTENSILS', 'Utensils & Housewares')
+    ], default='GENERAL')
 
     def __str__(self):
         return f"{self.user.username} - {self.get_role_display()}"
@@ -43,18 +66,28 @@ def save_user_profile(sender, instance, **kwargs):
         UserProfile.objects.get_or_create(user=instance, defaults={'role': role})
 
 class Category(models.Model):
-    name = models.CharField(max_length=100, unique=True)
+    name = models.CharField(max_length=100)
     description = models.TextField(blank=True, null=True)
+    tenant_owner = models.ForeignKey(User, on_delete=models.CASCADE, related_name='categories', null=True, blank=True)
 
     class Meta:
         verbose_name_plural = "Categories"
+        unique_together = [('name', 'tenant_owner')]
 
     def __str__(self):
         return self.name
 
 class Product(models.Model):
+    MATERIAL_CHOICES = [
+        ('PLASTIC', 'Plastic'),
+        ('CERAMIC', 'Ceramic'),
+        ('FIBER', 'Fiber'),
+        ('FABRIC', 'Fabric'),
+        ('OTHER', 'Other'),
+    ]
+
     name = models.CharField(max_length=200)
-    sku = models.CharField(max_length=50, unique=True, verbose_name="SKU/Barcode")
+    sku = models.CharField(max_length=50, db_index=True, verbose_name="SKU/Barcode")
     description = models.TextField(blank=True, null=True)
     category = models.ForeignKey(Category, on_delete=models.SET_NULL, null=True, blank=True, related_name='products')
     cost_price = models.DecimalField(max_digits=10, decimal_places=2, help_text="Purchase/cost price of the product")
@@ -63,9 +96,37 @@ class Product(models.Model):
     min_stock_level = models.IntegerField(default=5, help_text="Alert threshold for low stock")
     is_active = models.BooleanField(default=True)
     expiry_date = models.DateField(null=True, blank=True, help_text="Product expiration date")
+    image = models.ImageField(upload_to='products/', blank=True, null=True)
     shop = models.ForeignKey(Shop, on_delete=models.CASCADE, related_name='products', null=True, blank=True)
+
+    # Business-specific customizable attributes
+    # Pharmaceuticals
+    dosage_form = models.CharField(max_length=100, blank=True, null=True, help_text="e.g. Tablet, Syrup, Injection")
+    generic_name = models.CharField(max_length=200, blank=True, null=True, help_text="Active pharmaceutical ingredient")
+    prescription_required = models.BooleanField(default=False, help_text="Is prescription required to sell this item?")
+    manufacturer = models.CharField(max_length=200, blank=True, null=True, help_text="Manufacturer or Pharmaceutical Company")
+    strength = models.CharField(max_length=100, blank=True, null=True, help_text="Dosage strength or grams (e.g., 500mg, 10mg/5ml)")
+    batch_number = models.CharField(max_length=100, blank=True, null=True, help_text="Manufacturing batch number")
+    nafdac_reg_no = models.CharField(max_length=100, blank=True, null=True, verbose_name="NAFDAC Reg No")
+    storage_conditions = models.CharField(max_length=200, blank=True, null=True, help_text="e.g., Store below 25°C")
+
+    # Bookshop
+    author = models.CharField(max_length=200, blank=True, null=True)
+    publisher = models.CharField(max_length=200, blank=True, null=True)
+    isbn = models.CharField(max_length=50, blank=True, null=True, verbose_name="ISBN")
+
+    # Accessories
+    color = models.CharField(max_length=50, blank=True, null=True)
+    size = models.CharField(max_length=50, blank=True, null=True)
+    warranty_period = models.CharField(max_length=100, blank=True, null=True, help_text="e.g. 6 Months, 1 Year")
+    material = models.CharField(max_length=20, choices=MATERIAL_CHOICES, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        # Same barcode (SKU) is allowed in same shop as long as expiry dates differ.
+        # This supports stocking the same product with multiple batch expiry dates.
+        unique_together = [('sku', 'shop', 'expiry_date')]
 
     def __str__(self):
         shop_prefix = f"[{self.shop.name}] " if self.shop else ""
@@ -156,3 +217,21 @@ class StoreSettings(models.Model):
     def get_settings(cls):
         settings, created = cls.objects.get_or_create(pk=1)
         return settings
+
+
+class Advertisement(models.Model):
+    title = models.CharField(max_length=200)
+    content = models.TextField(blank=True, null=True, help_text="Ad copy / message text")
+    image_url = models.URLField(blank=True, null=True, help_text="URL to an image for this ad")
+    shop = models.ForeignKey(Shop, on_delete=models.CASCADE, related_name='advertisements', null=True, blank=True,
+                             help_text="Leave blank for a platform-wide advertisement")
+    is_active = models.BooleanField(default=True)
+    display_order = models.IntegerField(default=0, help_text="Lower numbers appear first")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['display_order', '-created_at']
+
+    def __str__(self):
+        return self.title

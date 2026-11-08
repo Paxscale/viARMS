@@ -1,6 +1,10 @@
 let cart = [];
 let activeCategory = 'all';
 let searchQuery = '';
+let lastAddedProductId = null;
+let posBarcodeScanner = null;
+let posScannerStartPromise = null;
+const customerDisplayChannel = 'BroadcastChannel' in window ? new BroadcastChannel('viARMS_customer_display') : null;
 
 document.addEventListener("DOMContentLoaded", function () {
     // Check network status and sync
@@ -40,6 +44,10 @@ document.addEventListener("DOMContentLoaded", function () {
         }
     });
 
+    document.getElementById('pos-scan-button').addEventListener('click', startPosBarcodeScanner);
+    document.getElementById('pos-scan-close').addEventListener('click', stopPosBarcodeScanner);
+    document.getElementById('pos-scan-cancel').addEventListener('click', stopPosBarcodeScanner);
+
     // Bind category chips
     const chips = document.querySelectorAll('.category-chip');
     chips.forEach(chip => {
@@ -56,9 +64,106 @@ document.addEventListener("DOMContentLoaded", function () {
     document.getElementById('checkout-btn').addEventListener('click', submitCheckout);
 });
 
+function startPosBarcodeScanner() {
+    if (typeof Html5Qrcode === 'undefined') {
+        showNotification('Barcode scanning is unavailable because the scanner could not be loaded.', 'error');
+        return;
+    }
+
+    const modal = document.getElementById('pos-barcode-scanner-modal');
+    const error = document.getElementById('pos-scan-error');
+    error.style.display = 'none';
+    modal.classList.add('active');
+
+    const scanner = new Html5Qrcode('pos-barcode-reader');
+    posBarcodeScanner = scanner;
+    let barcodeHandled = false;
+    posScannerStartPromise = scanner.start(
+        { facingMode: 'environment' },
+        { fps: 10, qrbox: { width: 250, height: 150 } },
+        decodedText => {
+            if (barcodeHandled || posBarcodeScanner !== scanner) return;
+            barcodeHandled = true;
+            stopPosBarcodeScanner();
+            searchForScannedBarcode(decodedText);
+        },
+        () => {}
+    ).then(() => {
+        if (posBarcodeScanner !== scanner && scanner.isScanning) {
+            return scanner.stop();
+        }
+    }).catch(cameraError => {
+        console.error('Barcode scanner could not start:', cameraError);
+        if (posBarcodeScanner === scanner) {
+            posBarcodeScanner = null;
+            error.textContent = 'Could not access the camera. Allow camera permission and use a supported browser on HTTPS or localhost.';
+            error.style.display = 'block';
+            showNotification(error.textContent, 'error');
+        }
+    }).finally(() => {
+        if (posBarcodeScanner === scanner) posScannerStartPromise = null;
+    });
+}
+
+function stopPosBarcodeScanner() {
+    const scanner = posBarcodeScanner;
+    const startPromise = posScannerStartPromise;
+    posBarcodeScanner = null;
+    document.getElementById('pos-barcode-scanner-modal').classList.remove('active');
+    if (!scanner) return;
+
+    const stopPromise = startPromise
+        ? startPromise.then(() => scanner.isScanning ? scanner.stop() : undefined)
+        : scanner.isScanning ? scanner.stop() : Promise.resolve();
+    stopPromise
+        .then(() => scanner.clear())
+        .catch(cameraError => {
+            console.error('Barcode scanner could not stop cleanly:', cameraError);
+        });
+}
+
+function searchForScannedBarcode(decodedText) {
+    const barcode = decodedText.trim();
+    if (!barcode) return;
+
+    const searchInput = document.getElementById('search-input');
+    const matchedProduct = productsData.find(product => product.sku.toLowerCase() === barcode.toLowerCase());
+    searchInput.value = barcode;
+    searchQuery = barcode.toLowerCase();
+
+    if (activeCategory !== 'all') {
+        activeCategory = 'all';
+        document.querySelectorAll('.category-chip').forEach(chip => {
+            chip.classList.toggle('active', chip.getAttribute('data-category-id') === 'all');
+        });
+    }
+
+    renderCatalog();
+    if (matchedProduct) {
+        addToCart(matchedProduct.id);
+        searchInput.value = '';
+        searchQuery = '';
+        renderCatalog();
+    } else {
+        showNotification('No product found for the scanned barcode.', 'error');
+        searchInput.focus();
+    }
+}
+
+function escapeHtml(value) {
+    return String(value ?? '').replace(/[&<>"']/g, character => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;'
+    })[character]);
+}
+
 // Render catalog grid
 function renderCatalog() {
     const catalog = document.getElementById('products-catalog');
+    const catalogCount = document.getElementById('catalog-count');
     catalog.innerHTML = '';
 
     const filtered = productsData.filter(product => {
@@ -71,18 +176,32 @@ function renderCatalog() {
     });
 
     if (filtered.length === 0) {
+        if (catalogCount) catalogCount.textContent = '0 products';
         catalog.innerHTML = `
-            <div style="grid-column: 1/-1; text-align: center; color: var(--text-muted); padding: 2rem;">
-                No products found matching the criteria.
+            <div class="pos-empty-state">
+                <i data-lucide="search-x" aria-hidden="true"></i>
+                <strong>No products found</strong>
+                <span>Try another product name, SKU, or category.</span>
             </div>
         `;
+        lucide.createIcons();
         return;
     }
 
+    if (catalogCount) {
+        catalogCount.textContent = `${filtered.length} product${filtered.length === 1 ? '' : 's'}`;
+    }
+
     filtered.forEach(product => {
+        const productName = escapeHtml(product.name);
+        const productSku = escapeHtml(product.sku);
+        const categoryName = escapeHtml(product.category_name);
         const isOutOfStock = product.stock_quantity <= 0;
         const card = document.createElement('div');
         card.className = `product-card glass-panel ${isOutOfStock ? 'out-of-stock' : ''}`;
+        card.setAttribute('role', 'button');
+        card.setAttribute('tabindex', isOutOfStock ? '-1' : '0');
+        card.setAttribute('aria-label', isOutOfStock ? `${product.name}, out of stock` : `Add ${product.name} to cart`);
         
         let stockLabel = `${product.stock_quantity} in stock`;
         let stockColor = 'var(--text-secondary)';
@@ -97,25 +216,88 @@ function renderCatalog() {
                 stockColor = 'var(--color-warning)';
             }
             if (product.is_expiring_soon) {
-                expiryWarning = `<div style="font-size: 0.72rem; color: #f59e0b; font-weight: 600; margin-top: 3px; display: flex; align-items: center; gap: 3px;"><i data-lucide="calendar-off" style="width:12px; height:12px;"></i>Expiring: ${product.expiry_date}</div>`;
+                expiryWarning = `<div style="font-size: 0.72rem; color: #f59e0b; font-weight: 600; margin-top: 3px; display: flex; align-items: center; gap: 3px;"><i data-lucide="calendar-off" style="width:12px; height:12px;"></i>Expiring: ${escapeHtml(product.expiry_date)}</div>`;
             }
         }
 
+        let expiryLabel = '';
+        if (product.expiry_date && product.expiry_date !== 'No Expiry') {
+            expiryLabel = `<div style="font-size: 0.72rem; color: var(--text-secondary); margin-top: 3px; display: flex; align-items: center; gap: 3px;"><i data-lucide="calendar" style="width:12px; height:12px;"></i>Exp: ${escapeHtml(product.expiry_date)}</div>`;
+        }
+
+        let pharmaBadge = '';
+        let pharmaSubtext = '';
+        let businessSubtext = '';
+        if (product.generic_name || product.dosage_form || product.strength) {
+            let descStr = '';
+            if (product.generic_name) descStr += `<strong>${escapeHtml(product.generic_name)}</strong>`;
+            if (product.dosage_form) descStr += ` (${escapeHtml(product.dosage_form)})`;
+            if (product.strength) descStr += ` - ${escapeHtml(product.strength)}`;
+
+            let extraInfo = [];
+            if (product.manufacturer) extraInfo.push(escapeHtml(product.manufacturer));
+            if (product.batch_number) extraInfo.push(`B/N: ${escapeHtml(product.batch_number)}`);
+            if (product.nafdac_reg_no) extraInfo.push(`NAFDAC: ${escapeHtml(product.nafdac_reg_no)}`);
+            if (product.storage_conditions) extraInfo.push(`[${escapeHtml(product.storage_conditions)}]`);
+
+            pharmaSubtext = `
+                <div style="font-size: 0.75rem; color: var(--text-secondary); margin-top: 4px; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 4px; line-height: 1.2;">
+                    ${descStr}
+                    ${extraInfo.length > 0 ? `<div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 2px;">${extraInfo.join(' | ')}</div>` : ''}
+                </div>
+            `;
+
+            if (product.prescription_required) {
+                pharmaBadge = `<span class="badge badge-danger" style="font-size: 0.65rem; padding: 0.1rem 0.3rem; margin-left: 6px;">Rx</span>`;
+            } else {
+                pharmaBadge = `<span class="badge badge-info" style="font-size: 0.65rem; padding: 0.1rem 0.3rem; margin-left: 6px; opacity: 0.7; background: rgba(16, 185, 129, 0.2); color: #10b981; border-color: transparent;">OTC</span>`;
+            }
+        }
+
+        const productDetails = [];
+        if (product.author) productDetails.push(`Author: ${escapeHtml(product.author)}`);
+        if (product.publisher) productDetails.push(`Publisher: ${escapeHtml(product.publisher)}`);
+        if (product.isbn) productDetails.push(`ISBN: ${escapeHtml(product.isbn)}`);
+        if (product.color) productDetails.push(`Color: ${escapeHtml(product.color)}`);
+        if (product.size) productDetails.push(`Size: ${escapeHtml(product.size)}`);
+        if (product.warranty_period) productDetails.push(`Warranty: ${escapeHtml(product.warranty_period)}`);
+        if (product.material_display) productDetails.push(`Material: ${escapeHtml(product.material_display)}`);
+        if (productDetails.length) {
+            businessSubtext = `<div class="product-card-business-details">${productDetails.join(' · ')}</div>`;
+        }
+
         card.innerHTML = `
-            <div>
-                <div class="product-card-name">${product.name}</div>
-                <div class="product-card-sku">SKU: ${product.sku}</div>
-                <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 2px;">${product.category_name}</div>
-                ${expiryWarning}
-            </div>
-            <div style="margin-top: auto; display: flex; justify-content: space-between; align-items: flex-end;">
-                <span class="product-card-price">₦${parseFloat(product.selling_price).toFixed(2)}</span>
-                <span class="product-card-stock" style="color: ${stockColor}; font-weight: 500;">${stockLabel}</span>
+            <div class="product-card-layout">
+                ${product.image_url ? `<img class="product-card-image" src="${escapeHtml(product.image_url)}" alt="${productName}" loading="lazy">` : ''}
+                <div class="product-card-details">
+                    <div class="product-card-information">
+                        <div class="product-card-name" style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap;">
+                            <span>${productName}</span>
+                            ${pharmaBadge}
+                        </div>
+                        <div class="product-card-sku">SKU: ${productSku}</div>
+                        <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 2px;">${categoryName}</div>
+                        ${expiryLabel}
+                        ${expiryWarning}
+                        ${pharmaSubtext}
+                        ${businessSubtext}
+                    </div>
+                    <div class="product-card-summary">
+                        <span class="product-card-price">₦${parseFloat(product.selling_price).toFixed(2)}</span>
+                        <span class="product-card-stock" style="color: ${stockColor}; font-weight: 500;">${stockLabel}</span>
+                    </div>
+                </div>
             </div>
         `;
 
         if (!isOutOfStock) {
             card.addEventListener('click', () => addToCart(product.id));
+            card.addEventListener('keydown', event => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    addToCart(product.id);
+                }
+            });
         }
         catalog.appendChild(card);
     });
@@ -127,6 +309,7 @@ function addToCart(productId) {
     const product = productsData.find(p => p.id === productId);
     if (!product || product.stock_quantity <= 0) return;
 
+    lastAddedProductId = productId;
     const cartItem = cart.find(item => item.product_id === productId);
 
     if (cartItem) {
@@ -139,6 +322,7 @@ function addToCart(productId) {
         cart.push({
             product_id: product.id,
             name: product.name,
+            strength: product.strength,
             price: parseFloat(product.selling_price),
             qty: 1,
             max_stock: product.stock_quantity
@@ -172,9 +356,15 @@ function updateCartUI() {
         cart.forEach(item => {
             const row = document.createElement('div');
             row.className = 'cart-item';
+
+            let nameHTML = item.name;
+            if (item.strength) {
+                nameHTML += ` <span style="font-size: 0.75rem; color: var(--text-muted); font-weight: normal;">(${item.strength})</span>`;
+            }
+
             row.innerHTML = `
                 <div class="cart-item-details">
-                    <div class="cart-item-name">${item.name}</div>
+                    <div class="cart-item-name">${nameHTML}</div>
                     <div class="cart-item-price">₦${item.price.toFixed(2)}</div>
                 </div>
                 <div class="cart-item-qty-control">
@@ -243,6 +433,24 @@ function updateTotals() {
     document.getElementById('summary-discount').textContent = `-₦${discount.toFixed(2)}`;
     document.getElementById('summary-tax').textContent = `₦${taxAmount.toFixed(2)}`;
     document.getElementById('summary-total').textContent = `₦${grandTotal.toFixed(2)}`;
+
+    // Persist the current cart so a display opened after scanning has started
+    // can render immediately. BroadcastChannel keeps updates instant.
+    const displayPayload = {
+        type: 'cart_update',
+        items: cart,
+        subtotal: subtotal,
+        discount: discount,
+        tax: taxAmount,
+        grand_total: grandTotal,
+        last_added_id: lastAddedProductId
+    };
+    localStorage.setItem('viARMS_customer_cart', JSON.stringify(displayPayload));
+
+    // Broadcast cart update to secondary customer screen
+    if (customerDisplayChannel) {
+        customerDisplayChannel.postMessage(displayPayload);
+    }
 }
 
 // Submit payment payload to checkout API

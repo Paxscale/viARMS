@@ -1,0 +1,205 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Super Admin Panel - viARMS{% endblock %}
+
+{% block content %}
+<div class="panel-header">
+    <div>
+        <h1 style="font-size: 1.75rem; font-weight: 700;">Super Admin Panel</h1>
+        <p style="color: var(--text-secondary); font-size: 0.9rem;">Manage tenants, approvals, subscriptions, and system-wide settings.</p>
+    </div>
+</div>
+
+<!-- Pending Approvals Section -->
+<div style="margin-bottom: 2rem;">
+    <h2 style="font-size: 1.25rem; font-weight: 600; margin-bottom: 1rem; display: flex; align-items: center; gap: 8px;">
+        <i data-lucide="user-check" style="color: var(--color-warning);"></i> Pending Registrations
+    </h2>
+
+    <div class="glass-panel" style="overflow-x: auto;">
+        <table class="data-table" style="width: 100%; border-collapse: collapse;">
+            <thead>
+                <tr>
+                    <th>User / Email</th>
+                    <th>Business Name</th>
+                    <th>Type</th>
+                    <th>Plan</th>
+                    <th>Date Registered</th>
+                    <th style="text-align: right;">Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for profile in pending_users %}
+                <tr>
+                    <td>
+                        <div style="font-weight: 600;">{{ profile.user.username }}</div>
+                        <div style="font-size: 0.8rem; color: var(--text-muted);">{{ profile.user.email }}</div>
+                    </td>
+                    <td>{{ profile.shop.name|default:"-" }}</td>
+                    <td><span class="badge" style="background: rgba(99,102,241,0.1); color: var(--color-primary);">{{ profile.business_type }}</span></td>
+                    <td><span class="badge" style="background: rgba(245,158,11,0.1); color: var(--color-warning);">{{ profile.plan }}</span></td>
+                    <td>{{ profile.user.date_joined|date:"M d, Y" }}</td>
+                    <td style="text-align: right;">
+                        <form method="POST" style="display: inline-flex; gap: 0.5rem;">
+                            {% csrf_token %}
+                            <input type="hidden" name="user_id" value="{{ profile.user.id }}">
+                            <button type="submit" name="action" value="approve_user" class="btn btn-primary" style="padding: 0.35rem 0.75rem; font-size: 0.8rem;">Approve</button>
+                            <button type="submit" name="action" value="reject_user" class="btn btn-danger" style="padding: 0.35rem 0.75rem; font-size: 0.8rem;" onclick="return confirm('Reject and delete this registration?')">Reject</button>
+                        </form>
+                    </td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="6" style="text-align: center; padding: 2rem; color: var(--text-muted);">
+                        No pending approvals.
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- KYC Review Queue -->
+<div style="margin-bottom: 2rem;">
+    <div class="panel-header" style="margin-bottom: 1rem;">
+        <div>
+            <h2 style="font-size: 1.25rem; font-weight: 600; display: flex; align-items: center; gap: 8px;"><i data-lucide="shield-check" style="color: var(--color-primary);"></i> KYC Review Queue</h2>
+            <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: 0.25rem;">Verify applicant details before approving access to viARMS.</p>
+        </div>
+        <span class="badge badge-warning">{{ pending_kyc|length }} awaiting review</span>
+    </div>
+    <div class="glass-panel" style="padding: 1.25rem;">
+        <div class="table-responsive">
+            <table class="custom-table">
+                <thead><tr><th>Applicant</th><th>Business</th><th>Verification details</th><th>Status</th><th>Review action</th></tr></thead>
+                <tbody>
+                    {% for profile in pending_kyc %}
+                    <tr>
+                        <td><strong>{{ profile.user.username }}</strong><div style="font-size: 0.78rem; color: var(--text-muted);">{{ profile.user.email }}</div></td>
+                        <td>{{ profile.shop.name|default:"-" }}<div style="font-size: 0.78rem; color: var(--text-muted);">{{ profile.get_business_type_display }}</div></td>
+                        <td><strong>{{ profile.kyc_document_type|default:"Not supplied" }}</strong><div style="font-size: 0.78rem; color: var(--text-muted);">{{ profile.kyc_document_number|default:"No reference supplied" }}</div></td>
+                        <td><span class="badge {% if profile.kyc_status == 'RETURNED' %}badge-danger{% else %}badge-warning{% endif %}">{{ profile.get_kyc_status_display }}</span>{% if profile.kyc_notes %}<div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.35rem;">{{ profile.kyc_notes }}</div>{% endif %}</td>
+                        <td>
+                            <form method="POST" style="display: grid; gap: 0.5rem; min-width: 190px;">
+                                {% csrf_token %}<input type="hidden" name="user_id" value="{{ profile.user.id }}">
+                                <input class="form-control" name="kyc_notes" placeholder="Reviewer note (optional)" style="min-height: 34px; padding: 0.4rem 0.55rem; font-size: 0.78rem;">
+                                <div style="display: flex; gap: 0.5rem;"><button class="btn btn-primary btn-sm" name="action" value="verify_kyc">Verify</button><button class="btn btn-secondary btn-sm" name="action" value="return_kyc">Return</button></div>
+                            </form>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="5" style="text-align: center; padding: 2rem; color: var(--text-muted);">No KYC submissions need review.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Grid Layout for Tenants and Ads -->
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 1.5rem;">
+
+    <!-- All Tenants Section -->
+    <div class="glass-panel" style="padding: 1.5rem;">
+        <h2 style="font-size: 1.25rem; font-weight: 600; margin-bottom: 1rem; display: flex; align-items: center; gap: 8px;">
+            <i data-lucide="building-2" style="color: var(--color-primary);"></i> Registered Tenants
+        </h2>
+
+        <div style="max-height: 400px; overflow-y: auto;">
+            <table class="data-table" style="width: 100%; border-collapse: collapse;">
+                <thead>
+                    <tr>
+                        <th>Tenant</th>
+                        <th>Plan</th>
+                        <th>Status</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for profile in all_tenants %}
+                    <tr>
+                        <td>
+                            <div style="font-weight: 600;">{{ profile.shop.name|default:profile.user.username }}</div>
+                            <div style="font-size: 0.8rem; color: var(--text-muted);">{{ profile.user.email }}</div>
+                        </td>
+                        <td>
+                            <form method="POST" style="display: flex; align-items: center; gap: 0.25rem;">
+                                {% csrf_token %}
+                                <input type="hidden" name="user_id" value="{{ profile.user.id }}">
+                                <input type="hidden" name="action" value="update_plan">
+                                <select name="plan" class="form-control" style="font-size: 0.75rem; padding: 0.2rem;" onchange="this.form.submit()">
+                                    <option value="FREE" {% if profile.plan == 'FREE' %}selected{% endif %}>Free</option>
+                                    <option value="PREMIUM" {% if profile.plan == 'PREMIUM' %}selected{% endif %}>Premium</option>
+                                    <option value="GOLDEN_PREMIUM" {% if profile.plan == 'GOLDEN_PREMIUM' %}selected{% endif %}>Golden Premium</option>
+                                </select>
+                            </form>
+                        </td>
+                        <td>
+                            {% if profile.is_approved %}
+                            <span class="badge" style="background: rgba(16,185,129,0.1); color: var(--color-success);">Approved</span>
+                            {% else %}
+                            <span class="badge" style="background: rgba(245,158,11,0.1); color: var(--color-warning);">Pending</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <button class="btn" style="padding: 0.2rem 0.5rem; font-size: 0.75rem;" title="More details...">...</button>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="4" style="text-align: center; padding: 2rem; color: var(--text-muted);">No tenants registered.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Advertisement Management -->
+    <div class="glass-panel" style="padding: 1.5rem;">
+        <h2 style="font-size: 1.25rem; font-weight: 600; margin-bottom: 1rem; display: flex; align-items: center; gap: 8px;">
+            <i data-lucide="monitor-speaker" style="color: var(--color-success);"></i> Customer Display Ads
+        </h2>
+
+        <form method="POST" style="margin-bottom: 1.5rem; background: rgba(0,0,0,0.1); padding: 1rem; border-radius: 8px;">
+            <h4 style="font-size: 0.85rem; margin-bottom: 0.75rem; color: var(--text-muted);">Create New Ad</h4>
+            {% csrf_token %}
+            <input type="hidden" name="action" value="create_ad">
+
+            <div class="form-group" style="margin-bottom: 0.5rem;">
+                <input type="text" name="title" class="form-control" placeholder="Ad Title (e.g. Summer Promo)" required>
+            </div>
+            <div class="form-group" style="margin-bottom: 0.5rem;">
+                <textarea name="content" class="form-control" placeholder="Ad message/text (optional)" rows="2"></textarea>
+            </div>
+            <div class="form-group" style="margin-bottom: 0.5rem;">
+                <input type="url" name="image_url" class="form-control" placeholder="Image URL (optional)">
+            </div>
+            <button type="submit" class="btn btn-primary" style="width: 100%;">Add Advertisement</button>
+        </form>
+
+        <div style="max-height: 200px; overflow-y: auto;">
+            <ul style="list-style: none; padding: 0; margin: 0;">
+                {% for ad in ads %}
+                <li style="display: flex; justify-content: space-between; align-items: flex-start; padding: 0.75rem; border-bottom: 1px solid var(--border-color);">
+                    <div>
+                        <div style="font-weight: 600;">{{ ad.title }}</div>
+                        <div style="font-size: 0.8rem; color: var(--text-muted);">{{ ad.content|truncatechars:50 }}</div>
+                    </div>
+                    <form method="POST">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="delete_ad">
+                        <input type="hidden" name="ad_id" value="{{ ad.id }}">
+                        <button type="submit" class="btn btn-danger" style="padding: 0.2rem 0.5rem; font-size: 0.75rem;" onclick="return confirm('Delete this ad?')"><i data-lucide="trash-2" style="width: 14px; height: 14px;"></i></button>
+                    </form>
+                </li>
+                {% empty %}
+                <li style="text-align: center; padding: 1rem; color: var(--text-muted); font-size: 0.85rem;">No active ads.</li>
+                {% endfor %}
+            </ul>
+        </div>
+    </div>
+</div>
+{% endblock %}

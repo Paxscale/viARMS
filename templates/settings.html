@@ -7,11 +7,42 @@
 <div class="panel-header">
     <div>
         <h1 style="font-size: 1.75rem; font-weight: 700;">Store Settings</h1>
-        <p style="color: var(--text-secondary); font-size: 0.9rem;">Configure receipt details, default business details, and billing policies.</p>
+        <p style="color: var(--text-secondary); font-size: 0.9rem;">Configure receipt details, default business details, billing policies, and theme.</p>
     </div>
 </div>
 
-<div class="dashboard-layout" style="grid-template-columns: 2fr 1fr;">
+<!-- Theme Appearance Picker -->
+<div class="glass-panel" style="padding: 1.75rem; margin-bottom: 1.5rem;">
+    <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 1.25rem;">
+        <i data-lucide="palette" style="color: var(--color-primary); width: 20px; height: 20px;"></i>
+        <h2 style="font-size: 1.1rem; font-weight: 700;">App Appearance</h2>
+        <span style="font-size: 0.75rem; color: var(--text-muted); margin-left: auto;">Saved automatically to your browser</span>
+    </div>
+    <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 0.75rem;" id="theme-picker">
+        <button onclick="setTheme('ocean')" class="theme-btn" data-theme-val="ocean" style="display: flex; align-items: center; gap: 0.6rem; padding: 0.75rem 1rem; border-radius: 10px; border: 2px solid transparent; background: rgba(99,102,241,0.08); cursor: pointer; transition: all 0.2s; font-size: 0.85rem; font-weight: 500;">
+            <div style="width: 18px; height: 18px; border-radius: 50%; background: linear-gradient(135deg, #6366f1, #4f46e5); flex-shrink: 0; box-shadow: 0 0 8px rgba(99,102,241,0.5);"></div>
+            <span style="color: var(--text-primary);">Ocean</span>
+            <i data-lucide="check" class="theme-check" style="width: 14px; height: 14px; color: var(--color-primary); margin-left: auto; display: none;"></i>
+        </button>
+        <button onclick="setTheme('forest')" class="theme-btn" data-theme-val="forest" style="display: flex; align-items: center; gap: 0.6rem; padding: 0.75rem 1rem; border-radius: 10px; border: 2px solid transparent; background: rgba(16,185,129,0.08); cursor: pointer; transition: all 0.2s; font-size: 0.85rem; font-weight: 500;">
+            <div style="width: 18px; height: 18px; border-radius: 50%; background: linear-gradient(135deg, #10b981, #059669); flex-shrink: 0; box-shadow: 0 0 8px rgba(16,185,129,0.5);"></div>
+            <span style="color: var(--text-primary);">Forest</span>
+            <i data-lucide="check" class="theme-check" style="width: 14px; height: 14px; color: #10b981; margin-left: auto; display: none;"></i>
+        </button>
+        <button onclick="setTheme('crimson')" class="theme-btn" data-theme-val="crimson" style="display: flex; align-items: center; gap: 0.6rem; padding: 0.75rem 1rem; border-radius: 10px; border: 2px solid transparent; background: rgba(244,63,94,0.08); cursor: pointer; transition: all 0.2s; font-size: 0.85rem; font-weight: 500;">
+            <div style="width: 18px; height: 18px; border-radius: 50%; background: linear-gradient(135deg, #f43f5e, #e11d48); flex-shrink: 0; box-shadow: 0 0 8px rgba(244,63,94,0.5);"></div>
+            <span style="color: var(--text-primary);">Crimson</span>
+            <i data-lucide="check" class="theme-check" style="width: 14px; height: 14px; color: #f43f5e; margin-left: auto; display: none;"></i>
+        </button>
+        <button onclick="setTheme('solar')" class="theme-btn" data-theme-val="solar" style="display: flex; align-items: center; gap: 0.6rem; padding: 0.75rem 1rem; border-radius: 10px; border: 2px solid transparent; background: rgba(245,158,11,0.08); cursor: pointer; transition: all 0.2s; font-size: 0.85rem; font-weight: 500;">
+            <div style="width: 18px; height: 18px; border-radius: 50%; background: linear-gradient(135deg, #f59e0b, #d97706); flex-shrink: 0; box-shadow: 0 0 8px rgba(245,158,11,0.5);"></div>
+            <span style="color: var(--text-primary);">Solar</span>
+            <i data-lucide="check" class="theme-check" style="width: 14px; height: 14px; color: #f59e0b; margin-left: auto; display: none;"></i>
+        </button>
+    </div>
+</div>
+
+<div class="dashboard-layout layout-2-1">
     <!-- LEFT PANEL: Edit settings form -->
     <div class="glass-panel" style="padding: 2rem;">
         <div class="panel-header" style="margin-bottom: 1.5rem; border-bottom: 1px solid var(--border-color); padding-bottom: 0.75rem;">
@@ -24,7 +55,7 @@
         <form method="POST">
             {% csrf_token %}
             
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem;">
+            <div class="form-row-grid-2" style="gap: 1.5rem;">
                 <div class="form-group">
                     <label for="store_name" class="form-label">Business / Shop Name</label>
                     <input type="text" name="store_name" id="store_name" class="form-control" value="{{ settings.store_name }}" required>
@@ -42,7 +73,7 @@
                 </div>
             </div>
 
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem;">
+            <div class="form-row-grid-2" style="gap: 1.5rem;">
                 <div class="form-group">
                     <label for="tax_rate" class="form-label">Default Invoice Tax Rate (%)</label>
                     <input type="number" name="tax_rate" id="tax_rate" class="form-control" value="{{ settings.tax_rate }}" step="0.01" min="0" max="100" required>
@@ -102,4 +133,30 @@
         </div>
     </div>
 </div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // Theme management
+    function setTheme(theme) {
+        document.documentElement.setAttribute('data-theme', theme);
+        document.body.setAttribute('data-theme', theme);
+        localStorage.setItem('viarms-theme', theme);
+        updateThemeUI(theme);
+        lucide.createIcons();
+    }
+    function updateThemeUI(theme) {
+        document.querySelectorAll('.theme-btn').forEach(btn => {
+            const isActive = btn.dataset.themeVal === theme;
+            btn.style.borderColor = isActive ? 'var(--color-primary)' : 'transparent';
+            btn.style.opacity = isActive ? '1' : '0.75';
+            const check = btn.querySelector('.theme-check');
+            if (check) check.style.display = isActive ? 'inline' : 'none';
+        });
+    }
+    // Init on page load
+    const savedTheme = localStorage.getItem('viarms-theme') || 'ocean';
+    updateThemeUI(savedTheme);
+</script>
 {% endblock %}

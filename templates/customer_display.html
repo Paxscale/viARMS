@@ -1,0 +1,378 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Customer Display — {{ store_name }}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #06091a;
+            --surface: rgba(255,255,255,0.04);
+            --border: rgba(255,255,255,0.08);
+            --primary: #6366f1;
+            --success: #10b981;
+            --text: #f8fafc;
+            --muted: #94a3b8;
+            --font: 'Outfit', sans-serif;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        html, body { height: 100%; }
+
+        body {
+            font-family: var(--font);
+            background: var(--bg);
+            color: var(--text);
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+            overflow: hidden;
+        }
+
+        /* Background ambient blobs */
+        body::before, body::after {
+            content: '';
+            position: fixed;
+            border-radius: 50%;
+            filter: blur(120px);
+            opacity: 0.15;
+            pointer-events: none;
+            z-index: 0;
+        }
+        body::before { width: 600px; height: 600px; background: var(--primary); top: -200px; left: -200px; }
+        body::after  { width: 500px; height: 500px; background: var(--success); bottom: -150px; right: -150px; }
+
+        /* ---- Header ---- */
+        .display-header {
+            position: relative;
+            z-index: 1;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 1.5rem 2.5rem;
+            border-bottom: 1px solid var(--border);
+            background: rgba(10,15,26,0.7);
+            backdrop-filter: blur(20px);
+        }
+        .store-name {
+            font-size: clamp(1.3rem, 3vw, 2rem);
+            font-weight: 800;
+            background: linear-gradient(135deg, #a5b4fc, var(--primary));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .store-address { font-size: 0.85rem; color: var(--muted); margin-top: 2px; }
+        .display-badge {
+            font-size: 0.75rem;
+            font-weight: 600;
+            padding: 0.3rem 0.75rem;
+            border-radius: 30px;
+            border: 1px solid rgba(99,102,241,0.4);
+            background: rgba(99,102,241,0.1);
+            color: var(--primary);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        /* ---- Idle State (no items) ---- */
+        #idle-screen {
+            position: relative;
+            z-index: 1;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 1.25rem;
+            text-align: center;
+            padding: 2rem;
+        }
+        .idle-icon { font-size: 5rem; opacity: 0.2; }
+        .idle-title {
+            font-size: clamp(2rem, 5vw, 4rem);
+            font-weight: 700;
+            color: var(--text);
+            opacity: 0.5;
+        }
+        .idle-sub { font-size: 1.1rem; color: var(--muted); }
+
+        #idle-hero {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 1.25rem;
+            text-align: center;
+            padding: 2rem;
+            transition: opacity 0.3s ease;
+        }
+
+        #ad-container {
+            display: none;
+            flex: 1;
+            min-height: 0;
+            position: relative;
+            overflow: hidden;
+            border-top: 1px solid var(--border);
+            background: linear-gradient(135deg, rgba(99,102,241,0.14), rgba(16,185,129,0.08));
+        }
+        #ad-container.has-ads { display: flex; }
+        #ad-content {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: clamp(1.5rem, 5vw, 4rem);
+            text-align: center;
+            transition: opacity 0.5s ease;
+            opacity: 0;
+        }
+        #ad-content::before {
+            content: 'Now showing';
+            margin-bottom: 0.8rem;
+            color: var(--primary);
+            font-size: 0.72rem;
+            font-weight: 700;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+        }
+
+        /* ---- Active Cart ---- */
+        #active-screen {
+            position: relative;
+            z-index: 1;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        /* Column headers */
+        .cart-col-header {
+            display: grid;
+            grid-template-columns: 1fr auto auto;
+            gap: 1rem;
+            padding: 0.85rem 2.5rem;
+            border-bottom: 1px solid var(--border);
+            font-size: 0.8rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--muted);
+            background: rgba(15,23,42,0.4);
+        }
+        .cart-col-header span:nth-child(2) { text-align: center; min-width: 60px; }
+        .cart-col-header span:nth-child(3) { text-align: right; min-width: 110px; }
+
+        /* Scrollable items list */
+        #cart-items-display {
+            flex: 1;
+            overflow-y: auto;
+            padding: 0.75rem 2.5rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+        #cart-items-display::-webkit-scrollbar { width: 6px; }
+        #cart-items-display::-webkit-scrollbar-thumb { background: var(--primary); border-radius: 3px; }
+
+        .display-item {
+            display: grid;
+            grid-template-columns: 1fr auto auto;
+            gap: 1rem;
+            align-items: center;
+            padding: 1rem 1.25rem;
+            border-radius: 12px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            transition: all 0.25s ease;
+            animation: slideIn 0.3s ease forwards;
+        }
+        .display-item.highlight { border-color: var(--primary); background: rgba(99,102,241,0.08); }
+        @keyframes slideIn { from { opacity:0; transform: translateY(10px); } to { opacity:1; transform:translateY(0); } }
+
+        .item-name { font-size: clamp(0.95rem, 2vw, 1.2rem); font-weight: 600; }
+        .item-unit { font-size: 0.85rem; color: var(--muted); margin-top: 2px; }
+        .item-qty {
+            text-align: center;
+            min-width: 60px;
+            font-size: clamp(1rem, 2vw, 1.3rem);
+            font-weight: 700;
+            color: var(--primary);
+        }
+        .item-subtotal {
+            text-align: right;
+            min-width: 110px;
+            font-size: clamp(1rem, 2vw, 1.35rem);
+            font-weight: 700;
+        }
+
+        /* ---- Totals Footer ---- */
+        .display-footer {
+            border-top: 1px solid var(--border);
+            background: rgba(10,15,26,0.8);
+            backdrop-filter: blur(20px);
+            padding: 1.25rem 2.5rem;
+        }
+        .totals-grid {
+            display: flex;
+            justify-content: flex-end;
+            align-items: center;
+            gap: 2.5rem;
+            flex-wrap: wrap;
+        }
+        .total-item { text-align: right; }
+        .total-label { font-size: 0.8rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
+        .total-amount { font-size: clamp(1.1rem, 2.5vw, 1.6rem); font-weight: 700; margin-top: 2px; }
+        .grand-amount {
+            font-size: clamp(1.8rem, 4vw, 2.8rem);
+            font-weight: 800;
+            color: var(--success);
+            transition: all 0.4s ease;
+        }
+        .grand-amount.pop {
+            transform: scale(1.08);
+            color: #34d399;
+        }
+    </style>
+</head>
+<body>
+
+    <header class="display-header">
+        <div>
+            <div class="store-name">{{ store_name }}</div>
+            <div class="store-address">{{ store_address }}</div>
+        </div>
+        <span class="display-badge">Customer Display</span>
+    </header>
+
+    <!-- Idle screen (shown when cart is empty) -->
+    <div id="idle-screen" style="flex: 1; display: flex; flex-direction: column;">
+        <div id="idle-hero">
+            <div class="idle-icon">🛍️</div>
+            <div class="idle-title">Welcome!</div>
+            <div class="idle-sub">Your items will appear here as they are scanned.</div>
+        </div>
+
+        <!-- Customer Display Ads Container -->
+        <div id="ad-container" aria-live="polite">
+            <div id="ad-content">
+                <h2 id="ad-title" style="font-size: 2.5rem; font-weight: 800; margin-bottom: 1rem; color: var(--primary);"></h2>
+                <p id="ad-text" style="font-size: 1.5rem; color: var(--text); max-width: 800px;"></p>
+                <img id="ad-image" src="" alt="Ad Image" style="display: none; max-height: 200px; margin-top: 1.5rem; border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.5);">
+            </div>
+        </div>
+    </div>
+
+    <!-- Active cart screen (shown when items are in cart) -->
+    <div id="active-screen" style="display:none;">
+        <div class="cart-col-header">
+            <span>Item</span>
+            <span>Qty</span>
+            <span>Amount</span>
+        </div>
+        <div id="cart-items-display"></div>
+    </div>
+
+    <footer class="display-footer" id="display-footer" style="display:none;">
+        <div class="totals-grid">
+            <div class="total-item">
+                <div class="total-label">Subtotal</div>
+                <div class="total-amount" id="disp-subtotal">₦0.00</div>
+            </div>
+            <div class="total-item" id="disp-discount-block" style="display:none;">
+                <div class="total-label">Discount</div>
+                <div class="total-amount" style="color:#f43f5e;" id="disp-discount">-₦0.00</div>
+            </div>
+            <div class="total-item" id="disp-tax-block" style="display:none;">
+                <div class="total-label">Tax</div>
+                <div class="total-amount" id="disp-tax">₦0.00</div>
+            </div>
+            <div class="total-item">
+                <div class="total-label">Total Due</div>
+                <div class="grand-amount" id="disp-grand">₦0.00</div>
+            </div>
+        </div>
+    </footer>
+
+    <script src="{% static 'js/customer_display.js' %}"></script>
+    <script>
+        // Ad Carousel Logic
+        // Ads are embedded on the initial response so the idle screen is not
+        // dependent on a separate browser request succeeding.
+        let adsList = {{ customer_ads_json|safe }};
+        let currentAdIndex = 0;
+        const adContainer = document.getElementById('ad-container');
+        const adContent = document.getElementById('ad-content');
+        const adTitle = document.getElementById('ad-title');
+        const adText = document.getElementById('ad-text');
+        const adImage = document.getElementById('ad-image');
+        const idleHero = document.getElementById('idle-hero');
+
+        function displayAds() {
+            if (adsList.length > 0) {
+                adContainer.classList.add('has-ads');
+                idleHero.style.display = 'none';
+                showAd(0);
+            } else {
+                adContainer.classList.remove('has-ads');
+                idleHero.style.display = 'flex';
+            }
+        }
+
+        async function fetchAds() {
+            try {
+                const response = await fetch('{% url "ads_api" %}');
+                if (response.ok) {
+                    const data = await response.json();
+                    adsList = data.ads || [];
+                    displayAds();
+                }
+            } catch (err) {
+                console.error('Failed to fetch ads:', err);
+            }
+        }
+
+        function showAd(index) {
+            if (adsList.length === 0) return;
+            currentAdIndex = index % adsList.length;
+            const ad = adsList[currentAdIndex];
+
+            // Fade out
+            adContent.style.opacity = '0';
+
+            setTimeout(() => {
+                adTitle.textContent = ad.title;
+                adText.textContent = ad.content || '';
+
+                if (ad.image_url) {
+                    adImage.src = ad.image_url;
+                    adImage.style.display = 'block';
+                } else {
+                    adImage.style.display = 'none';
+                }
+
+                // Fade in
+                adContent.style.opacity = '1';
+            }, 500);
+        }
+
+        // Render company ads immediately, then refresh them in the background.
+        displayAds();
+        fetchAds();
+        setInterval(fetchAds, 5 * 60 * 1000);
+
+        // Rotate ads every 8 seconds
+        setInterval(() => {
+            if (adsList.length > 1 && document.getElementById('idle-screen').style.display !== 'none') {
+                showAd(currentAdIndex + 1);
+            }
+        }, 8000);
+    </script>
+</body>
+</html>

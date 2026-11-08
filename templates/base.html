@@ -1,81 +1,145 @@
 {% load static %}
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="ocean">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}viARMS - Shop Sales & Record Management{% endblock %}</title>
-    <link rel="stylesheet" href="{% static 'css/styles.css' %}">
+    <link rel="stylesheet" href="{% static 'css/styles.css' %}?v=4">
     <!-- Lucide Icons (CDN) for modern, clean iconography -->
     <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- viARMS i18n System -->
+    <script src="{% static 'js/i18n.js' %}"></script>
+    <!-- Theme boot — apply saved theme before page renders (prevents FOUC) -->
+    <script>
+        (function() {
+            var t = localStorage.getItem('viarms-theme') || 'ocean';
+            document.documentElement.setAttribute('data-theme', t);
+        })();
+    </script>
 </head>
+
 <body>
+
+    <!-- Mobile Navigation Top Bar -->
+    {% if user.is_authenticated %}
+    <header class="mobile-header">
+        <button class="mobile-toggle-btn" id="mobile-sidebar-toggle" aria-label="Toggle Navigation">
+            <i data-lucide="menu"></i>
+        </button>
+        <div class="mobile-brand">
+            <i data-lucide="shopping-bag" style="color: var(--color-primary); width: 20px; height: 20px;"></i>
+            <span>viARMS</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 0.5rem;">
+            <select id="lang-select-mobile" class="form-control" style="font-size: 0.75rem; padding: 0.25rem 0.4rem; max-width: 110px;" onchange="viARMSi18n.setLang(this.value)">
+                <option value="en">🇬🇧 EN</option>
+                <option value="pidgin">🇳🇬 Naija</option>
+                <option value="yo">Yorùbá</option>
+                <option value="ig">Igbo</option>
+                <option value="ha">Hausa</option>
+            </select>
+            <div class="mobile-user-avatar">
+                {{ user.username|make_list|first|upper }}
+            </div>
+        </div>
+    </header>
+    <div class="sidebar-backdrop" id="sidebar-backdrop"></div>
+
+
+    {% endif %}
 
     <!-- Messages / Toasts -->
     <div class="messages-container" id="toast-container">
         {% if messages %}
-            {% for message in messages %}
-                <div class="alert-message {% if message.tags == 'success' %}alert-success{% else %}alert-error{% endif %}">
-                    <span>{{ message }}</span>
-                    <button class="remove-cart-item" style="color: white; font-weight: bold; font-size: 1.2rem; cursor: pointer; border: none; background: transparent; margin-left: 10px;" onclick="this.parentElement.remove()">&times;</button>
-                </div>
-            {% endfor %}
+        {% for message in messages %}
+        <div class="alert-message {% if message.tags == 'success' %}alert-success{% else %}alert-error{% endif %}">
+            <span>{{ message }}</span>
+            <button class="remove-cart-item"
+                style="color: white; font-weight: bold; font-size: 1.2rem; cursor: pointer; border: none; background: transparent; margin-left: 10px;"
+                onclick="this.parentElement.remove()">&times;</button>
+        </div>
+        {% endfor %}
         {% endif %}
     </div>
 
+    {% if user.is_authenticated %}
     <div class="app-container">
         <!-- Sidebar Navigation -->
-        {% if user.is_authenticated %}
-        <nav class="sidebar">
+        <nav class="sidebar" id="sidebar-nav">
+            <button class="sidebar-close-btn" id="sidebar-close" aria-label="Close Menu">
+                <i data-lucide="x"></i>
+            </button>
             <div class="sidebar-brand">
                 <i data-lucide="shopping-bag" style="color: var(--color-primary)"></i>
                 <span>viARMS</span>
             </div>
-            
+
             <ul class="sidebar-menu">
+                {% if not user.is_superuser %}
                 <li>
-                    <a href="{% url 'dashboard' %}" class="sidebar-link {% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}">
+                    <a href="{% url 'dashboard' %}" data-tour-key="dashboard"
+                        class="sidebar-link {% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}">
                         <i data-lucide="layout-dashboard"></i>
-                        <span>Dashboard</span>
+                        <span data-i18n="nav_dashboard">Dashboard</span>
                     </a>
                 </li>
                 <li>
-                    <a href="{% url 'pos' %}" class="sidebar-link {% if request.resolver_match.url_name == 'pos' %}active{% endif %}">
+                    <a href="{% url 'pos' %}" data-tour-key="pos"
+                        class="sidebar-link {% if request.resolver_match.url_name == 'pos' %}active{% endif %}">
                         <i data-lucide="shopping-cart"></i>
-                        <span>POS Checkout</span>
+                        <span data-i18n="nav_pos">POS Checkout</span>
                     </a>
                 </li>
                 <li>
-                    <a href="{% url 'products' %}" class="sidebar-link {% if request.resolver_match.url_name == 'products' %}active{% endif %}">
+                    <a href="{% url 'products' %}" data-tour-key="products"
+                        class="sidebar-link {% if request.resolver_match.url_name == 'products' %}active{% endif %}">
                         <i data-lucide="package"></i>
-                        <span>Products & Stock</span>
+                        <span data-i18n="nav_products">Products &amp; Stock</span>
                     </a>
                 </li>
                 <li>
-                    <a href="{% url 'sales_history' %}" class="sidebar-link {% if request.resolver_match.url_name == 'sales_history' %}active{% endif %}">
+                    <a href="{% url 'sales_history' %}" data-tour-key="sales"
+                        class="sidebar-link {% if request.resolver_match.url_name == 'sales_history' %}active{% endif %}">
                         <i data-lucide="history"></i>
-                        <span>Sales Log</span>
+                        <span data-i18n="nav_sales">Sales Log</span>
                     </a>
                 </li>
                 {% if is_admin or is_manager %}
                 <li>
-                    <a href="{% url 'staff_management' %}" class="sidebar-link {% if request.resolver_match.url_name == 'staff_management' %}active{% endif %}">
+                    <a href="{% url 'staff_management' %}" data-tour-key="staff"
+                        class="sidebar-link {% if request.resolver_match.url_name == 'staff_management' %}active{% endif %}">
                         <i data-lucide="users"></i>
-                        <span>Staff Directory</span>
+                        <span data-i18n="nav_staff">Staff Directory</span>
                     </a>
                 </li>
                 {% endif %}
-                {% if is_admin %}
+                {% endif %}
+
+                {% if user.is_superuser %}
                 <li>
-                    <a href="{% url 'shops' %}" class="sidebar-link {% if request.resolver_match.url_name == 'shops' %}active{% endif %}">
+                    <a href="{% url 'admin_panel' %}"
+                        class="sidebar-link {% if request.resolver_match.url_name == 'admin_panel' %}active{% endif %}">
+                        <i data-lucide="shield-check"></i>
+                        <span data-i18n="nav_admin_panel">Admin Panel</span>
+                    </a>
+                </li>
+                {% endif %}
+
+                {% if not user.is_superuser and is_admin %}
+                <li>
+                    <a href="{% url 'shops' %}" data-tour-key="shops"
+                        class="sidebar-link {% if request.resolver_match.url_name == 'shops' %}active{% endif %}">
                         <i data-lucide="store"></i>
-                        <span>Shop Branches</span>
+                        <span data-i18n="nav_shops">Shop Branches</span>
                     </a>
                 </li>
                 <li>
-                    <a href="{% url 'settings' %}" class="sidebar-link {% if request.resolver_match.url_name == 'settings' %}active{% endif %}">
+                    <a href="{% url 'settings' %}" data-tour-key="settings"
+                        class="sidebar-link {% if request.resolver_match.url_name == 'settings' %}active{% endif %}">
                         <i data-lucide="settings"></i>
-                        <span>Store Settings</span>
+                        <span data-i18n="nav_settings">Store Settings</span>
                     </a>
                 </li>
                 {% endif %}
@@ -87,37 +151,215 @@
                         {{ user.username|make_list|first|upper }}
                     </div>
                     <div class="user-info">
-                        <span class="user-name">{{ user.username|title }}</span>
+                        <span class="user-name">{{ user.username }}</span>
                         <span class="user-role">
-                            {% if user.profile.role == 'ADMIN' %}Admin
-                            {% elif user.profile.role == 'MANAGER' %}Manager
-                            {% else %}Cashier{% endif %}
+                            {% if user.is_superuser %}Super Admin{% else %}{{ user.profile.get_role_display }}{% endif %}
                         </span>
-                        {% if user.profile.shop %}
-                            <span style="font-size: 0.7rem; color: var(--color-primary); font-weight: 500; display: block; max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
-                                <i data-lucide="map-pin" style="width: 10px; height: 10px; display: inline; vertical-align: middle;"></i> {{ user.profile.shop.name }}
-                            </span>
+                        {% if not user.is_superuser and user.profile.shop %}
+                        <span
+                            style="font-size: 0.7rem; color: var(--color-primary); font-weight: 500; display: block; max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                            <i data-lucide="map-pin"
+                                style="width: 10px; height: 10px; display: inline; vertical-align: middle;"></i> {{ user.profile.shop.name }}
+                        </span>
                         {% endif %}
                     </div>
                 </div>
-                <a href="{% url 'logout' %}" class="sidebar-link" style="color: var(--color-danger); border-color: rgba(244, 63, 94, 0.1);">
+
+                <!-- Language Selector -->
+                <div style="margin-top: 0.75rem; padding: 0 0.25rem;">
+                    <label style="font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase; font-weight: 600; letter-spacing: 0.5px; display: block; margin-bottom: 0.35rem;">
+                        <i data-lucide="languages" style="width: 11px; height: 11px; vertical-align: middle;"></i> Language
+                    </label>
+                    <select id="lang-select-sidebar" class="form-control" style="font-size: 0.8rem; padding: 0.35rem 0.5rem;" onchange="viARMSi18n.setLang(this.value)">
+                        <option value="en">🇬🇧 English</option>
+                        <option value="pidgin">🇳🇬 Naija (Pidgin)</option>
+                        <option value="yo">Yorùbá</option>
+                        <option value="ig">Igbo</option>
+                        <option value="ha">Hausa</option>
+                    </select>
+                </div>
+            </div>
+
+            <div style="padding-top: 1rem; border-top: 1px solid var(--border-color); margin-top: auto;">
+                <a href="{% url 'logout' %}" class="sidebar-link"
+                    style="color: var(--color-danger); border-color: rgba(244, 63, 94, 0.1);">
                     <i data-lucide="log-out"></i>
-                    <span>Sign Out</span>
+                    <span data-i18n="sign_out">Sign Out</span>
                 </a>
+            </div>
+
+            <!-- Sidebar Copyright -->
+            <div style="padding: 0.75rem 0.5rem 0.25rem; text-align: center; font-size: 0.62rem; color: var(--text-muted); line-height: 1.6; margin-top: 0.5rem;">
+                &copy; viARMS<br>
+                <span style="color: rgba(99,102,241,0.6);">Powered by viARMS</span> | Scales Technologies
             </div>
 
         </nav>
         {% endif %}
 
         <!-- Main Body Content -->
-        <main class="main-content" style="{% if not user.is_authenticated %}margin-left: 0; padding: 0;{% endif %}">
-            {% block content %}{% endblock %}
+        {% if user.is_authenticated %}
+        <main class="main-content" data-onboarding-complete="{{ user.profile.onboarding_completed|yesno:'true,false' }}">
+            {% if user.profile.tenant_owner == user %}
+            <!-- Plan/Approval Status Banner -->
+            {% if not user.profile.is_approved %}
+            <div class="status-banner" style="background: linear-gradient(90deg, rgba(234,179,8,0.15), rgba(234,179,8,0.05)); border-left: 3px solid #eab308; padding: 0.6rem 1.25rem; font-size: 0.82rem; color: #fde047; display: flex; align-items: center; gap: 8px; margin-bottom: 1rem; border-radius: 0 6px 6px 0;">
+                <i data-lucide="clock" style="width: 14px; height: 14px; flex-shrink: 0;"></i>
+                <span><strong>Account Pending Approval.</strong> Your account is under review. You'll have full access once approved.</span>
+            </div>
+            {% elif user.profile.plan == 'FREE' %}
+            <div class="status-banner status-banner-upgrade" style="background: linear-gradient(90deg, rgba(139,92,246,0.12), rgba(139,92,246,0.04)); border-left: 3px solid #8b5cf6; padding: 0.6rem 1.25rem; font-size: 0.82rem; color: #c4b5fd; display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 1rem; border-radius: 0 6px 6px 0;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <i data-lucide="zap" style="width: 14px; height: 14px; flex-shrink: 0;"></i>
+                    <span><strong>Free Plan</strong> — You’re ready to sell with 1 shop, 1 manager, and 1 cashier. Growing your business? Upgrade anytime to add more branches and team members.</span>
+                </div>
+                <a href="#" style="white-space: nowrap; font-size: 0.78rem; color: #a78bfa; font-weight: 700; text-decoration: none; border: 1px solid rgba(139,92,246,0.4); padding: 0.25rem 0.6rem; border-radius: 4px;">Upgrade ↗</a>
+            </div>
+            {% endif %}
+            {% endif %}
+        {% else %}
+        <!-- Animated floating blobs background -->
+        <div class="animated-bg">
+            <div class="blob blob-1"></div>
+            <div class="blob blob-2"></div>
+            <div class="blob blob-3"></div>
+        </div>
+        <style>
+            .animated-bg {
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100vw;
+                height: 100vh;
+                z-index: -1;
+                overflow: hidden;
+                background: #090d16;
+            }
+            .blob {
+                position: absolute;
+                border-radius: 50%;
+                filter: blur(120px);
+                opacity: 0.15;
+                animation: floatAround 25s infinite alternate ease-in-out;
+            }
+            .blob-1 {
+                width: 500px;
+                height: 500px;
+                background: var(--color-primary, #6366f1);
+                top: -10%;
+                left: -10%;
+                animation-duration: 20s;
+            }
+            .blob-2 {
+                width: 600px;
+                height: 600px;
+                background: #fbbf24;
+                bottom: -20%;
+                right: -10%;
+                animation-duration: 28s;
+                animation-delay: -5s;
+            }
+            .blob-3 {
+                width: 400px;
+                height: 400px;
+                background: var(--color-success, #10b981);
+                top: 40%;
+                left: 50%;
+                animation-duration: 24s;
+                animation-delay: -10s;
+            }
+            @keyframes floatAround {
+                0% { transform: translate(0, 0) scale(1) rotate(0deg); }
+                50% { transform: translate(80px, 60px) scale(1.05) rotate(180deg); }
+                100% { transform: translate(-40px, -30px) scale(0.95) rotate(360deg); }
+            }
+        </style>
+        {% endif %}
+
+        {% block content %}{% endblock %}
+
+        {% if user.is_authenticated %}
         </main>
     </div>
+    {% endif %}
 
     <script>
+        // Apply saved theme on body
+        (function() {
+            var t = localStorage.getItem('viarms-theme') || 'ocean';
+            document.documentElement.setAttribute('data-theme', t);
+            document.body.setAttribute('data-theme', t);
+
+            // Highlight active sidebar theme dot if present
+            window.addEventListener('DOMContentLoaded', () => {
+                updateSidebarThemeUI(t);
+            });
+        })();
+
+        function setGlobalTheme(theme) {
+            document.documentElement.setAttribute('data-theme', theme);
+            document.body.setAttribute('data-theme', theme);
+            localStorage.setItem('viarms-theme', theme);
+            updateSidebarThemeUI(theme);
+
+            // If settings page theme updater exists, trigger it too
+            if (typeof updateThemeUI === 'function') {
+                updateThemeUI(theme);
+            }
+        }
+
+        function updateSidebarThemeUI(theme) {
+            document.querySelectorAll('.theme-dot').forEach(btn => {
+                const isActive = btn.dataset.themeVal === theme;
+                btn.style.boxShadow = isActive ? '0 0 0 2px var(--bg-surface-solid), 0 0 0 4px ' + btn.style.background.split(',')[1] : 'none';
+                btn.style.transform = isActive ? 'scale(1.1)' : 'scale(1)';
+            });
+        }
+
         // Initialize Lucide icons
         lucide.createIcons();
+
+        // Mobile Sidebar Toggle Logic
+        const mobileToggle = document.getElementById('mobile-sidebar-toggle');
+        const sidebarClose = document.getElementById('sidebar-close');
+        const sidebarNav = document.getElementById('sidebar-nav');
+        const sidebarBackdrop = document.getElementById('sidebar-backdrop');
+
+        function toggleSidebar(show) {
+            if (sidebarNav) {
+                if (show) {
+                    sidebarNav.classList.add('active');
+                    if (sidebarBackdrop) sidebarBackdrop.classList.add('active');
+                } else {
+                    sidebarNav.classList.remove('active');
+                    if (sidebarBackdrop) sidebarBackdrop.classList.remove('active');
+                }
+            }
+        }
+
+        if (mobileToggle) {
+            mobileToggle.addEventListener('click', () => toggleSidebar(true));
+        }
+        if (sidebarClose) {
+            sidebarClose.addEventListener('click', () => toggleSidebar(false));
+        }
+        if (sidebarBackdrop) {
+            sidebarBackdrop.addEventListener('click', () => toggleSidebar(false));
+        }
+
+        document.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape') toggleSidebar(false);
+        });
+
+        window.addEventListener('resize', () => {
+            if (window.innerWidth > 1024) toggleSidebar(false);
+        });
+
+        // Close sidebar on link click (useful for responsive flow)
+        const sidebarLinks = document.querySelectorAll('.sidebar-link');
+        sidebarLinks.forEach(link => {
+            link.addEventListener('click', () => toggleSidebar(false));
+        });
 
         // Auto-fade toasts after 4 seconds
         setTimeout(() => {
@@ -140,7 +382,7 @@
             `;
             container.appendChild(toast);
             lucide.createIcons();
-            
+
             setTimeout(() => {
                 toast.style.transition = 'opacity 0.5s ease';
                 toast.style.opacity = '0';
@@ -148,6 +390,10 @@
             }, 4000);
         }
     </script>
+    {% if user.is_authenticated and not user.is_superuser %}
+    <script src="{% static 'js/onboarding_tour.js' %}"></script>
+    {% endif %}
     {% block scripts %}{% endblock %}
 </body>
+
 </html>

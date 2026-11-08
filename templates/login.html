@@ -4,35 +4,192 @@
 {% block title %}Sign In - viARMS{% endblock %}
 
 {% block content %}
+<style>
+    .login-glass-card {
+        background: rgba(10, 15, 26, 0.7);
+        backdrop-filter: blur(24px);
+        -webkit-backdrop-filter: blur(24px);
+        border: 1px solid rgba(99, 102, 241, 0.15);
+        border-radius: 20px;
+        box-shadow: 0 0 60px rgba(99, 102, 241, 0.08), 0 25px 50px rgba(0,0,0,0.4);
+        padding: 2.5rem;
+        width: 100%;
+        max-width: 420px;
+        transition: box-shadow 0.3s ease;
+    }
+    .login-glass-card:hover {
+        box-shadow: 0 0 80px rgba(99, 102, 241, 0.12), 0 30px 60px rgba(0,0,0,0.5);
+    }
+    .login-logo-wrap {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.6rem;
+        font-size: 1.6rem;
+        font-weight: 800;
+        background: linear-gradient(135deg, #a5b4fc, var(--color-primary));
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+        margin-bottom: 0.4rem;
+    }
+    .login-logo-icon {
+        width: 44px;
+        height: 44px;
+        border-radius: 12px;
+        background: linear-gradient(135deg, var(--color-primary), #4f46e5);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        box-shadow: 0 4px 15px rgba(99,102,241,0.4);
+        flex-shrink: 0;
+    }
+    .auth-input-group {
+        position: relative;
+    }
+    .auth-input-icon {
+        position: absolute;
+        left: 12px;
+        top: 50%;
+        transform: translateY(-50%);
+        color: var(--text-muted);
+        pointer-events: none;
+    }
+    .auth-input {
+        padding-left: 40px !important;
+        background: rgba(255,255,255,0.04) !important;
+        border: 1px solid rgba(255,255,255,0.08) !important;
+        transition: border-color 0.2s, background 0.2s, box-shadow 0.2s !important;
+    }
+    .auth-input:focus {
+        border-color: rgba(99,102,241,0.5) !important;
+        background: rgba(99,102,241,0.04) !important;
+        box-shadow: 0 0 0 3px rgba(99,102,241,0.12) !important;
+    }
+    .btn-signin {
+        width: 100%;
+        padding: 0.9rem;
+        border: none;
+        border-radius: 12px;
+        background: linear-gradient(135deg, var(--color-primary), #4f46e5);
+        color: white;
+        font-size: 1rem;
+        font-weight: 600;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.5rem;
+        transition: all 0.25s ease;
+        box-shadow: 0 4px 15px rgba(99,102,241,0.35);
+        letter-spacing: 0.3px;
+    }
+    .btn-signin:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 25px rgba(99,102,241,0.5);
+    }
+    .btn-signup-link {
+        width: 100%;
+        padding: 0.85rem;
+        border: 1px solid rgba(255,255,255,0.08);
+        border-radius: 12px;
+        background: rgba(255,255,255,0.04);
+        color: var(--text-secondary);
+        font-size: 0.9rem;
+        font-weight: 500;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.5rem;
+        transition: all 0.2s ease;
+        text-decoration: none;
+    }
+    .btn-signup-link:hover {
+        background: rgba(99,102,241,0.08);
+        border-color: rgba(99,102,241,0.25);
+        color: var(--color-primary);
+        transform: translateY(-1px);
+    }
+</style>
+
 <div class="login-container">
-    <div class="login-card glass-panel">
-        <div class="login-header">
-            <div class="login-logo">
-                <i data-lucide="shopping-bag" style="vertical-align: middle; margin-right: 8px;"></i>viARMS
-            </div>
-            <p style="color: var(--text-secondary); font-size: 0.9rem;">Sales & Records Manager Login</p>
+    <div class="login-glass-card">
+
+        <!-- Language Selector -->
+        <div style="display: flex; justify-content: flex-end; margin-bottom: 1.5rem;">
+            <select id="lang-select-login" class="form-control" style="width: auto; padding: 0.3rem 0.6rem; font-size: 0.78rem; border-radius: 8px; background: rgba(15,23,42,0.6);" onchange="viARMSi18n.setLang(this.value)">
+                <option value="en">🇬🇧 English</option>
+                <option value="pidgin">🇳🇬 Naija (Pidgin)</option>
+                <option value="yo">Yorùbá</option>
+                <option value="ig">Igbo</option>
+                <option value="ha">Hausa</option>
+            </select>
         </div>
+
+        <!-- Logo + Branding -->
+        <div style="text-align: center; margin-bottom: 2rem;">
+            <div style="display: flex; align-items: center; justify-content: center; gap: 0.75rem; margin-bottom: 0.75rem;">
+                <div class="login-logo-icon">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 01-8 0"/></svg>
+                </div>
+                <div class="login-logo-wrap">viARMS</div>
+            </div>
+            <p style="color: var(--text-secondary); font-size: 0.88rem;" data-i18n="login_subtitle">Sales & Records Management System</p>
+        </div>
+
+        {% if messages %}
+        <div style="margin-bottom: 1.25rem;">
+            {% for message in messages %}
+            <div style="padding: 0.75rem 1rem; border-radius: 10px; font-size: 0.85rem; display: flex; align-items: center; gap: 8px;
+                {% if 'error' in message.tags %}background: rgba(239,68,68,0.12); border: 1px solid rgba(239,68,68,0.25); color: #fca5a5;{% else %}background: rgba(34,197,94,0.12); border: 1px solid rgba(34,197,94,0.25); color: #86efac;{% endif %}">
+                <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">{% if 'error' in message.tags %}<circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/>{% else %}<polyline points="20 6 9 17 4 12"/>{% endif %}</svg>
+                {{ message }}
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
 
         <form method="POST" action="{% url 'login' %}">
             {% csrf_token %}
             
-            <div class="form-group">
-                <label for="username" class="form-label">Username</label>
-                <input type="text" name="username" id="username" class="form-control" placeholder="Enter username" required autofocus>
+            <div class="form-group" style="margin-bottom: 1.25rem;">
+                <label for="username" class="form-label" data-i18n="username" style="font-size: 0.8rem; font-weight: 600; letter-spacing: 0.3px; text-transform: uppercase; color: var(--text-muted);">Username</label>
+                <div class="auth-input-group">
+                    <span class="auth-input-icon">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                    </span>
+                    <input type="text" name="username" id="username" class="form-control auth-input" placeholder="Enter your username" required autofocus>
+                </div>
             </div>
             
-            <div class="form-group" style="margin-bottom: 1.75rem;">
-                <label for="password" class="form-label">Password</label>
-                <input type="password" name="password" id="password" class="form-control" placeholder="Enter password" required>
+            <div class="form-group" style="margin-bottom: 2rem;">
+                <label for="password" class="form-label" data-i18n="password" style="font-size: 0.8rem; font-weight: 600; letter-spacing: 0.3px; text-transform: uppercase; color: var(--text-muted);">Password</label>
+                <div class="auth-input-group">
+                    <span class="auth-input-icon">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+                    </span>
+                    <input type="password" name="password" id="password" class="form-control auth-input" placeholder="Enter your password" required>
+                </div>
             </div>
 
-            <button type="submit" class="btn btn-primary btn-block" style="padding: 0.85rem;">
-                <i data-lucide="log-in"></i> Sign In to Account
+            <button type="submit" class="btn-signin" data-i18n="sign_in">
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h4a2 2 0 012 2v14a2 2 0 01-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
+                Sign In
             </button>
         </form>
 
-        <div style="margin-top: 1.5rem; text-align: center; font-size: 0.8rem; color: var(--text-muted);">
-            <p>Protected by viARMS security system.</p>
+        <div style="margin: 1.5rem 0 0; display: flex; flex-direction: column; gap: 0.75rem; align-items: center;">
+            <p style="font-size: 0.8rem; color: var(--text-muted);" data-i18n="no_account">Don't have an account?</p>
+            <a href="{% url 'register' %}" class="btn-signup-link">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg>
+                <span data-i18n="create_account">Sign Up</span>
+            </a>
+        </div>
+
+        <!-- Copyright Footer -->
+        <div style="margin-top: 2rem; padding-top: 1rem; border-top: 1px solid rgba(255,255,255,0.06); text-align: center; font-size: 0.7rem; color: var(--text-muted); line-height: 1.6;">
+            &copy; viARMS &nbsp;·&nbsp; Powered by <strong style="color: var(--color-primary);">viARMS</strong> | Scales Technologies
         </div>
     </div>
 </div>

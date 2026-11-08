@@ -86,24 +86,119 @@
 
 <!-- Main Section: Charts and Lists -->
 <div class="dashboard-layout">
-    <!-- Sales trends chart -->
-    <div class="chart-container glass-panel">
-        <div class="panel-header">
-            <h2 class="panel-title">Weekly Sales Trend</h2>
-            <div style="display: flex; gap: 10px; font-size: 0.75rem;">
-                <span style="display: flex; align-items: center; gap: 4px; color: var(--text-secondary);">
-                    <span style="width: 10px; height: 10px; border-radius: 50%; background: #6366f1; display: inline-block;"></span> Revenue
-                </span>
-                {% if is_admin %}
-                <span style="display: flex; align-items: center; gap: 4px; color: var(--text-secondary);">
-                    <span style="width: 10px; height: 10px; border-radius: 50%; background: #10b981; display: inline-block;"></span> Net Profit
-                </span>
-                {% endif %}
+    <!-- Left Column: Weekly trends and business-specific inventory -->
+    <div style="display: flex; flex-direction: column; gap: 1.5rem;">
+        <!-- Sales trends chart -->
+        <div class="chart-container glass-panel">
+            <div class="panel-header">
+                <h2 class="panel-title">Weekly Sales Trend</h2>
+                <div style="display: flex; gap: 10px; font-size: 0.75rem;">
+                    <span style="display: flex; align-items: center; gap: 4px; color: var(--text-secondary);">
+                        <span style="width: 10px; height: 10px; border-radius: 50%; background: #6366f1; display: inline-block;"></span> Revenue
+                    </span>
+                    {% if is_admin %}
+                    <span style="display: flex; align-items: center; gap: 4px; color: var(--text-secondary);">
+                        <span style="width: 10px; height: 10px; border-radius: 50%; background: #10b981; display: inline-block;"></span> Net Profit
+                    </span>
+                    {% endif %}
+                </div>
+            </div>
+            <div style="position: relative; height: 260px; width: 100%;">
+                <canvas id="salesChart"></canvas>
             </div>
         </div>
-        <div style="position: relative; height: 260px; width: 100%;">
-            <canvas id="salesChart"></canvas>
+
+        <div class="glass-panel" style="padding: 1.5rem;">
+            <div class="panel-header" style="margin-bottom: 1rem;">
+                <h2 class="panel-title">
+                    {% if business_type == 'PHARMACEUTICAL' %}Pharmaceutical Inventory
+                    {% elif business_type == 'BOOK_ACCESSORIES' %}Bookshop & Accessories Inventory
+                    {% elif business_type == 'UTENSILS' %}Utensils & Housewares Inventory
+                    {% else %}Product Inventory{% endif %}
+                </h2>
+                <a href="{% url 'products' %}" style="font-size: 0.75rem; color: var(--color-primary); text-decoration: none;">Manage Stock</a>
+            </div>
+            {% if dashboard_products %}
+            <div class="table-responsive">
+                <table class="custom-table">
+                    <thead>
+                        <tr>
+                            <th>Image</th>
+                            <th>Product</th>
+                            <th>SKU</th>
+                            <th>Category</th>
+                            <th>Product Details</th>
+                            <th>Stock</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for product in dashboard_products %}
+                        <tr>
+                            <td>{% if product.image %}<img src="{{ product.image.url }}" alt="{{ product.name }}" loading="lazy" style="width: 40px; height: 40px; object-fit: cover; border-radius: 5px;">{% else %}-{% endif %}</td>
+                            <td>{{ product.name }}</td>
+                            <td>{{ product.sku }}</td>
+                            <td>{{ product.category.name|default:"Uncategorized" }}</td>
+                            <td>
+                                {% if business_type == 'PHARMACEUTICAL' %}
+                                    {{ product.generic_name|default:product.dosage_form|default:"-" }}
+                                    {% if product.strength %} · {{ product.strength }}{% endif %}
+                                    {% if product.batch_number %} · Batch {{ product.batch_number }}{% endif %}
+                                {% elif business_type == 'BOOK_ACCESSORIES' %}
+                                    {% if product.author or product.publisher %}{{ product.author|default:"-" }} / {{ product.publisher|default:"-" }}{% endif %}
+                                    {% if product.isbn %}{% if product.author or product.publisher %} · {% endif %}ISBN {{ product.isbn }}{% endif %}
+                                    {% if product.color or product.size %}{% if product.author or product.publisher or product.isbn %} · {% endif %}{{ product.color|default:"-" }} / {{ product.size|default:"-" }}{% endif %}
+                                    {% if product.warranty_period %} · Warranty {{ product.warranty_period }}{% endif %}
+                                    {% if not product.author and not product.publisher and not product.isbn and not product.color and not product.size and not product.warranty_period %}-{% endif %}
+                                {% elif business_type == 'UTENSILS' %}
+                                    {{ product.get_material_display|default:"-" }}
+                                {% else %}
+                                    {{ product.description|default:"-" }}
+                                {% endif %}
+                            </td>
+                            <td>{{ product.stock_quantity }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <p style="font-size: 0.85rem; color: var(--text-muted);">No inventory has been added yet.</p>
+            {% endif %}
         </div>
+
+        {% if request.user.profile.business_type == 'PHARMACEUTICAL' %}
+        <!-- Pharma specific Rx vs OTC breakdown -->
+        <div class="glass-panel" style="padding: 1.5rem;">
+            <div class="panel-header" style="margin-bottom: 1rem;">
+                <h2 class="panel-title" style="display: flex; align-items: center; gap: 6px; font-size: 1rem;">
+                    <i data-lucide="activity" style="color: var(--color-primary); width: 18px; height: 18px;"></i>
+                    Prescription (Rx) vs. OTC Sales Distribution
+                </h2>
+                <span style="font-size: 0.75rem; color: var(--text-muted);">Selected period breakdown</span>
+            </div>
+            <div class="pharma-metrics-layout" style="display: grid; grid-template-columns: 1fr 1.2fr; gap: 1.5rem; align-items: center;">
+                <div style="position: relative; height: 140px; width: 100%;">
+                    <canvas id="pharmaDistributionChart"></canvas>
+                </div>
+                <div style="display: flex; flex-direction: column; gap: 0.75rem;">
+                    <div style="background: rgba(244, 63, 94, 0.06); padding: 0.65rem 0.85rem; border-radius: 8px; border-left: 4px solid #f43f5e; display: flex; justify-content: space-between; align-items: center;">
+                        <div>
+                            <span style="font-size: 0.75rem; color: var(--text-muted); display: block; font-weight: 500;">Prescription (Rx)</span>
+                            <strong style="font-size: 1.05rem; color: var(--text-primary);">₦{{ pharmaceutical_metrics.rx_revenue|floatformat:2 }}</strong>
+                        </div>
+                        <span class="badge badge-danger" style="font-size: 0.75rem; font-weight: 700;">{{ pharmaceutical_metrics.rx_percentage }}%</span>
+                    </div>
+                    <div style="background: rgba(16, 185, 129, 0.06); padding: 0.65rem 0.85rem; border-radius: 8px; border-left: 4px solid #10b981; display: flex; justify-content: space-between; align-items: center;">
+                        <div>
+                            <span style="font-size: 0.75rem; color: var(--text-muted); display: block; font-weight: 500;">Over-The-Counter (OTC)</span>
+                            <strong style="font-size: 1.05rem; color: var(--text-primary);">₦{{ pharmaceutical_metrics.otc_revenue|floatformat:2 }}</strong>
+                        </div>
+                        <span class="badge badge-success" style="font-size: 0.75rem; font-weight: 700; background: rgba(16, 185, 129, 0.2); color: #10b981; border-color: transparent;">{{ pharmaceutical_metrics.otc_percentage }}%</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
     </div>
 
     <!-- Right Side Sidebar Panels: Alerts & Popular Products -->
@@ -112,31 +207,59 @@
         <!-- Expiry Alerts List Panel -->
         <div class="glass-panel" style="padding: 1.25rem; border-color: {% if expired_count > 0 %}rgba(244, 63, 94, 0.3){% else %}var(--border-color){% endif %};">
             <div class="panel-header" style="margin-bottom: 0.85rem;">
-                <h2 class="panel-title" style="font-size: 1rem;"><i data-lucide="calendar-days" style="width: 16px; height: 16px; vertical-align: middle; margin-right: 6px; color: var(--color-danger)"></i>Shelf Expiry Watch</h2>
+                <h2 class="panel-title" style="font-size: 1rem;">
+                    <i data-lucide="calendar-days" style="width: 16px; height: 16px; vertical-align: middle; margin-right: 6px; color: var(--color-danger)"></i>
+                    {% if request.user.profile.business_type == 'PHARMACEUTICAL' %}Drug Expiry Radar (90 Days){% else %}Shelf Expiry Watch{% endif %}
+                </h2>
             </div>
             
-            {% if expired_products or expiring_soon_products %}
-                <ul style="list-style: none; display: flex; flex-direction: column; gap: 0.65rem; max-height: 220px; overflow-y: auto;">
+            {% if expired_products or expiring_soon_products or pharmaceutical_metrics.radar_batches %}
+                <ul style="list-style: none; display: flex; flex-direction: column; gap: 0.65rem; max-height: 250px; overflow-y: auto;">
                     <!-- Expired items -->
                     {% for p in expired_products %}
                         <li style="display: flex; justify-content: space-between; align-items: center; padding: 0.5rem; background: rgba(244, 63, 94, 0.08); border-radius: 6px; border: 1px solid rgba(244, 63, 94, 0.2);">
                             <div>
-                                <span style="font-size: 0.85rem; font-weight: 600; display: block; text-decoration: line-through; color: var(--text-secondary);">{{ p.name }}</span>
-                                <span style="font-size: 0.7rem; color: var(--color-danger); font-weight: 500;">Expired: {{ p.expiry_date|date:"Y-m-d" }}</span>
+                                <span style="font-size: 0.85rem; font-weight: 600; display: block; text-decoration: line-through; color: var(--text-secondary);">
+                                    {{ p.name }}
+                                    {% if p.strength %}<span style="font-size: 0.75rem; color: var(--text-muted);">({{ p.strength }})</span>{% endif %}
+                                </span>
+                                <span style="font-size: 0.7rem; color: var(--color-danger); font-weight: 500; display: block;">Expired: {{ p.expiry_date|date:"Y-m-d" }}</span>
+                                {% if p.batch_number %}<span style="font-size: 0.65rem; color: var(--text-muted); display: block;">Batch: {{ p.batch_number }}</span>{% endif %}
                             </div>
                             <span class="badge badge-danger">EXPIRED</span>
                         </li>
                     {% endfor %}
-                    <!-- Expiring soon items -->
-                    {% for p in expiring_soon_products %}
-                        <li style="display: flex; justify-content: space-between; align-items: center; padding: 0.5rem; background: rgba(245, 158, 11, 0.08); border-radius: 6px; border: 1px solid rgba(245, 158, 11, 0.2);">
-                            <div>
-                                <span style="font-size: 0.85rem; font-weight: 600; display: block;">{{ p.name }}</span>
-                                <span style="font-size: 0.7rem; color: var(--color-warning); font-weight: 500;">Expires: {{ p.expiry_date|date:"Y-m-d" }}</span>
-                            </div>
-                            <span class="badge badge-warning">SOON</span>
-                        </li>
-                    {% endfor %}
+
+                    <!-- Expiring soon items / Pharmacy Radar items -->
+                    {% if request.user.profile.business_type == 'PHARMACEUTICAL' %}
+                        {% for p in pharmaceutical_metrics.radar_batches %}
+                            {% if p not in expired_products %}
+                            <li style="display: flex; justify-content: space-between; align-items: center; padding: 0.5rem; background: rgba(245, 158, 11, 0.05); border-radius: 6px; border: 1px solid rgba(245, 158, 11, 0.15);">
+                                <div>
+                                    <span style="font-size: 0.85rem; font-weight: 600; display: block;">
+                                        {{ p.name }}
+                                        {% if p.strength %}<span style="font-size: 0.75rem; color: var(--text-muted);">({{ p.strength }})</span>{% endif %}
+                                    </span>
+                                    <span style="font-size: 0.7rem; color: var(--color-warning); font-weight: 500; display: block;">Expires: {{ p.expiry_date|date:"Y-m-d" }}</span>
+                                    <span style="font-size: 0.65rem; color: var(--text-muted); display: block;">
+                                        Batch: <code>{{ p.batch_number|default:"-" }}</code> | NAFDAC: {{ p.nafdac_reg_no|default:"-" }}
+                                    </span>
+                                </div>
+                                <span class="badge badge-warning" style="opacity: 0.8; font-size: 0.65rem;">{{ p.expiry_date|timeuntil }}</span>
+                            </li>
+                            {% endif %}
+                        {% endfor %}
+                    {% else %}
+                        {% for p in expiring_soon_products %}
+                            <li style="display: flex; justify-content: space-between; align-items: center; padding: 0.5rem; background: rgba(245, 158, 11, 0.08); border-radius: 6px; border: 1px solid rgba(245, 158, 11, 0.2);">
+                                <div>
+                                    <span style="font-size: 0.85rem; font-weight: 600; display: block;">{{ p.name }}</span>
+                                    <span style="font-size: 0.7rem; color: var(--color-warning); font-weight: 500;">Expires: {{ p.expiry_date|date:"Y-m-d" }}</span>
+                                </div>
+                                <span class="badge badge-warning">SOON</span>
+                            </li>
+                        {% endfor %}
+                    {% endif %}
                 </ul>
             {% else %}
                 <p style="font-size: 0.8rem; color: var(--text-muted); text-align: center; padding: 1rem 0;">No expired or expiring products found.</p>
@@ -345,6 +468,45 @@
                 }
             }
         });
+
+        // Initialize pharma doughnut chart if element exists
+        const pharmaCanvas = document.getElementById('pharmaDistributionChart');
+        if (pharmaCanvas) {
+            const pharmaCtx = pharmaCanvas.getContext('2d');
+            new Chart(pharmaCtx, {
+                type: 'doughnut',
+                data: {
+                    labels: ['Prescription (Rx)', 'OTC'],
+                    datasets: [{
+                        data: [
+                            parseFloat("{{ pharmaceutical_metrics.rx_revenue|default:0 }}"),
+                            parseFloat("{{ pharmaceutical_metrics.otc_revenue|default:0 }}")
+                        ],
+                        backgroundColor: ['#f43f5e', '#10b981'],
+                        borderWidth: 0,
+                        hoverOffset: 4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    cutout: '75%',
+                    plugins: {
+                        legend: {
+                            display: false
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    let value = context.raw || 0;
+                                    return context.label + ': ' + new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN' }).format(value);
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
     });
 </script>
 {% endblock %}

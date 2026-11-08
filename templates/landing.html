@@ -1,0 +1,345 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>viARMS - Smart Retail Management Software</title>
+    <link rel="stylesheet" href="{% static 'css/styles.css' %}">
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        .hero-section {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            padding: 6rem 2rem 4rem;
+            min-height: 80vh;
+            background: radial-gradient(circle at top, rgba(99, 102, 241, 0.15) 0%, var(--bg-base) 70%);
+        }
+        .hero-title {
+            font-size: 3.5rem;
+            font-weight: 800;
+            margin-bottom: 1.5rem;
+            background: linear-gradient(135deg, #a5b4fc, var(--color-primary));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            line-height: 1.2;
+        }
+        .hero-subtitle {
+            font-size: 1.25rem;
+            color: var(--text-secondary);
+            max-width: 600px;
+            margin-bottom: 2.5rem;
+            line-height: 1.6;
+        }
+        .hero-actions {
+            display: flex;
+            gap: 1rem;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+        .features-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 2rem;
+            padding: 4rem 2rem;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .feature-card {
+            padding: 2rem;
+            text-align: left;
+        }
+        .feature-icon {
+            color: var(--color-primary);
+            margin-bottom: 1.5rem;
+            background: var(--color-primary-glow);
+            width: 56px;
+            height: 56px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 16px;
+        }
+        .pricing-section {
+            padding: 4rem 2rem;
+            max-width: 1000px;
+            margin: 0 auto;
+            text-align: center;
+        }
+        .pricing-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 2rem;
+            margin-top: 3rem;
+            text-align: left;
+        }
+        .pricing-card {
+            padding: 2.5rem;
+            border: 1px solid var(--border-color);
+            border-radius: 24px;
+            background: var(--bg-surface);
+        }
+        .pricing-card.premium {
+            border-color: var(--color-primary);
+            background: linear-gradient(180deg, rgba(99,102,241,0.05) 0%, var(--bg-surface) 100%);
+            position: relative;
+        }
+        .premium-badge {
+            position: absolute;
+            top: -12px;
+            right: 24px;
+            background: linear-gradient(135deg, var(--color-primary), var(--color-primary-hover));
+            color: white;
+            font-size: 0.75rem;
+            font-weight: 700;
+            padding: 0.25rem 0.75rem;
+            border-radius: 12px;
+            text-transform: uppercase;
+        }
+        .nav-bar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1rem 2rem;
+            backdrop-filter: blur(20px);
+            background: rgba(10, 15, 26, 0.85);
+            z-index: 1000;
+            border-bottom: 1px solid var(--border-color);
+        }
+        .nav-brand {
+            font-size: 1.5rem;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            color: var(--text-primary);
+        }
+
+        @media (max-width: 768px) {
+            .hero-title { font-size: 2.5rem; }
+            .hero-section { padding-top: 8rem; }
+        }
+
+        @media (max-width: 576px) {
+            .nav-bar {
+                padding: 0.75rem 1rem;
+                gap: 0.5rem;
+            }
+            .nav-brand {
+                font-size: 1.15rem;
+            }
+            .nav-bar .btn {
+                min-height: 36px;
+                padding: 0.5rem 0.65rem;
+                font-size: 0.78rem;
+            }
+            .hero-section {
+                min-height: auto;
+                padding: 7rem 1.25rem 3rem;
+            }
+            .hero-title {
+                font-size: clamp(2rem, 10vw, 2.5rem);
+                margin-bottom: 1rem;
+            }
+            .hero-subtitle {
+                font-size: 1rem;
+                margin-bottom: 1.75rem;
+            }
+            .hero-actions {
+                width: 100%;
+                flex-direction: column;
+            }
+            .hero-actions .btn {
+                width: 100%;
+            }
+            .features-grid,
+            .pricing-section {
+                padding: 2.5rem 1rem;
+            }
+            .features-grid,
+            .pricing-grid {
+                grid-template-columns: 1fr;
+                gap: 1rem;
+            }
+            .feature-card,
+            .pricing-card {
+                padding: 1.25rem;
+            }
+        }
+
+        /* Animated floating blobs background */
+        .animated-bg {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            z-index: -1;
+            overflow: hidden;
+            background: #090d16;
+        }
+        .blob {
+            position: absolute;
+            border-radius: 50%;
+            filter: blur(120px);
+            opacity: 0.12;
+            animation: floatAround 25s infinite alternate ease-in-out;
+        }
+        .blob-1 {
+            width: 500px;
+            height: 500px;
+            background: var(--color-primary, #6366f1);
+            top: -10%;
+            left: -10%;
+            animation-duration: 20s;
+        }
+        .blob-2 {
+            width: 600px;
+            height: 600px;
+            background: #fbbf24;
+            bottom: -20%;
+            right: -10%;
+            animation-duration: 28s;
+            animation-delay: -5s;
+        }
+        .blob-3 {
+            width: 400px;
+            height: 400px;
+            background: var(--color-success, #10b981);
+            top: 40%;
+            left: 50%;
+            animation-duration: 24s;
+            animation-delay: -10s;
+        }
+        @keyframes floatAround {
+            0% { transform: translate(0, 0) scale(1) rotate(0deg); }
+            50% { transform: translate(80px, 60px) scale(1.05) rotate(180deg); }
+            100% { transform: translate(-40px, -30px) scale(0.95) rotate(360deg); }
+        }
+    </style>
+</head>
+<body style="position: relative; min-height: 100vh; background: transparent;">
+
+    <!-- Animated floating blobs background -->
+    <div class="animated-bg">
+        <div class="blob blob-1"></div>
+        <div class="blob blob-2"></div>
+        <div class="blob blob-3"></div>
+    </div>
+
+    <nav class="nav-bar">
+        <div class="nav-brand">
+            <i data-lucide="shopping-bag" style="color: var(--color-primary)"></i>
+            viARMS
+        </div>
+        <div style="display: flex; gap: 1rem;">
+            <a href="{% url 'login' %}" class="btn" style="background: transparent; border: 1px solid var(--border-color);">Login</a>
+            <a href="{% url 'register' %}" class="btn btn-primary">Sign Up Free</a>
+        </div>
+    </nav>
+
+    <div class="hero-section">
+        <h1 class="hero-title">Smart Retail Management<br>for Modern Businesses</h1>
+        <p class="hero-subtitle">viARMS is the all-in-one POS, inventory, and staff management platform tailored for Pharmacies, Supermarkets, Bookshops, and Gadget stores across Africa.</p>
+
+        <div class="hero-actions">
+            <a href="{% url 'register' %}" class="btn btn-primary" style="padding: 1rem 2rem; font-size: 1.1rem; border-radius: 50px;">
+                Start for Free
+            </a>
+            <a href="#features" class="btn" style="padding: 1rem 2rem; font-size: 1.1rem; border-radius: 50px; background: rgba(255,255,255,0.05); border: 1px solid var(--border-color);">
+                See Features
+            </a>
+        </div>
+    </div>
+
+    <div id="features" class="features-grid">
+        <div class="feature-card glass-panel">
+            <div class="feature-icon"><i data-lucide="layout-dashboard"></i></div>
+            <h3 style="margin-bottom: 0.75rem; font-size: 1.25rem;">Multi-Tenant &amp; Multi-Branch</h3>
+            <p style="color: var(--text-secondary); line-height: 1.5;">Manage multiple shop locations from a single admin dashboard. Data is strictly isolated per tenant.</p>
+        </div>
+        <div class="feature-card glass-panel">
+            <div class="feature-icon"><i data-lucide="languages"></i></div>
+            <h3 style="margin-bottom: 0.75rem; font-size: 1.25rem;">Multi-Language POS</h3>
+            <p style="color: var(--text-secondary); line-height: 1.5;">Native support for English, Naija Pidgin, Yorùbá, Igbo, and Hausa for your cashiers and staff.</p>
+        </div>
+        <div class="feature-card glass-panel">
+            <div class="feature-icon"><i data-lucide="package-search"></i></div>
+            <h3 style="margin-bottom: 0.75rem; font-size: 1.25rem;">Business Specific Fields</h3>
+            <p style="color: var(--text-secondary); line-height: 1.5;">Whether it's Pharmacy prescriptions, Bookshop ISBNs, or Gadget warranties, the platform adapts to your industry.</p>
+        </div>
+        <div class="feature-card glass-panel">
+            <div class="feature-icon"><i data-lucide="monitor-speaker"></i></div>
+            <h3 style="margin-bottom: 0.75rem; font-size: 1.25rem;">Customer Display Ads</h3>
+            <p style="color: var(--text-secondary); line-height: 1.5;">Push targeted advertisements to the customer-facing screen while they wait during checkout.</p>
+        </div>
+    </div>
+
+    <div class="pricing-section">
+        <h2 style="font-size: 2.5rem; margin-bottom: 1rem;">Simple, Transparent Pricing</h2>
+        <p style="color: var(--text-secondary); font-size: 1.1rem;">Start for free, upgrade when your business grows.</p>
+
+        <div class="pricing-grid">
+            <div class="pricing-card">
+                <h3 style="font-size: 1.5rem; margin-bottom: 0.5rem;">Free Plan</h3>
+                <div style="font-size: 2.5rem; font-weight: 700; margin-bottom: 2rem;">₦0<span style="font-size: 1rem; color: var(--text-muted); font-weight: 400;">/forever</span></div>
+
+                <ul style="list-style: none; display: flex; flex-direction: column; gap: 1rem; color: var(--text-secondary);">
+                    <li style="display: flex; gap: 0.5rem;"><i data-lucide="check" style="color: var(--color-success);"></i> 1 Shop Location</li>
+                    <li style="display: flex; gap: 0.5rem;"><i data-lucide="check" style="color: var(--color-success);"></i> 1 Manager Account</li>
+                    <li style="display: flex; gap: 0.5rem;"><i data-lucide="check" style="color: var(--color-success);"></i> 1 Cashier Account</li>
+                    <li style="display: flex; gap: 0.5rem;"><i data-lucide="check" style="color: var(--color-success);"></i> Core POS Features</li>
+                </ul>
+
+                <a href="{% url 'register' %}?plan=FREE" class="btn" style="width: 100%; margin-top: 2rem; padding: 1rem; text-align: center; display: block; border: 1px solid var(--border-color); border-radius: 8px;">Get Started Free</a>
+            </div>
+
+            <div class="pricing-card premium">
+                <div class="premium-badge">Most Popular</div>
+                <h3 style="font-size: 1.5rem; margin-bottom: 0.5rem; color: var(--color-primary);">Premium</h3>
+                <div style="font-size: 2.5rem; font-weight: 700; margin-bottom: 2rem;">Contact<span style="font-size: 1rem; color: var(--text-muted); font-weight: 400;">/sales</span></div>
+
+                <ul style="list-style: none; display: flex; flex-direction: column; gap: 1rem; color: var(--text-secondary);">
+                    <li style="display: flex; gap: 0.5rem;"><i data-lucide="check" style="color: var(--color-primary);"></i> Unlimited Shops</li>
+                    <li style="display: flex; gap: 0.5rem;"><i data-lucide="check" style="color: var(--color-primary);"></i> Unlimited Managers</li>
+                    <li style="display: flex; gap: 0.5rem;"><i data-lucide="check" style="color: var(--color-primary);"></i> Unlimited Cashiers</li>
+                    <li style="display: flex; gap: 0.5rem;"><i data-lucide="check" style="color: var(--color-primary);"></i> Priority Support</li>
+                </ul>
+
+                <a href="{% url 'register' %}?plan=PREMIUM" class="btn btn-primary" style="width: 100%; margin-top: 2rem; padding: 1rem; text-align: center; display: block; border-radius: 8px;">Upgrade Now</a>
+            </div>
+
+            <div class="pricing-card" style="border: 1px solid #fbbf24; background: linear-gradient(180deg, rgba(251,191,36,0.05) 0%, var(--bg-surface) 100%); position: relative;">
+                <div class="premium-badge" style="background: linear-gradient(135deg, #f59e0b, #d97706); top: -12px; right: 24px;">VIP Access</div>
+                <h3 style="font-size: 1.5rem; margin-bottom: 0.5rem; color: #fbbf24;">Golden Premium</h3>
+                <div style="font-size: 2.5rem; font-weight: 700; margin-bottom: 2rem;">Contact<span style="font-size: 1rem; color: var(--text-muted); font-weight: 400;">/sales</span></div>
+
+                <ul style="list-style: none; display: flex; flex-direction: column; gap: 1rem; color: var(--text-secondary);">
+                    <li style="display: flex; gap: 0.5rem;"><i data-lucide="check" style="color: #fbbf24;"></i> Everything in Premium</li>
+                    <li style="display: flex; gap: 0.5rem;"><i data-lucide="check" style="color: #fbbf24;"></i> Dedicated Business Advisor</li>
+                    <li style="display: flex; gap: 0.5rem;"><i data-lucide="check" style="color: #fbbf24;"></i> Monthly Business Analysis</li>
+                    <li style="display: flex; gap: 0.5rem;"><i data-lucide="check" style="color: #fbbf24;"></i> 24/7 Concierge Support</li>
+                </ul>
+
+                <a href="{% url 'register' %}?plan=GOLDEN_PREMIUM" class="btn" style="width: 100%; margin-top: 2rem; padding: 1rem; text-align: center; display: block; border-radius: 8px; background: linear-gradient(135deg, #f59e0b, #d97706); border: none; color: white;">Get Golden Access</a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Copyright Footer -->
+    <footer style="text-align: center; padding: 2.5rem 1rem 1.5rem; font-size: 0.78rem; color: var(--text-muted); border-top: 1px solid var(--border-color); margin-top: 3rem; line-height: 1.8;">
+        &copy; viARMS &nbsp;·&nbsp; Powered by <strong style="color: var(--color-primary);">viARMS</strong> | Scales Technologies
+    </footer>
+
+    <script>
+        lucide.createIcons();
+    </script>
+</body>
+</html>
