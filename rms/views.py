@@ -1,22 +1,29 @@
 import csv
 import json
 import uuid
-from datetime import datetime, timedelta
+from io import BytesIO
+from urllib.parse import urlencode
+from datetime import date, datetime, timedelta
 from decimal import Decimal
-from PIL import Image
+from PIL import Image, ImageOps
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required, user_passes_test
 from django.contrib.auth import login, logout, authenticate
 from django.contrib.auth.forms import AuthenticationForm
 from django.contrib import messages
+from django.core.files.base import ContentFile
 from django.http import JsonResponse, HttpResponse
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.db.models import Sum, F, Count, Q
+from django.urls import reverse
 from django.utils import timezone
 from django.contrib.auth.models import User
 from .models import Category, Product, Sale, SaleItem, StoreSettings, Shop, UserProfile, Advertisement
 
 MAX_PRODUCT_IMAGE_SIZE = 5 * 1024 * 1024
+MAX_COMPRESSED_PRODUCT_IMAGE_SIZE = 50 * 1024
+MAX_BULK_PRODUCTS = 20
+MAX_BULK_UPLOAD_SIZE = 20 * 1024 * 1024
 PRODUCT_IMAGE_FORMATS = {
     'JPEG': 'jpg',
     'PNG': 'png',
@@ -30,21 +37,220 @@ def prepare_product_image(uploaded_image):
         raise ValueError("Product images must be 5 MB or smaller.")
 
     try:
-        image = Image.open(uploaded_image)
-        image_format = image.format
-        if image.width * image.height > 20_000_000:
-            raise ValueError("Product image dimensions must not exceed 20 megapixels.")
-        image.verify()
+        with Image.open(uploaded_image) as source:
+            image_format = source.format
+            if source.width * source.height > 20_000_000:
+                raise ValueError("Product image dimensions must not exceed 20 megapixels.")
+            source.seek(0)
+            source.load()
+            image = ImageOps.exif_transpose(source).copy()
     except (Image.DecompressionBombError, OSError) as exc:
         raise ValueError("Upload a valid JPEG, PNG, WebP, or GIF image.") from exc
 
-    extension = PRODUCT_IMAGE_FORMATS.get(image_format)
-    if not extension:
+    if image_format not in PRODUCT_IMAGE_FORMATS:
         raise ValueError("Upload a JPEG, PNG, WebP, or GIF image.")
 
-    uploaded_image.seek(0)
-    uploaded_image.name = f"{uuid.uuid4().hex}.{extension}"
-    return uploaded_image
+    if image.mode == 'P' and 'transparency' in image.info:
+        image = image.convert('RGBA')
+
+    if 'A' in image.getbands():
+        background = Image.new('RGB', image.size, 'white')
+        background.paste(image, mask=image.getchannel('A'))
+        image = background
+    else:
+        image = image.convert('RGB')
+
+    image.thumbnail((1200, 1200), Image.Resampling.LANCZOS)
+    while True:
+        for quality in (85, 75, 65, 55, 45, 35):
+            output = BytesIO()
+            image.save(output, format='JPEG', quality=quality, optimize=True, progressive=True)
+            if output.tell() <= MAX_COMPRESSED_PRODUCT_IMAGE_SIZE:
+                return ContentFile(output.getvalue(), name=f"{uuid.uuid4().hex}.jpg")
+
+        if max(image.size) <= 128:
+            raise ValueError("This image cannot be compressed to 50 KB. Choose a simpler or smaller image.")
+        image = image.resize(
+            (max(1, int(image.width * 0.8)), max(1, int(image.height * 0.8))),
+            Image.Resampling.LANCZOS,
+        )
+
+
+def create_bulk_products(request, user_profile, tenant, is_user_admin, user_shop):
+    try:
+        product_count = int(request.POST.get('product_count', '0'))
+    except ValueError:
+        messages.error(request, "The bulk product form contains an invalid row count.")
+        return
+
+    if product_count < 1 or product_count > MAX_BULK_PRODUCTS:
+        messages.error(request, f"Add between 1 and {MAX_BULK_PRODUCTS} products per bulk submission.")
+        return
+
+    total_upload_size = sum(upload.size for upload in request.FILES.values())
+    if total_upload_size > MAX_BULK_UPLOAD_SIZE:
+        messages.error(request, "The total size of product images in one submission must not exceed 20 MB.")
+        return
+
+    if is_user_admin:
+        shop_id = request.POST.get('bulk_shop_id')
+        shops = Shop.objects.filter(tenant_owner=tenant) if tenant else Shop.objects.all()
+        product_shop = shops.filter(id=shop_id).first() if shop_id else None
+    else:
+        product_shop = user_shop
+
+    if not product_shop:
+        messages.error(request, "Choose a valid shop for the bulk product submission.")
+        return
+
+    categories = Category.objects.filter(tenant_owner=tenant) if tenant else Category.objects.all()
+    products_to_create = []
+    errors = []
+    submitted_keys = set()
+    product_fields = (
+        'name', 'sku', 'category_id', 'cost_price', 'selling_price',
+        'stock_quantity', 'min_stock_level', 'description', 'expiry_date',
+        'dosage_form', 'generic_name', 'prescription_required', 'manufacturer',
+        'strength', 'batch_number', 'nafdac_reg_no', 'storage_conditions',
+        'author', 'publisher', 'isbn', 'color', 'size', 'warranty_period', 'material',
+    )
+
+    for index in range(product_count):
+        prefix = f'product-{index}-'
+        values = {
+            field: request.POST.get(f'{prefix}{field}', '').strip()
+            for field in product_fields
+        }
+        uploaded_image = request.FILES.get(f'{prefix}image')
+        if not any(values.values()) and not uploaded_image:
+            continue
+
+        row_errors = []
+        name = values['name']
+        sku = values['sku']
+        if not name:
+            row_errors.append("product name is required")
+        elif len(name) > 200:
+            row_errors.append("product name must be 200 characters or fewer")
+        if not sku:
+            row_errors.append("SKU/barcode is required")
+        elif len(sku) > 50:
+            row_errors.append("SKU/barcode must be 50 characters or fewer")
+
+        try:
+            cost_price = Decimal(values['cost_price'])
+            selling_price = Decimal(values['selling_price'])
+            if not cost_price.is_finite() or cost_price < 0:
+                raise ValueError
+            if not selling_price.is_finite() or selling_price < 0:
+                raise ValueError
+            if any(
+                amount.quantize(Decimal('0.01')) != amount or amount.adjusted() >= 8
+                for amount in (cost_price, selling_price)
+            ):
+                raise ValueError
+        except (ArithmeticError, ValueError):
+            row_errors.append("cost and selling prices must fit a non-negative amount with up to 2 decimal places")
+
+        try:
+            stock_quantity = int(values['stock_quantity'])
+            min_stock_level = int(values['min_stock_level'] or '5')
+            if (
+                stock_quantity < 0 or min_stock_level < 0
+                or stock_quantity > 2_147_483_647 or min_stock_level > 2_147_483_647
+            ):
+                raise ValueError
+        except ValueError:
+            row_errors.append("stock quantity and minimum stock must be non-negative whole numbers within the supported range")
+
+        category = None
+        if values['category_id']:
+            category = categories.filter(id=values['category_id']).first()
+            if not category:
+                row_errors.append("category is invalid or not available to this account")
+
+        material = values['material']
+        allowed_materials = {choice[0] for choice in Product.MATERIAL_CHOICES}
+        if material and material not in allowed_materials:
+            row_errors.append("material is not a valid choice")
+        expiry = None
+        if values['expiry_date'] and not (
+            user_profile.business_type == 'UTENSILS' and material == 'PLASTIC'
+        ):
+            try:
+                expiry = date.fromisoformat(values['expiry_date'])
+            except ValueError:
+                row_errors.append("expiry date must be a valid date")
+
+        if sku and name and not row_errors:
+            duplicate_key = (sku, product_shop.pk, expiry)
+            if duplicate_key in submitted_keys:
+                row_errors.append("another row in this submission has the same SKU and expiry date for this shop")
+            elif Product.objects.filter(sku=sku, shop=product_shop, expiry_date=expiry).exists():
+                row_errors.append("this SKU and expiry date already exist for this shop")
+            submitted_keys.add(duplicate_key)
+
+        if uploaded_image:
+            try:
+                uploaded_image = prepare_product_image(uploaded_image)
+            except ValueError as exc:
+                row_errors.append(str(exc))
+
+        if row_errors:
+            errors.append(f"Row {index + 1}: {', '.join(row_errors)}.")
+            continue
+
+        products_to_create.append(Product(
+            name=name,
+            sku=sku,
+            category=category,
+            cost_price=cost_price,
+            selling_price=selling_price,
+            stock_quantity=stock_quantity,
+            min_stock_level=min_stock_level,
+            description=values['description'],
+            expiry_date=expiry,
+            shop=product_shop,
+            dosage_form=values['dosage_form'],
+            generic_name=values['generic_name'],
+            prescription_required=values['prescription_required'] in ('true', 'on'),
+            manufacturer=values['manufacturer'],
+            strength=values['strength'],
+            batch_number=values['batch_number'],
+            nafdac_reg_no=values['nafdac_reg_no'],
+            storage_conditions=values['storage_conditions'],
+            author=values['author'],
+            publisher=values['publisher'],
+            isbn=values['isbn'],
+            color=values['color'],
+            size=values['size'],
+            warranty_period=values['warranty_period'],
+            material=material,
+            image=uploaded_image,
+        ))
+
+    if errors:
+        for error in errors:
+            messages.error(request, error)
+        return
+    if not products_to_create:
+        messages.error(request, "Enter product details in at least one row.")
+        return
+
+    saved_images = []
+    try:
+        with transaction.atomic():
+            for product in products_to_create:
+                product.save()
+                if product.image:
+                    saved_images.append((product.image.storage, product.image.name))
+    except IntegrityError:
+        for storage, image_name in saved_images:
+            storage.delete(image_name)
+        messages.error(request, "No products were added because a product conflicts with existing inventory.")
+        return
+
+    messages.success(request, f"Successfully added {len(products_to_create)} products to {product_shop.name}.")
 
 
 def is_admin(user):
@@ -130,6 +336,9 @@ def login_view(request):
                 # Check approval status
                 profile, created = UserProfile.objects.get_or_create(user=user, defaults={'role': 'ADMIN' if user.is_superuser else 'CASHIER'})
                 owner = profile.tenant_owner if profile.tenant_owner else user
+                if not owner.is_active:
+                    messages.error(request, "This business account has been suspended. Contact support for assistance.")
+                    return redirect('login')
                 if not owner.is_superuser and not owner.profile.is_approved:
                     messages.error(request, "Your account is pending administrator approval.")
                     return redirect('login')
@@ -155,14 +364,25 @@ def landing_view(request):
         return redirect('dashboard')
     return render(request, 'landing.html')
 
+def get_managed_tenant_profile(user_id):
+    return get_object_or_404(
+        UserProfile.objects.select_related('user', 'shop'),
+        user_id=user_id,
+        tenant_owner=F('user'),
+        user__is_superuser=False,
+    )
+
+def delete_tenant_accounts(owner):
+    User.objects.filter(profile__tenant_owner=owner).exclude(pk=owner.pk).delete()
+    owner.delete()
+
 @login_required
 @user_passes_test(lambda u: u.is_superuser)
 def admin_panel_view(request):
     if request.method == 'POST':
         action = request.POST.get('action')
         if action == 'approve_user':
-            user_id = request.POST.get('user_id')
-            user_profile = get_object_or_404(UserProfile, user__id=user_id)
+            user_profile = get_managed_tenant_profile(request.POST.get('user_id'))
             if user_profile.kyc_status != 'VERIFIED':
                 messages.error(request, f"Verify KYC for {user_profile.user.username} before approving the account.")
             else:
@@ -170,31 +390,70 @@ def admin_panel_view(request):
                 user_profile.save()
                 messages.success(request, f"User {user_profile.user.username} has been approved.")
         elif action == 'verify_kyc':
-            user_profile = get_object_or_404(UserProfile, user__id=request.POST.get('user_id'))
+            user_profile = get_managed_tenant_profile(request.POST.get('user_id'))
             user_profile.kyc_status = 'VERIFIED'
             user_profile.kyc_notes = request.POST.get('kyc_notes', '').strip()
             user_profile.kyc_reviewed_at = timezone.now()
             user_profile.save(update_fields=['kyc_status', 'kyc_notes', 'kyc_reviewed_at'])
             messages.success(request, f"KYC verified for {user_profile.user.username}.")
         elif action == 'return_kyc':
-            user_profile = get_object_or_404(UserProfile, user__id=request.POST.get('user_id'))
+            user_profile = get_managed_tenant_profile(request.POST.get('user_id'))
             user_profile.kyc_status = 'RETURNED'
             user_profile.kyc_notes = request.POST.get('kyc_notes', '').strip()
             user_profile.kyc_reviewed_at = timezone.now()
             user_profile.save(update_fields=['kyc_status', 'kyc_notes', 'kyc_reviewed_at'])
             messages.success(request, f"KYC returned to {user_profile.user.username} for more information.")
         elif action == 'reject_user':
-            user_id = request.POST.get('user_id')
-            user = get_object_or_404(User, id=user_id)
-            user.delete() # Cascade deletes profile and shop
-            messages.success(request, "User registration rejected and deleted.")
+            user_profile = get_managed_tenant_profile(request.POST.get('user_id'))
+            user = user_profile.user
+            confirmation = request.POST.get('delete_confirmation', '')
+            if user.is_superuser or user == request.user:
+                messages.error(request, "The super-admin account cannot be deleted from this panel.")
+            elif confirmation != user.username:
+                messages.error(request, "Deletion was not confirmed. Enter the exact username to permanently delete this tenant and its data.")
+            else:
+                username = user.username
+                with transaction.atomic():
+                    delete_tenant_accounts(user)
+                messages.success(request, f"Registration for {username} and its tenant data was permanently deleted.")
+        elif action in ('suspend_tenant', 'activate_tenant', 'delete_tenant'):
+            user_profile = get_managed_tenant_profile(request.POST.get('user_id'))
+            user = user_profile.user
+            if user.is_superuser or user == request.user:
+                messages.error(request, "The super-admin account cannot be changed from this panel.")
+            elif action == 'suspend_tenant':
+                if user.is_active:
+                    user.is_active = False
+                    user.save(update_fields=['is_active'])
+                    messages.success(request, f"Business account {user.username} has been suspended. Its data has been retained.")
+                else:
+                    messages.info(request, f"Business account {user.username} is already suspended.")
+            elif action == 'activate_tenant':
+                if not user.is_active:
+                    user.is_active = True
+                    user.save(update_fields=['is_active'])
+                    messages.success(request, f"Business account {user.username} has been reactivated.")
+                else:
+                    messages.info(request, f"Business account {user.username} is already active.")
+            else:
+                confirmation = request.POST.get('delete_confirmation', '')
+                if confirmation != user.username:
+                    messages.error(request, "Deletion was not confirmed. Enter the exact username to permanently delete this tenant and its data.")
+                else:
+                    username = user.username
+                    with transaction.atomic():
+                        delete_tenant_accounts(user)
+                    messages.success(request, f"Tenant {username} and its business data were permanently deleted.")
         elif action == 'update_plan':
-            user_id = request.POST.get('user_id')
             new_plan = request.POST.get('plan')
-            user_profile = get_object_or_404(UserProfile, user__id=user_id)
-            user_profile.plan = new_plan
-            user_profile.save()
-            messages.success(request, f"Plan updated to {new_plan} for {user_profile.user.username}.")
+            user_profile = get_managed_tenant_profile(request.POST.get('user_id'))
+            valid_plans = dict(UserProfile._meta.get_field('plan').choices)
+            if new_plan not in valid_plans:
+                messages.error(request, "Select a valid subscription plan.")
+            else:
+                user_profile.plan = new_plan
+                user_profile.save(update_fields=['plan'])
+                messages.success(request, f"Plan updated to {new_plan} for {user_profile.user.username}.")
         elif action == 'create_ad':
             title = request.POST.get('title')
             content = request.POST.get('content')
@@ -206,18 +465,47 @@ def admin_panel_view(request):
             ad = get_object_or_404(Advertisement, id=ad_id)
             ad.delete()
             messages.success(request, "Advertisement deleted.")
+        else:
+            messages.error(request, "Unknown admin action.")
 
-        return redirect('admin_panel')
+        redirect_url = reverse('admin_panel')
+        tenant_search = request.POST.get('tenant_search', '').strip()
+        if tenant_search:
+            redirect_url = f"{redirect_url}?{urlencode({'tenant_search': tenant_search})}"
+        return redirect(redirect_url)
 
-    pending_users = UserProfile.objects.filter(is_approved=False).select_related('user', 'shop')
+    pending_users = UserProfile.objects.filter(
+        is_approved=False,
+        tenant_owner=F('user'),
+        user__is_superuser=False,
+    ).select_related('user', 'shop')
     pending_kyc = pending_users.exclude(kyc_status='VERIFIED')
-    all_tenants = UserProfile.objects.filter(tenant_owner=F('user')).select_related('user', 'shop').order_by('-user__date_joined')
+    tenant_profiles = UserProfile.objects.filter(
+        tenant_owner=F('user'),
+        user__is_superuser=False,
+    ).select_related('user', 'shop')
+    tenant_search = request.GET.get('tenant_search', '').strip()
+    if tenant_search:
+        tenant_profiles = tenant_profiles.filter(
+            Q(user__username__icontains=tenant_search)
+            | Q(user__email__icontains=tenant_search)
+            | Q(shop__name__icontains=tenant_search)
+        )
+    all_tenants = tenant_profiles.order_by('-user__date_joined')
+    all_tenant_profiles = UserProfile.objects.filter(
+        tenant_owner=F('user'),
+        user__is_superuser=False,
+    )
     ads = Advertisement.objects.all()
 
     context = {
         'pending_users': pending_users,
         'pending_kyc': pending_kyc,
         'all_tenants': all_tenants,
+        'tenant_search': tenant_search,
+        'active_tenant_count': all_tenant_profiles.filter(is_approved=True, user__is_active=True).count(),
+        'suspended_tenant_count': all_tenant_profiles.filter(user__is_active=False).count(),
+        'pending_tenant_count': all_tenant_profiles.filter(is_approved=False, user__is_active=True).count(),
         'ads': ads
     }
     return render(request, 'admin_panel.html', context)
@@ -692,6 +980,9 @@ def product_list_view(request):
             return redirect('products')
 
         action = request.POST.get('action')
+        if action == 'bulk_add_products':
+            create_bulk_products(request, user_profile, tenant, is_user_admin, user_shop)
+            return redirect('products')
         
         # Categories (Admin only)
         if action == 'add_category':
@@ -941,6 +1232,7 @@ def product_list_view(request):
         'expired_count': expired_count,
         'business_type': user_profile.business_type,
         'material_choices': Product.MATERIAL_CHOICES,
+        'max_bulk_products': MAX_BULK_PRODUCTS,
     }
     return render(request, 'products.html', context)
 

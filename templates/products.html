@@ -34,6 +34,9 @@
             <button class="btn btn-primary" onclick="openModal('add-product-modal')">
                 <i data-lucide="plus"></i> Add Product
             </button>
+            <button class="btn btn-secondary" onclick="openModal('bulk-products-modal')">
+                <i data-lucide="layers"></i> Bulk Add
+            </button>
         </div>
         {% endif %}
     </div>
@@ -409,7 +412,7 @@
                 <textarea name="description" id="prod-desc" class="form-control" rows="2" placeholder="Product details..."></textarea>
             </div>
             <div class="form-group">
-                <label for="prod-image" class="form-label">Product Image (Optional, max 5 MB)</label>
+                <label for="prod-image" class="form-label">Product Image (optional, max 5 MB; saved at 50 KB or less)</label>
                 <div style="display: flex; align-items: flex-start; gap: 0.75rem;">
                     <div style="flex: 1; min-width: 0;">
                         <input type="file" name="image" id="prod-image" class="form-control" accept="image/jpeg,image/png,image/webp,image/gif">
@@ -518,6 +521,141 @@
     </div>
 </div>
 
+<!-- MODAL: Bulk Add Products -->
+<div class="modal-backdrop" id="bulk-products-modal">
+    <div class="modal-window glass-panel" style="max-width: 1000px; width: min(1000px, 96vw); max-height: 90vh; overflow-y: auto;">
+        <div class="modal-header">
+            <div>
+                <h3 class="panel-title">Bulk Add Products</h3>
+                <p style="color: var(--text-muted); font-size: 0.8rem; margin: 0.35rem 0 0;">Add up to {{ max_bulk_products }} products at once. Each image is compressed to 50 KB or less.</p>
+            </div>
+            <button class="modal-close" type="button" onclick="closeModal('bulk-products-modal')">&times;</button>
+        </div>
+        <form method="POST" enctype="multipart/form-data" id="bulk-products-form">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="bulk_add_products">
+            <input type="hidden" name="product_count" id="bulk-product-count" value="1">
+            {% if is_admin %}
+            <div class="form-group">
+                <label for="bulk-shop" class="form-label">Assign all products to shop</label>
+                <select name="bulk_shop_id" id="bulk-shop" class="form-control" required>
+                    <option value="">Select a shop</option>
+                    {% for s in shops %}
+                    <option value="{{ s.id }}">{{ s.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            {% endif %}
+            <div id="bulk-products-list"></div>
+            <template id="bulk-product-row-template">
+                <section class="glass-panel bulk-product-row" data-index="__index__" style="padding: 1rem; margin: 0.75rem 0; border: 1px solid var(--border-color);">
+                    <div style="display: flex; justify-content: space-between; align-items: center; gap: 0.75rem; margin-bottom: 0.75rem;">
+                        <strong>Product <span class="bulk-product-number">__number__</span></strong>
+                        <button type="button" class="btn btn-danger btn-sm bulk-remove-product">Remove</button>
+                    </div>
+                    <div class="form-row-grid-2">
+                        <div class="form-group">
+                            <label class="form-label" for="bulk-product-__index__-name">Product Name</label>
+                            <input type="text" id="bulk-product-__index__-name" name="product-__index__-name" class="form-control" maxlength="200" required>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="bulk-product-__index__-sku">SKU / Barcode</label>
+                            <input type="text" id="bulk-product-__index__-sku" name="product-__index__-sku" class="form-control" maxlength="50" required>
+                        </div>
+                    </div>
+                    <div class="form-row-grid-2">
+                        <div class="form-group">
+                            <label class="form-label" for="bulk-product-__index__-category_id">Category</label>
+                            <select id="bulk-product-__index__-category_id" name="product-__index__-category_id" class="form-control">
+                                <option value="">Uncategorized</option>
+                                {% for cat in categories %}
+                                <option value="{{ cat.id }}">{{ cat.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="bulk-product-__index__-expiry_date">Expiry Date</label>
+                            <input type="date" id="bulk-product-__index__-expiry_date" name="product-__index__-expiry_date" class="form-control">
+                        </div>
+                    </div>
+                    <div class="form-row-grid-3">
+                        <div class="form-group">
+                            <label class="form-label" for="bulk-product-__index__-cost_price">Cost Price (₦)</label>
+                            <input type="number" id="bulk-product-__index__-cost_price" name="product-__index__-cost_price" class="form-control" step="0.01" min="0" required>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="bulk-product-__index__-selling_price">Selling Price (₦)</label>
+                            <input type="number" id="bulk-product-__index__-selling_price" name="product-__index__-selling_price" class="form-control" step="0.01" min="0" required>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="bulk-product-__index__-stock_quantity">Initial Stock</label>
+                            <input type="number" id="bulk-product-__index__-stock_quantity" name="product-__index__-stock_quantity" class="form-control" min="0" required>
+                        </div>
+                    </div>
+                    <div class="form-row-grid-2">
+                        <div class="form-group">
+                            <label class="form-label" for="bulk-product-__index__-min_stock_level">Minimum Stock Alert</label>
+                            <input type="number" id="bulk-product-__index__-min_stock_level" name="product-__index__-min_stock_level" class="form-control" value="5" min="0" required>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="bulk-product-__index__-image">Product Image (optional, max 5 MB; saved at 50 KB or less)</label>
+                            <input type="file" id="bulk-product-__index__-image" name="product-__index__-image" class="form-control" accept="image/jpeg,image/png,image/webp,image/gif">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="bulk-product-__index__-description">Description (optional)</label>
+                        <textarea id="bulk-product-__index__-description" name="product-__index__-description" class="form-control" rows="2"></textarea>
+                    </div>
+                    {% if business_type == 'PHARMACEUTICAL' %}
+                    <details style="margin-top: 0.5rem;">
+                        <summary style="cursor: pointer; color: var(--color-primary);">Pharmaceutical details (optional)</summary>
+                        <div class="form-row-grid-2" style="margin-top: 0.75rem;">
+                            <input name="product-__index__-generic_name" class="form-control" placeholder="Generic name">
+                            <input name="product-__index__-dosage_form" class="form-control" placeholder="Dosage form">
+                            <input name="product-__index__-manufacturer" class="form-control" placeholder="Manufacturer">
+                            <input name="product-__index__-strength" class="form-control" placeholder="Strength">
+                            <input name="product-__index__-batch_number" class="form-control" placeholder="Batch number">
+                            <input name="product-__index__-nafdac_reg_no" class="form-control" placeholder="NAFDAC registration number">
+                            <input name="product-__index__-storage_conditions" class="form-control" placeholder="Storage conditions">
+                            <label class="form-label"><input type="checkbox" name="product-__index__-prescription_required" value="true"> Prescription required</label>
+                        </div>
+                    </details>
+                    {% elif business_type == 'BOOK_ACCESSORIES' %}
+                    <details style="margin-top: 0.5rem;">
+                        <summary style="cursor: pointer; color: var(--color-primary);">Book and accessory details (optional)</summary>
+                        <div class="form-row-grid-2" style="margin-top: 0.75rem;">
+                            <input name="product-__index__-author" class="form-control" placeholder="Author">
+                            <input name="product-__index__-publisher" class="form-control" placeholder="Publisher">
+                            <input name="product-__index__-isbn" class="form-control" placeholder="ISBN">
+                            <input name="product-__index__-color" class="form-control" placeholder="Color">
+                            <input name="product-__index__-size" class="form-control" placeholder="Size">
+                            <input name="product-__index__-warranty_period" class="form-control" placeholder="Warranty period">
+                        </div>
+                    </details>
+                    {% elif business_type == 'UTENSILS' %}
+                    <div class="form-group" style="margin-top: 0.75rem;">
+                        <label class="form-label" for="bulk-product-__index__-material">Material</label>
+                        <select id="bulk-product-__index__-material" name="product-__index__-material" class="form-control">
+                            <option value="">Select material</option>
+                            {% for value, label in material_choices %}
+                            <option value="{{ value }}">{{ label }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    {% endif %}
+                </section>
+            </template>
+            <div style="display: flex; justify-content: space-between; gap: 0.75rem; margin-top: 1rem; flex-wrap: wrap;">
+                <button type="button" class="btn btn-secondary" id="bulk-add-row">Add another product</button>
+                <div style="display: flex; gap: 0.75rem;">
+                    <button type="button" class="btn btn-secondary" onclick="closeModal('bulk-products-modal')">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Create All Products</button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
 <!-- MODAL: Edit Product -->
 <div class="modal-backdrop" id="edit-product-modal">
     <div class="modal-window glass-panel" style="max-width: 550px;">
@@ -599,7 +737,7 @@
                 <textarea name="description" id="edit-prod-desc" class="form-control" rows="2"></textarea>
             </div>
             <div class="form-group">
-                <label for="edit-prod-image" class="form-label">Product Image (Optional, max 5 MB)</label>
+                <label for="edit-prod-image" class="form-label">Product Image (optional, max 5 MB; saved at 50 KB or less)</label>
                 <div style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.5rem;">
                     <img id="edit-prod-image-preview" alt="Current product image" style="display: none; width: 64px; height: 64px; object-fit: cover; border-radius: 6px;">
                     <label id="remove-prod-image-wrap" style="display: none; font-size: 0.85rem;">
@@ -962,6 +1100,53 @@
                     if (removeImage) removeImage.checked = false;
                 }
             });
+        }
+
+        const bulkRows = document.getElementById('bulk-products-list');
+        const bulkTemplate = document.getElementById('bulk-product-row-template');
+        const bulkCount = document.getElementById('bulk-product-count');
+        const bulkAddButton = document.getElementById('bulk-add-row');
+        if (bulkRows && bulkTemplate && bulkCount && bulkAddButton) {
+            function refreshBulkProductRows() {
+                const rows = bulkRows.querySelectorAll('.bulk-product-row');
+                rows.forEach(function (row, index) {
+                    row.querySelector('.bulk-product-number').textContent = index + 1;
+                    row.querySelectorAll('[name]').forEach(function (field) {
+                        field.name = field.name.replace(/^product-\d+-/, `product-${index}-`);
+                    });
+                    row.querySelectorAll('[id]').forEach(function (field) {
+                        field.id = field.id.replace(/^bulk-product-\d+-/, `bulk-product-${index}-`);
+                    });
+                    row.querySelectorAll('label[for]').forEach(function (label) {
+                        label.htmlFor = label.htmlFor.replace(/^bulk-product-\d+-/, `bulk-product-${index}-`);
+                    });
+                });
+                bulkCount.value = rows.length;
+                bulkAddButton.disabled = rows.length >= {{ max_bulk_products }};
+            }
+
+            function addBulkProductRow() {
+                const index = bulkRows.querySelectorAll('.bulk-product-row').length;
+                if (index >= {{ max_bulk_products }}) return;
+                const fragment = bulkTemplate.content.cloneNode(true);
+                fragment.querySelector('.bulk-product-row').innerHTML =
+                    fragment.querySelector('.bulk-product-row').innerHTML
+                        .replace(/__index__/g, String(index))
+                        .replace(/__number__/g, String(index + 1));
+                bulkRows.appendChild(fragment);
+                refreshBulkProductRows();
+            }
+
+            bulkAddButton.addEventListener('click', addBulkProductRow);
+            bulkRows.addEventListener('click', function (event) {
+                const removeButton = event.target.closest('.bulk-remove-product');
+                if (!removeButton) return;
+                if (bulkRows.querySelectorAll('.bulk-product-row').length > 1) {
+                    removeButton.closest('.bulk-product-row').remove();
+                    refreshBulkProductRows();
+                }
+            });
+            addBulkProductRow();
         }
     });
 

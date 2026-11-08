@@ -11,6 +11,24 @@
     </div>
 </div>
 
+<div class="metrics-grid" style="margin-bottom: 1.5rem;">
+    <div class="metric-card glass-panel">
+        <div class="metric-title">Active Tenants</div>
+        <div class="metric-value">{{ active_tenant_count }}</div>
+        <div class="metric-subtext">Approved accounts with access</div>
+    </div>
+    <div class="metric-card glass-panel">
+        <div class="metric-title">Pending Approval</div>
+        <div class="metric-value">{{ pending_tenant_count }}</div>
+        <div class="metric-subtext">Awaiting account approval</div>
+    </div>
+    <div class="metric-card glass-panel">
+        <div class="metric-title">Suspended Tenants</div>
+        <div class="metric-value">{{ suspended_tenant_count }}</div>
+        <div class="metric-subtext">Access disabled; data retained</div>
+    </div>
+</div>
+
 <!-- Pending Approvals Section -->
 <div style="margin-bottom: 2rem;">
     <h2 style="font-size: 1.25rem; font-weight: 600; margin-bottom: 1rem; display: flex; align-items: center; gap: 8px;">
@@ -41,11 +59,12 @@
                     <td><span class="badge" style="background: rgba(245,158,11,0.1); color: var(--color-warning);">{{ profile.plan }}</span></td>
                     <td>{{ profile.user.date_joined|date:"M d, Y" }}</td>
                     <td style="text-align: right;">
-                        <form method="POST" style="display: inline-flex; gap: 0.5rem;">
+                        <form method="POST" style="display: inline-flex; gap: 0.5rem;" data-delete-username="{{ profile.user.username }}" onsubmit="return confirmTenantDeletion(this, event)">
                             {% csrf_token %}
                             <input type="hidden" name="user_id" value="{{ profile.user.id }}">
+                            <input type="hidden" name="delete_confirmation">
                             <button type="submit" name="action" value="approve_user" class="btn btn-primary" style="padding: 0.35rem 0.75rem; font-size: 0.8rem;">Approve</button>
-                            <button type="submit" name="action" value="reject_user" class="btn btn-danger" style="padding: 0.35rem 0.75rem; font-size: 0.8rem;" onclick="return confirm('Reject and delete this registration?')">Reject</button>
+                            <button type="submit" name="action" value="reject_user" class="btn btn-danger" style="padding: 0.35rem 0.75rem; font-size: 0.8rem;">Reject &amp; Delete</button>
                         </form>
                     </td>
                 </tr>
@@ -107,14 +126,22 @@
             <i data-lucide="building-2" style="color: var(--color-primary);"></i> Registered Tenants
         </h2>
 
-        <div style="max-height: 400px; overflow-y: auto;">
+        <div style="display: flex; justify-content: space-between; gap: 1rem; align-items: center; flex-wrap: wrap; margin-bottom: 1rem;">
+            <p style="font-size: 0.8rem; color: var(--text-muted); margin: 0;">Suspend to temporarily block sign-in while preserving business data. Permanent deletion removes the tenant and its related records.</p>
+            <form method="GET" style="display: flex; gap: 0.5rem; min-width: min(100%, 260px);">
+                <input type="search" name="tenant_search" class="form-control" value="{{ tenant_search }}" placeholder="Search business, username or email" aria-label="Search tenants">
+                <button type="submit" class="btn btn-secondary" aria-label="Search tenants"><i data-lucide="search" style="width: 16px; height: 16px;"></i></button>
+            </form>
+        </div>
+        <div style="max-height: 500px; overflow: auto;">
             <table class="data-table" style="width: 100%; border-collapse: collapse;">
                 <thead>
                     <tr>
                         <th>Tenant</th>
+                        <th>Business Type</th>
                         <th>Plan</th>
                         <th>Status</th>
-                        <th>Action</th>
+                        <th>Account Actions</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -122,13 +149,16 @@
                     <tr>
                         <td>
                             <div style="font-weight: 600;">{{ profile.shop.name|default:profile.user.username }}</div>
-                            <div style="font-size: 0.8rem; color: var(--text-muted);">{{ profile.user.email }}</div>
+                            <div style="font-size: 0.8rem; color: var(--text-muted);">{{ profile.user.username }} · {{ profile.user.email }}</div>
+                            <div style="font-size: 0.75rem; color: var(--text-muted);">Joined {{ profile.user.date_joined|date:"M d, Y" }}</div>
                         </td>
+                        <td>{{ profile.get_business_type_display }}</td>
                         <td>
                             <form method="POST" style="display: flex; align-items: center; gap: 0.25rem;">
                                 {% csrf_token %}
                                 <input type="hidden" name="user_id" value="{{ profile.user.id }}">
                                 <input type="hidden" name="action" value="update_plan">
+                                <input type="hidden" name="tenant_search" value="{{ tenant_search }}">
                                 <select name="plan" class="form-control" style="font-size: 0.75rem; padding: 0.2rem;" onchange="this.form.submit()">
                                     <option value="FREE" {% if profile.plan == 'FREE' %}selected{% endif %}>Free</option>
                                     <option value="PREMIUM" {% if profile.plan == 'PREMIUM' %}selected{% endif %}>Premium</option>
@@ -137,19 +167,47 @@
                             </form>
                         </td>
                         <td>
-                            {% if profile.is_approved %}
+                            {% if not profile.user.is_active %}
+                            <span class="badge badge-danger">Suspended</span>
+                            {% elif profile.is_approved %}
                             <span class="badge" style="background: rgba(16,185,129,0.1); color: var(--color-success);">Approved</span>
                             {% else %}
                             <span class="badge" style="background: rgba(245,158,11,0.1); color: var(--color-warning);">Pending</span>
                             {% endif %}
                         </td>
-                        <td>
-                            <button class="btn" style="padding: 0.2rem 0.5rem; font-size: 0.75rem;" title="More details...">...</button>
+                        <td style="min-width: 190px;">
+                            <div style="display: flex; gap: 0.4rem; flex-wrap: wrap;">
+                                {% if profile.user.is_active %}
+                                <form method="POST">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="user_id" value="{{ profile.user.id }}">
+                                    <input type="hidden" name="action" value="suspend_tenant">
+                                    <input type="hidden" name="tenant_search" value="{{ tenant_search }}">
+                                    <button type="submit" class="btn btn-secondary btn-sm" onclick="return confirm('Suspend {{ profile.user.username }}? This blocks the owner and staff from accessing this business. Business data will be kept.')">Suspend</button>
+                                </form>
+                                {% else %}
+                                <form method="POST">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="user_id" value="{{ profile.user.id }}">
+                                    <input type="hidden" name="action" value="activate_tenant">
+                                    <input type="hidden" name="tenant_search" value="{{ tenant_search }}">
+                                    <button type="submit" class="btn btn-primary btn-sm">Reactivate</button>
+                                </form>
+                                {% endif %}
+                                <form method="POST" data-delete-username="{{ profile.user.username }}" onsubmit="return confirmTenantDeletion(this, event)">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="user_id" value="{{ profile.user.id }}">
+                                    <input type="hidden" name="action" value="delete_tenant">
+                                    <input type="hidden" name="tenant_search" value="{{ tenant_search }}">
+                                    <input type="hidden" name="delete_confirmation">
+                                    <button type="submit" class="btn btn-danger btn-sm">Delete</button>
+                                </form>
+                            </div>
                         </td>
                     </tr>
                     {% empty %}
                     <tr>
-                        <td colspan="4" style="text-align: center; padding: 2rem; color: var(--text-muted);">No tenants registered.</td>
+                        <td colspan="5" style="text-align: center; padding: 2rem; color: var(--text-muted);">{% if tenant_search %}No tenants match your search.{% else %}No tenants registered.{% endif %}</td>
                     </tr>
                     {% endfor %}
                 </tbody>
@@ -202,4 +260,24 @@
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    function confirmTenantDeletion(form, event) {
+        const action = event.submitter ? event.submitter.value : form.querySelector('[name="action"]').value;
+        if (action !== 'reject_user' && action !== 'delete_tenant') {
+            return true;
+        }
+        const username = form.dataset.deleteUsername;
+        const confirmation = prompt(
+            `Permanently delete "${username}" and all associated business data? This cannot be undone.\n\nType the username to confirm:`
+        );
+        if (confirmation !== username) {
+            return false;
+        }
+        form.elements.delete_confirmation.value = confirmation;
+        return true;
+    }
+</script>
 {% endblock %}

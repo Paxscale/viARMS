@@ -23,7 +23,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', 'a-safe-fallback-key')
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = os.environ.get('DJANGO_DEBUG', 'False').lower() == 'true'
+DEBUG = os.environ.get('DJANGO_DEBUG', 'FALSE').lower() == 'true'
 ALLOWED_HOSTS = ['scales.pythonanywhere.com', '127.0.0.1']
 
 
@@ -46,6 +46,7 @@ MIDDLEWARE = [
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
+    'rms.middleware.TenantAccountStatusMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 

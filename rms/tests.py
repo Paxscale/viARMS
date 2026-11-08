@@ -50,6 +50,105 @@ class RMSModelsAndAPITests(TestCase):
         # Setup HTTP Client
         self.client = Client()
 
+    def create_tenant(self, username, approved=True):
+        owner = User.objects.create_user(username, password='tenant123')
+        profile = owner.profile
+        profile.role = 'ADMIN'
+        profile.tenant_owner = owner
+        profile.is_approved = approved
+        profile.save()
+        shop = Shop.objects.create(name=f'{username} Shop', tenant_owner=owner)
+        profile.shop = shop
+        profile.save()
+        return owner, profile, shop
+
+    def test_super_admin_can_suspend_and_reactivate_tenant_access(self):
+        owner, profile, shop = self.create_tenant('managed_tenant')
+        staff = User.objects.create_user('managed_cashier', password='cashier123')
+        staff_profile = staff.profile
+        staff_profile.tenant_owner = owner
+        staff_profile.shop = shop
+        staff_profile.is_approved = True
+        staff_profile.save()
+
+        staff_client = Client()
+        self.assertTrue(staff_client.login(username='managed_cashier', password='cashier123'))
+        self.assertEqual(staff_client.get(reverse('dashboard')).status_code, 200)
+
+        self.client.login(username='admin', password='admin123')
+        response = self.client.post(reverse('admin_panel'), {
+            'action': 'suspend_tenant',
+            'user_id': owner.id,
+        })
+        self.assertEqual(response.status_code, 302)
+        owner.refresh_from_db()
+        self.assertFalse(owner.is_active)
+        self.assertEqual(staff_client.get(reverse('dashboard')).status_code, 302)
+
+        response = self.client.post(reverse('admin_panel'), {
+            'action': 'activate_tenant',
+            'user_id': owner.id,
+        })
+        self.assertEqual(response.status_code, 302)
+        owner.refresh_from_db()
+        self.assertTrue(owner.is_active)
+        self.assertTrue(staff_client.login(username='managed_cashier', password='cashier123'))
+        self.assertEqual(staff_client.get(reverse('dashboard')).status_code, 200)
+
+    def test_tenant_deletion_requires_username_and_removes_business_records(self):
+        owner, profile, shop = self.create_tenant('delete_me')
+        staff = User.objects.create_user('delete_me_cashier', password='cashier123')
+        staff_profile = staff.profile
+        staff_profile.tenant_owner = owner
+        staff_profile.shop = shop
+        staff_profile.save()
+        product = Product.objects.create(
+            name='Tenant product',
+            sku='TENANT-001',
+            cost_price=Decimal('1.00'),
+            selling_price=Decimal('2.00'),
+            stock_quantity=3,
+            shop=shop,
+        )
+        self.client.login(username='admin', password='admin123')
+
+        response = self.client.post(reverse('admin_panel'), {
+            'action': 'delete_tenant',
+            'user_id': owner.id,
+            'delete_confirmation': 'wrong-name',
+        })
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(User.objects.filter(id=owner.id).exists())
+        self.assertTrue(Product.objects.filter(id=product.id).exists())
+
+        response = self.client.post(reverse('admin_panel'), {
+            'action': 'delete_tenant',
+            'user_id': owner.id,
+            'delete_confirmation': owner.username,
+        })
+        self.assertEqual(response.status_code, 302)
+        self.assertFalse(User.objects.filter(id=owner.id).exists())
+        self.assertFalse(User.objects.filter(id=staff.id).exists())
+        self.assertFalse(Shop.objects.filter(id=shop.id).exists())
+        self.assertFalse(Product.objects.filter(id=product.id).exists())
+
+    def test_admin_panel_search_and_tenant_status_summary(self):
+        active_owner, _, _ = self.create_tenant('active_tenant')
+        self.create_tenant('pending_tenant', approved=False)
+        suspended_owner, _, _ = self.create_tenant('suspended_tenant')
+        suspended_owner.is_active = False
+        suspended_owner.save(update_fields=['is_active'])
+        self.client.login(username='admin', password='admin123')
+
+        response = self.client.get(reverse('admin_panel'), {'tenant_search': 'active_tenant'})
+        self.assertEqual(
+            [tenant.user.username for tenant in response.context['all_tenants']],
+            ['active_tenant'],
+        )
+        self.assertEqual(response.context['active_tenant_count'], 1)
+        self.assertEqual(response.context['pending_tenant_count'], 1)
+        self.assertEqual(response.context['suspended_tenant_count'], 1)
+
     def test_model_properties(self):
         # Test low stock alert
         self.product_chips.stock_quantity = 2
@@ -155,8 +254,12 @@ class RMSModelsAndAPITests(TestCase):
             product = Product.objects.get(sku='CHAIR-001')
             self.assertIsNone(product.expiry_date)
             self.assertTrue(product.image.name.startswith('products/'))
-            self.assertTrue(product.image.name.endswith('.png'))
+            self.assertTrue(product.image.name.endswith('.jpg'))
             self.assertTrue(product.image.storage.exists(product.image.name))
+            self.assertLessEqual(product.image.size, 50 * 1024)
+            with Image.open(product.image) as saved_image:
+                self.assertEqual(saved_image.format, 'JPEG')
+            product.image.close()
 
             response = self.client.get(reverse('products'))
             self.assertContains(response, product.image.url)
@@ -170,6 +273,96 @@ class RMSModelsAndAPITests(TestCase):
             self.assertContains(response, 'js/pos.js?v=3')
             self.assertContains(response, 'id="pos-scan-button"')
             self.assertContains(response, 'id="pos-barcode-scanner-modal"')
+
+    def test_bulk_product_form_creates_products_and_compresses_images(self):
+        owner = User.objects.create_user('bulk_products_admin', password='admin123')
+        profile = owner.profile
+        profile.role = 'ADMIN'
+        profile.tenant_owner = owner
+        profile.business_type = 'UTENSILS'
+        profile.is_approved = True
+        shop = Shop.objects.create(name='Bulk Inventory Shop', tenant_owner=owner)
+        profile.shop = shop
+        profile.save()
+        category = Category.objects.create(name='Cups', tenant_owner=owner)
+        self.client.login(username=owner.username, password='admin123')
+
+        image_buffer = BytesIO()
+        Image.effect_noise((1024, 768), 100).convert('RGB').save(image_buffer, format='PNG')
+        image_upload = SimpleUploadedFile(
+            'cup.png',
+            image_buffer.getvalue(),
+            content_type='image/png',
+        )
+
+        with TemporaryDirectory() as media_dir, override_settings(MEDIA_ROOT=media_dir):
+            page_response = self.client.get(reverse('products'))
+            self.assertContains(page_response, 'id="bulk-products-modal"')
+            self.assertContains(page_response, 'id="bulk-product-row-template"')
+            self.assertContains(page_response, 'product-__index__-image')
+
+            response = self.client.post(reverse('products'), {
+                'action': 'bulk_add_products',
+                'product_count': '2',
+                'bulk_shop_id': str(shop.id),
+                'product-0-name': 'Plastic Cup',
+                'product-0-sku': 'CUP-001',
+                'product-0-category_id': str(category.id),
+                'product-0-cost_price': '20.00',
+                'product-0-selling_price': '50.00',
+                'product-0-stock_quantity': '12',
+                'product-0-min_stock_level': '2',
+                'product-0-expiry_date': 'not-a-date',
+                'product-0-material': 'PLASTIC',
+                'product-1-name': 'Ceramic Cup',
+                'product-1-sku': 'CUP-002',
+                'product-1-category_id': str(category.id),
+                'product-1-cost_price': '30.00',
+                'product-1-selling_price': '70.00',
+                'product-1-stock_quantity': '8',
+                'product-1-min_stock_level': '2',
+                'product-1-material': 'CERAMIC',
+                'product-0-image': image_upload,
+            })
+
+            self.assertEqual(response.status_code, 302)
+            plastic_cup = Product.objects.get(sku='CUP-001')
+            ceramic_cup = Product.objects.get(sku='CUP-002')
+            self.assertEqual(plastic_cup.shop, shop)
+            self.assertEqual(plastic_cup.category, category)
+            self.assertIsNone(plastic_cup.expiry_date)
+            self.assertEqual(plastic_cup.material, 'PLASTIC')
+            self.assertTrue(plastic_cup.image.name.endswith('.jpg'))
+            self.assertLessEqual(plastic_cup.image.size, 50 * 1024)
+            self.assertFalse(ceramic_cup.image)
+            with Image.open(plastic_cup.image) as compressed_image:
+                self.assertLess(compressed_image.width, 1024)
+            plastic_cup.image.close()
+
+    def test_bulk_product_form_does_not_partially_create_invalid_rows(self):
+        owner, profile, shop = self.create_tenant('bulk_invalid_admin')
+        self.client.login(username=owner.username, password='tenant123')
+
+        response = self.client.post(reverse('products'), {
+            'action': 'bulk_add_products',
+            'product_count': '2',
+            'bulk_shop_id': str(shop.id),
+            'product-0-name': 'Valid product',
+            'product-0-sku': 'BULK-VALID',
+            'product-0-cost_price': '2.00',
+            'product-0-selling_price': '3.00',
+            'product-0-stock_quantity': '4',
+            'product-0-min_stock_level': '1',
+            'product-1-name': 'Invalid product',
+            'product-1-sku': 'BULK-INVALID',
+            'product-1-cost_price': 'not-a-price',
+            'product-1-selling_price': '3.00',
+            'product-1-stock_quantity': '4',
+            'product-1-min_stock_level': '1',
+        })
+
+        self.assertEqual(response.status_code, 302)
+        self.assertFalse(Product.objects.filter(sku__startswith='BULK-').exists())
 
     def test_pos_and_dashboard_upgrades_are_available_for_every_business_type(self):
         business_types = ['GENERAL', 'PHARMACEUTICAL', 'BOOK_ACCESSORIES', 'UTENSILS']
@@ -224,6 +417,10 @@ class RMSModelsAndAPITests(TestCase):
     def test_bookshop_accessories_business_has_both_product_field_sets(self):
         registration_response = self.client.get(reverse('register'))
         self.assertContains(registration_response, 'value="BOOK_ACCESSORIES"')
+        self.assertContains(registration_response, 'class="login-container register-page"')
+        self.assertContains(registration_response, 'class="register-layout"')
+        self.assertContains(registration_response, 'class="login-card glass-panel register-card"')
+        self.assertContains(registration_response, '@media (max-width: 576px)')
 
         business_owner = User.objects.create_user('book_accessories_owner', password='admin123')
         profile = business_owner.profile
