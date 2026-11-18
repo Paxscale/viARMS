@@ -196,6 +196,7 @@
     const checkoutUrl = "{% url 'checkout_api' %}";
     const csrfToken = "{{ csrf_token }}";
 </script>
+<script src="https://unpkg.com/dexie@3.2.4/dist/dexie.min.js"></script>
 <script src="https://unpkg.com/html5-qrcode"></script>
-<script src="{% static 'js/pos.js' %}?v=4"></script>
+<script src="{% static 'js/pos.js' %}?v=5"></script>
 {% endblock %}

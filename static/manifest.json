@@ -1,0 +1,20 @@
+{
+  "name": "viARMS - Retail Management System",
+  "short_name": "viARMS POS",
+  "description": "Smart, lightning-fast Retail & Pharmacy Point of Sale with offline resilience.",
+  "start_url": "/pos/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0a0f1d",
+  "theme_color": "#0284c7",
+  "icons": [
+    {
+      "src": "/static/icons/icon.svg",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["business", "finance", "productivity", "shopping"]
+}

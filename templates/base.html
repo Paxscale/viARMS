@@ -6,6 +6,15 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}viARMS - Shop Sales & Record Management{% endblock %}</title>
+    <!-- PWA Manifest & Meta Tags -->
+    <link rel="manifest" href="/manifest.json">
+    <meta name="theme-color" content="#0284c7">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="viARMS">
+    <link rel="apple-touch-icon" href="{% static 'icons/icon.svg' %}">
+    <link rel="icon" type="image/svg+xml" href="{% static 'icons/icon.svg' %}">
+
     <link rel="stylesheet" href="{% static 'css/styles.css' %}?v=5">
     <!-- Lucide Icons (CDN) for modern, clean iconography -->
     <script src="https://unpkg.com/lucide@latest"></script>
@@ -394,6 +403,18 @@
     <script src="{% static 'js/onboarding_tour.js' %}"></script>
     {% endif %}
     {% block scripts %}{% endblock %}
+    <!-- Service Worker Registration for Offline POS & PWA -->
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/sw.js').then((reg) => {
+                    console.log('[PWA] Service Worker active, scope:', reg.scope);
+                }).catch((err) => {
+                    console.warn('[PWA] Service Worker registration failed:', err);
+                });
+            });
+        }
+    </script>
 </body>
 
 </html>

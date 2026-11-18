@@ -283,7 +283,7 @@ class RMSModelsAndAPITests(TestCase):
 
             response = self.client.get(reverse('pos'))
             self.assertContains(response, product.image.url)
-            self.assertContains(response, 'js/pos.js?v=3')
+            self.assertContains(response, 'js/pos.js?v=')
             self.assertContains(response, 'id="pos-scan-button"')
             self.assertContains(response, 'id="pos-barcode-scanner-modal"')
 

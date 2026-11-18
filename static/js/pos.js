@@ -110,11 +110,9 @@ document.addEventListener("DOMContentLoaded", function () {
     window.addEventListener('online', updateNetworkStatus);
     window.addEventListener('offline', updateNetworkStatus);
     
-    initDB().then(() => {
-        // Cache data for offline mode
-        if (navigator.onLine) {
-            saveToStore('products_cache', 'catalog', productsData);
-            saveToStore('settings_cache', 'tax_rate', defaultTaxRate);
+    initDexieDB().then(() => {
+        if (navigator.onLine && typeof productsData !== 'undefined') {
+            cacheCatalogToDexie(productsData, defaultTaxRate);
         }
         updateNetworkStatus();
         checkUnsyncedCount();
@@ -598,11 +596,7 @@ function submitCheckout() {
         const localReceiptNumber = 'OFFLINE-' + Date.now();
         payload.local_receipt_number = localReceiptNumber;
         
-        saveToStore('offline_sales_queue', localReceiptNumber, {
-            local_receipt_number: localReceiptNumber,
-            payload: payload,
-            timestamp: new Date().toISOString()
-        }).then(() => {
+        saveOfflineSaleToDexie(localReceiptNumber, payload).then(() => {
             showNotification('Saved offline. Will sync when connection is restored.', 'success');
             checkUnsyncedCount();
             
@@ -790,67 +784,69 @@ function printReceipt() {
     printWindow.print();
 }
 
-// --- Offline & Sync Support (IndexedDB) ---
-const dbName = 'viARMS_POS_DB';
-const dbVersion = 1;
+// --- Offline & Sync Support with Dexie.js ---
+let posDb = null;
 
-function initDB() {
-    return new Promise((resolve, reject) => {
-        const request = indexedDB.open(dbName, dbVersion);
-        request.onupgradeneeded = (e) => {
-            const db = e.target.result;
-            if (!db.objectStoreNames.contains('products_cache')) {
-                db.createObjectStore('products_cache');
-            }
-            if (!db.objectStoreNames.contains('settings_cache')) {
-                db.createObjectStore('settings_cache');
-            }
-            if (!db.objectStoreNames.contains('offline_sales_queue')) {
-                db.createObjectStore('offline_sales_queue', { keyPath: 'local_receipt_number' });
-            }
-        };
-        request.onsuccess = () => resolve(request.result);
-        request.onerror = () => reject(request.error);
+function initDexieDB() {
+    if (typeof Dexie === 'undefined') {
+        console.warn('[Dexie] Dexie library not loaded, falling back to basic cache');
+        return Promise.resolve(null);
+    }
+
+    if (posDb) return Promise.resolve(posDb);
+
+    posDb = new Dexie('viARMS_POS_PWA_DB');
+    posDb.version(1).stores({
+        products: 'id, sku, name, category_id, stock_quantity',
+        settings: 'key',
+        offlineSales: 'local_receipt_number, timestamp, synced'
+    });
+
+    return posDb.open().then(() => {
+        console.log('[Dexie] Database opened successfully');
+        return posDb;
+    }).catch(err => {
+        console.error('[Dexie] Failed to open database:', err);
+        return null;
     });
 }
 
-function saveToStore(storeName, key, data) {
-    return initDB().then(db => {
-        return new Promise((resolve, reject) => {
-            const tx = db.transaction(storeName, 'readwrite');
-            const store = tx.objectStore(storeName);
-            if (key) {
-                store.put(data, key);
-            } else {
-                store.put(data);
-            }
-            tx.oncomplete = () => resolve();
-            tx.onerror = () => reject(tx.error);
-        });
-    });
+async function cacheCatalogToDexie(catalog, taxRate) {
+    try {
+        const db = await initDexieDB();
+        if (!db) return;
+
+        // Upsert all products into Dexie
+        if (Array.isArray(catalog) && catalog.length > 0) {
+            await db.products.bulkPut(catalog);
+        }
+        await db.settings.put({ key: 'tax_rate', value: taxRate });
+        await db.settings.put({ key: 'last_cached', value: new Date().toISOString() });
+    } catch (e) {
+        console.warn('[Dexie] Error caching catalog:', e);
+    }
 }
 
-function getAllFromStore(storeName) {
-    return initDB().then(db => {
-        return new Promise((resolve, reject) => {
-            const tx = db.transaction(storeName, 'readonly');
-            const store = tx.objectStore(storeName);
-            const request = store.getAll();
-            request.onsuccess = () => resolve(request.result);
-            request.onerror = () => reject(request.error);
-        });
-    });
+async function getOfflineSalesCount() {
+    try {
+        const db = await initDexieDB();
+        if (!db) return 0;
+        return await db.offlineSales.where('synced').equals(0).count();
+    } catch (e) {
+        console.error('[Dexie] Error counting offline sales:', e);
+        return 0;
+    }
 }
 
-function deleteFromStore(storeName, key) {
-    return initDB().then(db => {
-        return new Promise((resolve, reject) => {
-            const tx = db.transaction(storeName, 'readwrite');
-            const store = tx.objectStore(storeName);
-            store.delete(key);
-            tx.oncomplete = () => resolve();
-            tx.onerror = () => reject(tx.error);
-        });
+async function saveOfflineSaleToDexie(localReceiptNumber, payload) {
+    const db = await initDexieDB();
+    if (!db) throw new Error('IndexedDB not available');
+
+    await db.offlineSales.put({
+        local_receipt_number: localReceiptNumber,
+        payload: payload,
+        timestamp: new Date().toISOString(),
+        synced: 0
     });
 }
 
@@ -885,21 +881,26 @@ function updateSyncBadge(count) {
 }
 
 async function checkUnsyncedCount() {
-    try {
-        const queue = await getAllFromStore('offline_sales_queue');
-        updateSyncBadge(queue.length);
-    } catch (e) {
-        console.error("Error reading queue count", e);
-    }
+    const count = await getOfflineSalesCount();
+    updateSyncBadge(count);
 }
 
+let isSyncing = false;
 async function syncOfflineSales() {
-    try {
-        const queue = await getAllFromStore('offline_sales_queue');
-        updateSyncBadge(queue.length);
-        if (queue.length === 0) return;
+    if (isSyncing || !navigator.onLine) return;
+    isSyncing = true;
 
-        for (const sale of queue) {
+    try {
+        const db = await initDexieDB();
+        if (!db) return;
+
+        const pending = await db.offlineSales.where('synced').equals(0).toArray();
+        updateSyncBadge(pending.length);
+        if (pending.length === 0) return;
+
+        showNotification(`Syncing ${pending.length} offline invoice(s) to server...`, 'info');
+
+        for (const sale of pending) {
             try {
                 const response = await fetch(checkoutUrl, {
                     method: 'POST',
@@ -911,14 +912,33 @@ async function syncOfflineSales() {
                 });
                 const data = await response.json();
                 if (data.success || (data.error && data.error.includes('already synced'))) {
-                    await deleteFromStore('offline_sales_queue', sale.local_receipt_number);
+                    // Mark as synced and delete from pending queue
+                    await db.offlineSales.delete(sale.local_receipt_number);
                 }
             } catch (err) {
-                console.error("Failed to sync sale", sale.local_receipt_number, err);
+                console.error('[Sync] Failed to sync sale', sale.local_receipt_number, err);
+                break; // Stop loop if network breaks during loop
             }
         }
-        checkUnsyncedCount();
+
+        const remaining = await getOfflineSalesCount();
+        updateSyncBadge(remaining);
+        if (remaining === 0) {
+            showNotification('All offline sales synced successfully with Django!', 'success');
+        }
     } catch (e) {
-        console.error("Error in sync process", e);
+        console.error('[Sync] Error in sync process', e);
+    } finally {
+        isSyncing = false;
     }
+}
+
+// Listen for service worker background sync messages
+if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.addEventListener('message', (event) => {
+        if (event.data && event.data.type === 'TRIGGER_BACKGROUND_SYNC') {
+            console.log('[PWA] Service Worker triggered background sync');
+            syncOfflineSales();
+        }
+    });
 }
