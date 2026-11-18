@@ -1219,5 +1219,48 @@
             closeModal('barcode-scanner-modal');
         }
     }
+
+    // Hardware Barcode Scanner auto-detection on Add/Edit product modals
+    (function initProductsHwScanner() {
+        let hwBuffer = "";
+        let lastCharTime = 0;
+        window.addEventListener("keydown", function (e) {
+            // Only capture if add-product or edit-product modal is active
+            const addModal = document.getElementById('add-product-modal');
+            const editModal = document.getElementById('edit-product-modal');
+            const isAddActive = addModal && addModal.classList.contains('active');
+            const isEditActive = editModal && editModal.classList.contains('active');
+            if (!isAddActive && !isEditActive) return;
+
+            const now = Date.now();
+            if (e.key === "Enter") {
+                const scannedCode = hwBuffer.trim();
+                if (scannedCode.length >= 2 && (now - lastCharTime) < 400) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const targetInputId = isAddActive ? 'prod-sku' : 'edit-prod-sku';
+                    const targetInput = document.getElementById(targetInputId);
+                    if (targetInput) {
+                        targetInput.value = scannedCode;
+                        if (typeof showNotification === 'function') {
+                            showNotification("Barcode captured: " + scannedCode, "success");
+                        }
+                    }
+                }
+                hwBuffer = "";
+                return;
+            }
+
+            if (e.key.length !== 1 || e.ctrlKey || e.altKey || e.metaKey) return;
+
+            if (hwBuffer.length === 0 || (now - lastCharTime) <= 60) {
+                hwBuffer += e.key;
+                lastCharTime = now;
+            } else {
+                hwBuffer = e.key;
+                lastCharTime = now;
+            }
+        }, true);
+    })();
 </script>
 {% endblock %}

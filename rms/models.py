@@ -45,7 +45,8 @@ class UserProfile(models.Model):
         ('GENERAL', 'General Retail / Provision Store'),
         ('PHARMACEUTICAL', 'Pharmaceuticals'),
         ('BOOK_ACCESSORIES', 'Bookshop & Accessories'),
-        ('UTENSILS', 'Utensils & Housewares')
+        ('UTENSILS', 'Utensils & Housewares'),
+        ('LAUNDRY', 'Laundry & Dry Cleaning')
     ], default='GENERAL')
 
     def __str__(self):
@@ -201,7 +202,7 @@ class SaleItem(models.Model):
 class StoreSettings(models.Model):
     store_name = models.CharField(max_length=200, default="Our Shop")
     address = models.TextField(blank=True, null=True, default="123 Retail Ave, Shoptown")
-    phone = models.CharField(max_length=50, blank=True, null=True, default="+1 555-0199")
+    phone = models.CharField(max_length=50, blank=True, null=True, default="+234 810 026 2697")
     tax_rate = models.DecimalField(max_digits=5, decimal_places=2, default=0.00, help_text="Default store tax rate in percentage")
     receipt_footer = models.TextField(blank=True, null=True, default="Thank you for shopping with us! Please come again.")
 

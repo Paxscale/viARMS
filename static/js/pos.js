@@ -6,6 +6,105 @@ let posBarcodeScanner = null;
 let posScannerStartPromise = null;
 const customerDisplayChannel = 'BroadcastChannel' in window ? new BroadcastChannel('viARMS_customer_display') : null;
 
+// --- Hardware Barcode Scanner (USB/Bluetooth Keyboard Wedge) ---
+// Scanner input emits keys in rapid succession (< 50ms) followed by Enter.
+let hwBarcodeBuffer = "";
+let hwBarcodeLastTime = 0;
+const HW_SCANNER_MAX_INTERVAL = 60; // ms between consecutive keystrokes from a scanner
+
+function initHardwareBarcodeScanner() {
+    window.addEventListener("keydown", function (e) {
+        // Do not intercept if camera scanner modal or receipt modal is open
+        const cameraModal = document.getElementById("pos-barcode-scanner-modal");
+        const receiptModal = document.getElementById("receipt-modal");
+        if ((cameraModal && cameraModal.classList.contains("active")) ||
+            (receiptModal && receiptModal.classList.contains("active"))) {
+            return;
+        }
+
+        const now = Date.now();
+        const activeElem = document.activeElement;
+        const isEditingCartDiscount = activeElem && activeElem.id === "cart-discount";
+
+        // If user is editing cart discount or selecting payment method, let them type
+        if (isEditingCartDiscount) return;
+
+        // If Enter key is pressed, evaluate buffer or searchInput
+        if (e.key === "Enter") {
+            const timeDiff = now - hwBarcodeLastTime;
+            const barcodeCandidate = hwBarcodeBuffer.trim();
+
+            // Check if buffer contains a scanned barcode (scanned rapidly or has length >= 2)
+            if (barcodeCandidate.length >= 2 && timeDiff < 400) {
+                e.preventDefault();
+                e.stopPropagation();
+                hwBarcodeBuffer = "";
+                hwBarcodeLastTime = 0;
+                handleHardwareScannedBarcode(barcodeCandidate);
+                return;
+            }
+
+            // If focused on search-input, handle standard Enter press
+            if (activeElem && activeElem.id === "search-input") {
+                const queryVal = activeElem.value.trim();
+                if (queryVal) {
+                    e.preventDefault();
+                    handleHardwareScannedBarcode(queryVal);
+                    activeElem.value = "";
+                    searchQuery = "";
+                    renderCatalog();
+                }
+            }
+            hwBarcodeBuffer = "";
+            return;
+        }
+
+        // Ignore modifier keys, functional keys, tab, escape, etc.
+        if (e.key.length !== 1 || e.ctrlKey || e.altKey || e.metaKey) {
+            return;
+        }
+
+        const charTimeDiff = now - hwBarcodeLastTime;
+        // If elapsed time is small, it's very likely from the attached hardware scanner
+        if (hwBarcodeBuffer.length === 0 || charTimeDiff <= HW_SCANNER_MAX_INTERVAL) {
+            hwBarcodeBuffer += e.key;
+            hwBarcodeLastTime = now;
+        } else {
+            // Slower keystroke - start a new potential barcode sequence
+            hwBarcodeBuffer = e.key;
+            hwBarcodeLastTime = now;
+        }
+
+        // If the scanner typed into the search-input, prevent duplicates when enter arrives
+        // and keep search-input focused by default for cashier convenience
+    }, true);
+}
+
+function handleHardwareScannedBarcode(rawBarcode) {
+    const code = rawBarcode.trim();
+    if (!code) return;
+
+    // Pulse badge to indicate hardware scan detected
+    const badge = document.getElementById("hw-scanner-badge");
+    if (badge) {
+        badge.style.background = "rgba(16, 185, 129, 0.25)";
+        badge.style.color = "var(--color-success)";
+        badge.style.borderColor = "var(--color-success)";
+        badge.innerHTML = `<i data-lucide="check" style="width: 13px; height: 13px;"></i> Scanned: ${escapeHtml(code)}`;
+        lucide.createIcons();
+        setTimeout(() => {
+            badge.style.background = "rgba(99, 102, 241, 0.15)";
+            badge.style.color = "var(--color-primary)";
+            badge.style.borderColor = "rgba(99, 102, 241, 0.35)";
+            badge.innerHTML = `<i data-lucide="barcode" style="width: 13px; height: 13px;"></i> Scanner Ready`;
+            lucide.createIcons();
+        }, 1800);
+    }
+
+    // Lookup product in productsData
+    searchForScannedBarcode(code);
+}
+
 document.addEventListener("DOMContentLoaded", function () {
     // Check network status and sync
     window.addEventListener('online', updateNetworkStatus);
@@ -22,27 +121,19 @@ document.addEventListener("DOMContentLoaded", function () {
     });
 
     renderCatalog();
+    initHardwareBarcodeScanner();
     
     // Bind search inputs
     const searchInput = document.getElementById('search-input');
-    searchInput.addEventListener('input', function (e) {
-        searchQuery = e.target.value.toLowerCase().trim();
-        renderCatalog();
-    });
+    if (searchInput) {
+        // Automatically focus search input when page loads so scanner is ready immediately
+        setTimeout(() => searchInput.focus(), 150);
 
-    // Check if barcode scanner (fast enter key) is used
-    searchInput.addEventListener('keydown', function(e) {
-        if (e.key === 'Enter') {
-            e.preventDefault();
-            const matchedProduct = productsData.find(p => p.sku.toLowerCase() === searchQuery);
-            if (matchedProduct) {
-                addToCart(matchedProduct.id);
-                searchInput.value = '';
-                searchQuery = '';
-                renderCatalog();
-            }
-        }
-    });
+        searchInput.addEventListener('input', function (e) {
+            searchQuery = e.target.value.toLowerCase().trim();
+            renderCatalog();
+        });
+    }
 
     document.getElementById('pos-scan-button').addEventListener('click', startPosBarcodeScanner);
     document.getElementById('pos-scan-close').addEventListener('click', stopPosBarcodeScanner);
@@ -122,14 +213,34 @@ function stopPosBarcodeScanner() {
         });
 }
 
+function playBarcodeBeep() {
+    try {
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const oscillator = audioCtx.createOscillator();
+        const gainNode = audioCtx.createGain();
+        oscillator.type = "sine";
+        oscillator.frequency.setValueAtTime(1750, audioCtx.currentTime); // 1.75kHz POS scanner beep
+        gainNode.gain.setValueAtTime(0.12, audioCtx.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.08);
+        oscillator.connect(gainNode);
+        gainNode.connect(audioCtx.destination);
+        oscillator.start();
+        oscillator.stop(audioCtx.currentTime + 0.08);
+    } catch (e) {
+        // AudioContext not allowed or not supported in environment
+    }
+}
+
 function searchForScannedBarcode(decodedText) {
     const barcode = decodedText.trim();
     if (!barcode) return;
 
     const searchInput = document.getElementById('search-input');
-    const matchedProduct = productsData.find(product => product.sku.toLowerCase() === barcode.toLowerCase());
-    searchInput.value = barcode;
-    searchQuery = barcode.toLowerCase();
+    // Match against SKU or barcode field (case-insensitive)
+    const matchedProduct = productsData.find(product =>
+        (product.sku && product.sku.toLowerCase() === barcode.toLowerCase()) ||
+        (product.batch_number && product.batch_number.toLowerCase() === barcode.toLowerCase())
+    );
 
     if (activeCategory !== 'all') {
         activeCategory = 'all';
@@ -138,15 +249,23 @@ function searchForScannedBarcode(decodedText) {
         });
     }
 
-    renderCatalog();
     if (matchedProduct) {
+        playBarcodeBeep();
         addToCart(matchedProduct.id);
-        searchInput.value = '';
-        searchQuery = '';
+        if (searchInput) {
+            searchInput.value = '';
+            searchQuery = '';
+            searchInput.focus();
+        }
         renderCatalog();
     } else {
-        showNotification('No product found for the scanned barcode.', 'error');
-        searchInput.focus();
+        if (searchInput) {
+            searchInput.value = barcode;
+            searchQuery = barcode.toLowerCase();
+            searchInput.focus();
+        }
+        renderCatalog();
+        showNotification(`No product found for scanned code: "${barcode}"`, 'error');
     }
 }
 

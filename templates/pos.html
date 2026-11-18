@@ -16,7 +16,12 @@
                     <p class="pos-eyebrow">Product catalogue</p>
                     <h1>Build this sale</h1>
                 </div>
-                <span class="badge badge-info" id="catalog-count" aria-live="polite">0 products</span>
+                <div style="display: flex; gap: 0.5rem; align-items: center;">
+                    <span class="badge" id="hw-scanner-badge" style="background: rgba(99, 102, 241, 0.15); color: var(--color-primary); border: 1px solid rgba(99, 102, 241, 0.35); font-size: 0.75rem; display: inline-flex; align-items: center; gap: 4px;" title="Hardware USB/Bluetooth scanner is active by default. You can scan barcodes anytime!">
+                        <i data-lucide="barcode" style="width: 13px; height: 13px;"></i> Scanner Ready
+                    </span>
+                    <span class="badge badge-info" id="catalog-count" aria-live="polite">0 products</span>
+                </div>
             </div>
             <div class="search-filter-bar" style="display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap;">
                 <div class="pos-search-control">
@@ -192,5 +197,5 @@
     const csrfToken = "{{ csrf_token }}";
 </script>
 <script src="https://unpkg.com/html5-qrcode"></script>
-<script src="{% static 'js/pos.js' %}?v=3"></script>
+<script src="{% static 'js/pos.js' %}?v=4"></script>
 {% endblock %}

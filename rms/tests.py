@@ -16,6 +16,17 @@ class RMSModelsAndAPITests(TestCase):
         # Create users
         self.admin_user = User.objects.create_superuser('admin', 'admin@test.com', 'admin123')
         self.cashier_user = User.objects.create_user('cashier', 'cashier@test.com', 'cashier123')
+        self.store_admin_user = User.objects.create_user('store_admin', password='admin123')
+
+        self.shop = Shop.objects.create(name="Test Retail")
+        cashier_profile = self.cashier_user.profile
+        cashier_profile.shop = self.shop
+        cashier_profile.is_approved = True
+        cashier_profile.save()
+        store_admin_profile = self.store_admin_user.profile
+        store_admin_profile.role = 'ADMIN'
+        store_admin_profile.is_approved = True
+        store_admin_profile.save()
 
         # Create settings
         self.settings = StoreSettings.get_settings()
@@ -31,6 +42,7 @@ class RMSModelsAndAPITests(TestCase):
             name="Coke 300ml",
             sku="11111",
             category=self.category,
+            shop=self.shop,
             cost_price=Decimal('0.50'),
             selling_price=Decimal('1.20'),
             stock_quantity=20,
@@ -41,6 +53,7 @@ class RMSModelsAndAPITests(TestCase):
             name="Chips 100g",
             sku="22222",
             category=self.category,
+            shop=self.shop,
             cost_price=Decimal('0.80'),
             selling_price=Decimal('2.00'),
             stock_quantity=10,
@@ -556,7 +569,7 @@ class RMSModelsAndAPITests(TestCase):
         self.assertEqual(response.status_code, 302)
 
         # 2. Admin SHOULD be able to view Settings page
-        self.client.login(username='admin', password='admin123')
+        self.client.login(username='store_admin', password='admin123')
         response = self.client.get(reverse('settings'))
         self.assertEqual(response.status_code, 200)
         
@@ -568,7 +581,19 @@ class RMSModelsAndAPITests(TestCase):
         self.assertNotContains(response, "Today's Net Profit")
 
         # 4. Admin dashboard contains net profit
-        self.client.login(username='admin', password='admin123')
+        self.client.login(username='store_admin', password='admin123')
         response = self.client.get(reverse('dashboard'))
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Today's Net Profit")
+
+    def test_phone_fields_use_nigerian_default(self):
+        self.assertEqual(self.settings.phone, "+234 810 026 2697")
+
+        self.client.login(username='store_admin', password='admin123')
+        settings_response = self.client.get(reverse('settings'))
+        self.assertContains(settings_response, 'type="tel"')
+        self.assertContains(settings_response, 'placeholder="+234 810 026 2697"')
+
+        shops_response = self.client.get(reverse('shops'))
+        self.assertContains(shops_response, 'type="tel"')
+        self.assertContains(shops_response, 'placeholder="+234 810 026 2697"')
