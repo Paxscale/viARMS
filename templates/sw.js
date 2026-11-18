@@ -1,21 +1,21 @@
 // viARMS Progressive Web App Service Worker
-const CACHE_NAME = 'viarms-pwa-v1';
+const CACHE_NAME = 'viarms-pwa-v2';
 
 // Essential assets to cache for offline usage
 const PRECACHE_ASSETS = [
   '/',
   '/pos/',
   '/static/manifest.json',
-  '/static/css/styles.css?v=5',
+  '/static/css/styles.css?v=6',
   '/static/js/i18n.js',
-  '/static/js/pos.js?v=4',
+  '/static/js/pos.js?v=5',
   '/static/icons/icon.svg',
   'https://unpkg.com/dexie@3.2.4/dist/dexie.min.js',
   'https://unpkg.com/lucide@latest',
   'https://unpkg.com/html5-qrcode'
 ];
 
-// Install Event - Precache critical shell assets
+// Install Event - Precache critical shell assets & skip waiting immediately
 self.addEventListener('install', (event) => {
   self.skipWaiting();
   event.waitUntil(
@@ -31,13 +31,14 @@ self.addEventListener('install', (event) => {
   );
 });
 
-// Activate Event - Clean up obsolete caches
+// Activate Event - Clean up all previous caches and immediately take control
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((cacheNames) => {
       return Promise.all(
         cacheNames.map((cache) => {
           if (cache !== CACHE_NAME) {
+            console.log('[SW] Deleting old cache:', cache);
             return caches.delete(cache);
           }
         })
@@ -57,7 +58,7 @@ self.addEventListener('fetch', (event) => {
 
   const url = new URL(request.url);
 
-  // For static assets (CSS, JS, Fonts, Images): Cache-first with network background update
+  // For static assets (CSS, JS, Fonts, Images): Cache-first with background network revalidation
   if (
     url.pathname.startsWith('/static/') ||
     url.hostname.includes('unpkg.com') ||
@@ -65,29 +66,21 @@ self.addEventListener('fetch', (event) => {
   ) {
     event.respondWith(
       caches.match(request).then((cachedResponse) => {
-        if (cachedResponse) {
-          // Revalidate in background
-          fetch(request).then((networkResponse) => {
-            if (networkResponse && networkResponse.status === 200) {
-              caches.open(CACHE_NAME).then((cache) => cache.put(request, networkResponse));
-            }
-          }).catch(() => {});
-          return cachedResponse;
-        }
-
-        return fetch(request).then((networkResponse) => {
+        const fetchPromise = fetch(request).then((networkResponse) => {
           if (networkResponse && networkResponse.status === 200) {
-            const responseClone = networkResponse.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(request, responseClone));
+            caches.open(CACHE_NAME).then((cache) => cache.put(request, networkResponse.clone()));
           }
           return networkResponse;
-        });
+        }).catch(() => null);
+
+        // If cached asset exists, return it immediately while fetching fresh in background
+        return cachedResponse || fetchPromise;
       })
     );
     return;
   }
 
-  // For Navigation requests (HTML pages like /pos/): Network-first with cache fallback
+  // For Navigation requests (HTML pages like /pos/, /, /dashboard/): Network-first with cache fallback
   if (request.mode === 'navigate') {
     event.respondWith(
       fetch(request).then((networkResponse) => {

@@ -403,14 +403,37 @@
     <script src="{% static 'js/onboarding_tour.js' %}"></script>
     {% endif %}
     {% block scripts %}{% endblock %}
-    <!-- Service Worker Registration for Offline POS & PWA -->
+    <!-- Service Worker Registration for Offline POS & PWA with Auto-Update Check -->
     <script>
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
                 navigator.serviceWorker.register('/sw.js').then((reg) => {
                     console.log('[PWA] Service Worker active, scope:', reg.scope);
+                    // Check for newer SW on each launch
+                    reg.update();
+
+                    // If a new worker is found and activated, notify user or reload
+                    reg.onupdatefound = () => {
+                        const installingWorker = reg.installing;
+                        if (installingWorker) {
+                            installingWorker.onstatechange = () => {
+                                if (installingWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                                    console.log('[PWA] New version detected and ready.');
+                                }
+                            };
+                        }
+                    };
                 }).catch((err) => {
                     console.warn('[PWA] Service Worker registration failed:', err);
+                });
+
+                // When new SW takes over, reload to apply the latest HTML/CSS/JS updates
+                let refreshing = false;
+                navigator.serviceWorker.addEventListener('controllerchange', () => {
+                    if (!refreshing) {
+                        refreshing = true;
+                        window.location.reload();
+                    }
                 });
             });
         }
