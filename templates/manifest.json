@@ -4,16 +4,29 @@
   "description": "Smart, lightning-fast Retail & Pharmacy Point of Sale with offline resilience.",
   "start_url": "/pos/",
   "scope": "/",
+  "id": "/pos/",
   "display": "standalone",
   "orientation": "any",
   "background_color": "#0a0f1d",
   "theme_color": "#0284c7",
   "icons": [
     {
-      "src": "/static/icons/icon.svg",
-      "sizes": "192x192 512x512",
-      "type": "image/svg+xml",
+      "src": "/static/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
       "purpose": "any maskable"
+    },
+    {
+      "src": "/static/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/static/icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
     }
   ],
   "categories": ["business", "finance", "productivity", "shopping"]

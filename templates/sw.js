@@ -1,5 +1,5 @@
 // viARMS Progressive Web App Service Worker
-const CACHE_NAME = 'viarms-pwa-v2';
+const CACHE_NAME = 'viarms-pwa-v3';
 
 // Essential assets to cache for offline usage
 const PRECACHE_ASSETS = [
@@ -9,6 +9,9 @@ const PRECACHE_ASSETS = [
   '/static/css/styles.css?v=6',
   '/static/js/i18n.js',
   '/static/js/pos.js?v=5',
+  '/static/icons/icon-192.png',
+  '/static/icons/icon-512.png',
+  '/static/icons/apple-touch-icon.png',
   '/static/icons/icon.svg',
   'https://unpkg.com/dexie@3.2.4/dist/dexie.min.js',
   'https://unpkg.com/lucide@latest',
