@@ -1,6 +1,6 @@
 {% load static %}
 <!DOCTYPE html>
-<html lang="en" data-theme="ocean">
+<html lang="en" data-theme="light">
 
 <head>
     <meta charset="UTF-8">
@@ -8,7 +8,7 @@
     <title>{% block title %}viARMS - Shop Sales & Record Management{% endblock %}</title>
     <!-- PWA Manifest & Meta Tags -->
     <link rel="manifest" href="/manifest.json">
-    <meta name="theme-color" content="#0284c7">
+    <meta name="theme-color" content="#f4f6fa">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="viARMS">
@@ -18,7 +18,7 @@
     <link rel="icon" type="image/svg+xml" href="{% static 'icons/icon.svg' %}">
     <meta name="mobile-web-app-capable" content="yes">
 
-    <link rel="stylesheet" href="{% static 'css/styles.css' %}?v=5">
+    <link rel="stylesheet" href="{% static 'css/styles.css' %}?v=12">
     <!-- Lucide Icons (CDN) for modern, clean iconography -->
     <script src="https://unpkg.com/lucide@latest"></script>
     <!-- viARMS i18n System -->
@@ -26,11 +26,12 @@
     <!-- Theme boot — apply saved theme before page renders (prevents FOUC) -->
     <script>
         (function() {
-            var t = localStorage.getItem('viarms-theme') || 'ocean';
+            var saved = localStorage.getItem('viarms-theme');
+            var t = ['light', 'glass', 'ocean', 'forest', 'crimson', 'solar'].includes(saved) ? saved : 'light';
             document.documentElement.setAttribute('data-theme', t);
         })();
     </script>
-    <!-- Push Notification & Announcement Drawer Styles -->
+    <!-- Push Notification & Updates Drawer Styles -->
     <style>
         .notif-bell-btn {
             position: relative;
@@ -125,14 +126,15 @@
                 <option value="ha">Hausa</option>
             </select>
             <!-- Wholesale / Retail Mode Switch (Mobile) -->
-            <a href="{% url 'toggle_dashboard' %}" class="notif-bell-btn" title="Switch to {% if request.session.dashboard_mode == 'wholesale' %}Retail{% else %}Wholesale{% endif %} mode" style="text-decoration: none; font-size: 0.72rem; padding: 0.35rem 0.55rem; gap: 4px;">
+            {% if wholesale_access %}<a href="{% url 'toggle_dashboard' %}" class="notif-bell-btn" title="Switch to {% if request.session.dashboard_mode == 'wholesale' %}Retail{% else %}Wholesale{% endif %} mode" style="text-decoration: none; font-size: 0.72rem; padding: 0.35rem 0.55rem; gap: 4px;">
                 <i data-lucide="shuffle" style="width: 13px; height: 13px; {% if request.session.dashboard_mode == 'wholesale' %}color: #10b981;{% else %}color: #6366f1;{% endif %}"></i>
                 <span style="font-weight: 700; {% if request.session.dashboard_mode == 'wholesale' %}color: #10b981;{% else %}color: #6366f1;{% endif %}">
                     {% if request.session.dashboard_mode == 'wholesale' %}Wholesale{% else %}Retail{% endif %}
                 </span>
             </a>
+            {% endif %}
             <!-- Notification Bell (Mobile) -->
-            <button type="button" class="notif-bell-btn" onclick="toggleNotificationDrawer()" aria-label="Notifications" title="System Announcements">
+            <button type="button" class="notif-bell-btn" onclick="toggleNotificationDrawer()" aria-label="Notifications" title="Updates">
                 <i data-lucide="bell" style="width: 18px; height: 18px;"></i>
                 {% if unread_notifications_count > 0 %}
                 <span class="notif-badge-pill" id="mobile-notif-count">{{ unread_notifications_count }}</span>
@@ -227,6 +229,13 @@
 
                 {% if not user.is_superuser and is_admin %}
                 <li>
+                    <a href="{% url 'activity_log' %}"
+                        class="sidebar-link {% if request.resolver_match.url_name in 'activity_log,inventory_report_download,inventory_report_email' %}active{% endif %}">
+                        <i data-lucide="activity"></i>
+                        <span>Activity &amp; Reports</span>
+                    </a>
+                </li>
+                <li>
                     <a href="{% url 'shops' %}" data-tour-key="shops"
                         class="sidebar-link {% if request.resolver_match.url_name == 'shops' %}active{% endif %}">
                         <i data-lucide="store"></i>
@@ -237,7 +246,7 @@
                     <a href="{% url 'subscription' %}" data-tour-key="subscription"
                         class="sidebar-link {% if request.resolver_match.url_name in 'subscription,subscription_upgrade' %}active{% endif %}">
                         <i data-lucide="credit-card"></i>
-                        <span>Subscription &amp; Billing</span>
+                        <span>Subscription</span>
                     </a>
                 </li>
                 <li>
@@ -312,7 +321,7 @@
             <!-- Desktop Top Action Bar with Mode Switch & Notification Bell -->
             <div class="main-top-bar" style="display: flex; justify-content: flex-end; align-items: center; gap: 0.75rem; margin-bottom: 0.75rem;">
                 <!-- Wholesale / Retail Mode Switch Button -->
-                <a href="{% url 'toggle_dashboard' %}"
+                {% if wholesale_access %}<a href="{% url 'toggle_dashboard' %}"
                    class="notif-bell-btn mode-switch-pill"
                    id="dashboard-mode-switch-btn"
                    title="Click to switch to {% if request.session.dashboard_mode == 'wholesale' %}Retail{% else %}Wholesale{% endif %} mode"
@@ -327,8 +336,9 @@
                         <span style="background: rgba(99, 102, 241, 0.15); color: #818cf8; font-size: 0.68rem; padding: 2px 6px; border-radius: 4px; font-weight: 600;">Switch to Wholesale &rarr;</span>
                     {% endif %}
                 </a>
+                {% endif %}
 
-                <button type="button" class="notif-bell-btn" onclick="toggleNotificationDrawer()" aria-label="Notifications" title="Announcements & System Updates" style="padding: 0.4rem 0.8rem; font-size: 0.82rem; gap: 6px;">
+                <button type="button" class="notif-bell-btn" onclick="toggleNotificationDrawer()" aria-label="Notifications" title="Updates" style="padding: 0.4rem 0.8rem; font-size: 0.82rem; gap: 6px;">
                     <i data-lucide="bell" style="width: 16px; height: 16px;"></i>
                     <span style="font-weight: 500;">Updates</span>
                     {% if unread_notifications_count > 0 %}
@@ -365,7 +375,7 @@
                     <i data-lucide="shield-alert" style="width: 20px; height: 20px; flex-shrink: 0; color: #ef4444;"></i>
                     <span>
                         <strong>Store Account Suspended &mdash; 14-Day Free Trial Ended.</strong>
-                        Operations are restricted. You have <strong style="color: #fff; background: rgba(239,68,68,0.4); padding: 2px 7px; border-radius: 4px; font-weight: 800;">{{ user.profile.days_until_deletion }} day{{ user.profile.days_until_deletion|pluralize }} remaining</strong> to redeem your subscription before your account and store data are permanently deleted.
+                        Operations are restricted while your subscription is inactive. Your account and store data are retained while suspended.
                     </span>
                 </div>
                 <a href="{% url 'subscription_upgrade' %}" style="white-space: nowrap; font-size: 0.82rem; background: #ef4444; color: #fff; font-weight: 700; text-decoration: none; padding: 0.45rem 1rem; border-radius: 6px; display: inline-flex; align-items: center; gap: 6px;">
@@ -398,51 +408,13 @@
         <style>
             .animated-bg {
                 position: fixed;
-                top: 0;
-                left: 0;
-                width: 100vw;
-                height: 100vh;
+                inset: 0;
                 z-index: -1;
-                overflow: hidden;
-                background: #090d16;
+                pointer-events: none;
+                background: transparent;
             }
             .blob {
-                position: absolute;
-                border-radius: 50%;
-                filter: blur(120px);
-                opacity: 0.15;
-                animation: floatAround 25s infinite alternate ease-in-out;
-            }
-            .blob-1 {
-                width: 500px;
-                height: 500px;
-                background: var(--color-primary, #6366f1);
-                top: -10%;
-                left: -10%;
-                animation-duration: 20s;
-            }
-            .blob-2 {
-                width: 600px;
-                height: 600px;
-                background: #fbbf24;
-                bottom: -20%;
-                right: -10%;
-                animation-duration: 28s;
-                animation-delay: -5s;
-            }
-            .blob-3 {
-                width: 400px;
-                height: 400px;
-                background: var(--color-success, #10b981);
-                top: 40%;
-                left: 50%;
-                animation-duration: 24s;
-                animation-delay: -10s;
-            }
-            @keyframes floatAround {
-                0% { transform: translate(0, 0) scale(1) rotate(0deg); }
-                50% { transform: translate(80px, 60px) scale(1.05) rotate(180deg); }
-                100% { transform: translate(-40px, -30px) scale(0.95) rotate(360deg); }
+                display: none;
             }
         </style>
         {% endif %}
@@ -457,7 +429,8 @@
     <script>
         // Apply saved theme on body
         (function() {
-            var t = localStorage.getItem('viarms-theme') || 'ocean';
+            var saved = localStorage.getItem('viarms-theme');
+            var t = ['light', 'glass', 'ocean', 'forest', 'crimson', 'solar'].includes(saved) ? saved : 'light';
             document.documentElement.setAttribute('data-theme', t);
             document.body.setAttribute('data-theme', t);
 
@@ -468,6 +441,7 @@
         })();
 
         function setGlobalTheme(theme) {
+            theme = ['light', 'glass', 'ocean', 'forest', 'crimson', 'solar'].includes(theme) ? theme : 'light';
             document.documentElement.setAttribute('data-theme', theme);
             document.body.setAttribute('data-theme', theme);
             localStorage.setItem('viarms-theme', theme);
@@ -607,7 +581,7 @@
             <div style="padding: 1.25rem; border-bottom: 1px solid var(--border-color); display: flex; align-items: center; justify-content: space-between; background: rgba(0,0,0,0.15);">
                 <div style="display: flex; align-items: center; gap: 8px;">
                     <i data-lucide="bell" style="color: var(--color-primary); width: 20px; height: 20px;"></i>
-                    <h3 style="font-size: 1.1rem; font-weight: 700; margin: 0; color: var(--text-primary);">Announcements &amp; Updates</h3>
+                    <h3 style="font-size: 1.1rem; font-weight: 700; margin: 0; color: var(--text-primary);">Updates</h3>
                 </div>
                 <button type="button" onclick="toggleNotificationDrawer()" style="background: none; border: none; color: var(--text-muted); cursor: pointer; padding: 4px;">
                     <i data-lucide="x" style="width: 20px; height: 20px;"></i>
@@ -651,7 +625,7 @@
                             {% else %}
                             <span class="badge badge-info" style="font-size: 0.65rem;">UPDATE</span>
                             {% endif %}
-                            <strong style="font-size: 0.88rem; color: var(--text-primary);">{{ notif.title }}</strong>
+                            <strong style="font-size: 0.88rem; color: var(--text-primary);">{% if notif.title|lower == 'annuce' or notif.title|lower == 'announcement' %}Updates{% else %}{{ notif.title }}{% endif %}</strong>
                         </div>
                         {% if not notif.is_read %}
                         <button type="button" onclick="markNotificationRead({{ notif.id }}, this.closest('.notif-item-card'))" class="btn btn-sm btn-secondary" style="font-size: 0.7rem; padding: 0.2rem 0.5rem; flex-shrink: 0;" title="Mark as read">
@@ -674,7 +648,7 @@
                 {% empty %}
                 <div style="text-align: center; padding: 3rem 1rem; color: var(--text-muted); font-size: 0.88rem;">
                     <i data-lucide="check-check" style="width: 32px; height: 32px; margin: 0 auto 0.75rem; color: var(--color-success); display: block;"></i>
-                    You're all caught up! No new announcements.
+                    You're all caught up! No new updates.
                 </div>
                 {% endfor %}
             </div>
@@ -721,7 +695,7 @@
                     showNotification("Desktop push notifications enabled!", "success");
                     try {
                         new Notification("viARMS Notifications Enabled", {
-                            body: "You will now receive desktop alerts for system updates and announcements.",
+                            body: "You will now receive desktop alerts for system updates.",
                             icon: "/static/icons/icon-192.png"
                         });
                     } catch (e) {

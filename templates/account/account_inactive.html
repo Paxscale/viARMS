@@ -1,0 +1,103 @@
+{% extends 'base.html' %}
+
+{% block title %}Account Inactive - viARMS{% endblock %}
+
+{% block content %}
+<style>
+    .inactive-page { min-height: min(78vh, 760px); display: grid; place-items: center; padding: 2rem 1rem; }
+    .inactive-card { width: min(100%, 500px); padding: clamp(1.5rem, 5vw, 2.5rem); border: 1px solid var(--border-color); border-radius: 20px; background: var(--bg-surface); color: var(--text-primary); box-shadow: 0 18px 50px rgba(15, 23, 42, .12); }
+    .inactive-icon { width: 58px; height: 58px; margin: 0 auto 1rem; display: grid; place-items: center; border-radius: 18px; color: #b45309; background: rgba(245, 158, 11, .13); border: 1px solid rgba(245, 158, 11, .25); }
+    .inactive-icon svg { width: 27px; height: 27px; }
+    .inactive-card h1 { margin: 0 0 .6rem; font-size: clamp(1.45rem, 4vw, 1.8rem); text-align: center; }
+    .inactive-intro { margin: 0 0 1.25rem; color: var(--text-secondary); line-height: 1.6; text-align: center; }
+    .inactive-status { padding: 1rem; margin: 1rem 0; border: 1px solid var(--border-color); border-radius: 12px; background: var(--bg-base); }
+    .inactive-status strong { display: block; margin-bottom: .35rem; }
+    .inactive-status p { margin: 0; color: var(--text-secondary); line-height: 1.5; }
+    .inactive-form { margin-top: 1rem; }
+    .inactive-form textarea { width: 100%; min-height: 110px; resize: vertical; }
+    .inactive-menu { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .65rem; margin-top: 1.25rem; }
+    .inactive-actions { display: grid; gap: .65rem; margin-top: 1rem; }
+    .inactive-link { min-height: 44px; display: inline-flex; align-items: center; justify-content: center; padding: .65rem .8rem; border-radius: 10px; border: 1px solid var(--border-color); color: var(--text-primary); background: rgba(255, 255, 255, .45); text-decoration: none; text-align: center; font-weight: 600; cursor: pointer; font: inherit; transition: border-color .18s ease, background .18s ease, transform .18s ease; }
+    .inactive-link:hover { border-color: var(--color-primary); background: rgba(99, 102, 241, .08); transform: translateY(-1px); }
+    .inactive-link-primary { background: var(--color-primary); color: #fff; border-color: var(--color-primary); }
+    .inactive-link-primary:hover { color: #fff; filter: brightness(1.05); background: var(--color-primary); }
+    .inactive-menu .inactive-link { font-size: .9rem; }
+    .inactive-card .form-control { width: 100%; }
+    .inactive-appeal { margin-top: .7rem; }
+    .inactive-appeal summary { list-style: none; }
+    .inactive-appeal summary::-webkit-details-marker { display: none; }
+    .inactive-messages { margin: 0 0 1rem; }
+    .inactive-messages li { margin: .25rem 0; color: var(--text-secondary); }
+    @media (max-width: 460px) { .inactive-page { padding: 1rem; } .inactive-menu { grid-template-columns: 1fr; } }
+</style>
+
+<main class="inactive-page">
+    <section class="inactive-card" aria-labelledby="inactive-title">
+        <div class="inactive-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5"></path><path d="M12 16h.01"></path></svg>
+        </div>
+        <h1 id="inactive-title">Account inactive</h1>
+        <p class="inactive-intro">This account is inactive. Check the reason below and choose the next step for your account.</p>
+
+        {% if messages %}
+        <ul class="inactive-messages" aria-live="polite">
+            {% for message in messages %}<li>{{ message }}</li>{% endfor %}
+        </ul>
+        {% endif %}
+
+        <form method="get" class="inactive-form">
+            <div class="form-group">
+                <label class="form-label" for="inactive-email">Account email</label>
+                <input class="form-control" type="email" id="inactive-email" name="email" value="{{ email }}" autocomplete="email" required placeholder="you@example.com">
+            </div>
+            <button class="inactive-link inactive-link-primary" type="submit" style="width:100%;">Check account reason</button>
+        </form>
+
+        {% if email and account_found %}
+        <div class="inactive-status" role="status">
+            <strong>Reason for deactivation</strong>
+            <p>{{ inactive_reason }}</p>
+            {% if status_detail != inactive_reason %}<p style="margin-top:.45rem;">{{ status_detail }}</p>{% endif %}
+        </div>
+
+        {% if latest_appeal %}
+        <div class="inactive-status">
+            <strong>Appeal: {{ latest_appeal.get_status_display }}</strong>
+            {% if latest_appeal.admin_response %}<p>{{ latest_appeal.admin_response }}</p>{% endif %}
+        </div>
+        {% endif %}
+
+        {% if renewal_available or appeal_allowed %}
+        <div class="inactive-actions">
+            {% if renewal_available %}
+            <a class="inactive-link inactive-link-primary" href="{% url 'login' %}?next={% url 'subscription' %}">Renew Subscription</a>
+            {% endif %}
+            {% if appeal_allowed %}
+            <details class="inactive-appeal">
+                <summary class="inactive-link">Appeal</summary>
+                <form method="post" class="inactive-form">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="submit_appeal">
+                    <input type="hidden" name="email" value="{{ email }}">
+                    <div class="form-group">
+                        <label class="form-label" for="appeal-reason">Why should the administrator review this suspension?</label>
+                        <textarea class="form-control" id="appeal-reason" name="reason" maxlength="2000" required minlength="10" placeholder="Explain your situation (at least 10 characters)."></textarea>
+                    </div>
+                    <button type="submit" class="inactive-link inactive-link-primary" style="width:100%;">Submit appeal</button>
+                </form>
+            </details>
+            {% endif %}
+        </div>
+        {% endif %}
+        {% elif email %}
+        <div class="inactive-status" role="status"><strong>No account found</strong><p>We could not find an account with that email. Check the address and try again.</p></div>
+        {% endif %}
+
+        <nav class="inactive-menu" aria-label="Account menu">
+            <a class="inactive-link" href="{% url 'login' %}">Sign In</a>
+            <a class="inactive-link" href="{% url 'register' %}">Sign Up</a>
+            <a class="inactive-link" href="{% url 'landing' %}">Home</a>
+        </nav>
+    </section>
+</main>
+{% endblock %}

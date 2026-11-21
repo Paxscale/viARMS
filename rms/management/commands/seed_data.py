@@ -198,7 +198,7 @@ class Command(BaseCommand):
         settings.address = 'Marina Street, Lagos Island, Nigeria'
         settings.phone = '+234 1 555 0100'
         settings.tax_rate = Decimal('7.50') # Standard Nigerian VAT is 7.5%
-        settings.receipt_footer = 'Thank you for shopping with viARMS Lagos! Please retain your receipt for returns.'
+        settings.receipt_footer = 'Thank you for shopping with viARMS Record Management System. Powered by Scales Technologies.'
         settings.save()
 
         self.stdout.write(self.style.SUCCESS('Database seeding and backfilling finished successfully!'))

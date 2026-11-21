@@ -1,0 +1,28 @@
+{% extends 'base.html' %}
+
+{% block title %}Finish Sign Up - viARMS{% endblock %}
+
+{% block content %}
+<main class="signup-shell" style="min-height:100vh; display:grid; place-items:center; padding:2rem 1rem;">
+    <section class="glass-panel" style="width:min(100%,600px); padding:clamp(1.25rem,4vw,2.5rem);">
+        <div class="login-logo" style="font-size:1.35rem; margin-bottom:1rem;">viARMS</div>
+        <h1 style="font-size:1.65rem; margin-bottom:.5rem;">Finish setting up your account</h1>
+        <p style="color:var(--text-secondary); margin-bottom:1.5rem;">Your provider verified your email. Add your business details to continue. New accounts are reviewed before access is approved.</p>
+        <form method="post" action="{% url 'socialaccount_signup' %}">
+            {% csrf_token %}
+            {% if redirect_field_value %}<input type="hidden" name="{{ redirect_field_name }}" value="{{ redirect_field_value }}">{% endif %}
+            {{ form.non_field_errors }}
+            {% for field in form %}
+            <div class="form-group">
+                <label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+                {{ field }}
+                {% if field.help_text %}<small style="display:block; color:var(--text-muted);">{{ field.help_text }}</small>{% endif %}
+                {% for error in field.errors %}<small style="display:block; color:var(--color-danger);">{{ error }}</small>{% endfor %}
+            </div>
+            {% endfor %}
+            <button type="submit" class="btn btn-primary btn-block" style="min-height:46px;">Create account</button>
+        </form>
+        <p style="margin-top:1rem; text-align:center; font-size:.85rem; color:var(--text-muted);"><a href="{% url 'login' %}" style="color:var(--color-primary);">Back to sign in</a></p>
+    </section>
+</main>
+{% endblock %}

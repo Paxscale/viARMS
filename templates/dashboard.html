@@ -481,7 +481,7 @@
 </div>
 
 <!-- Main Section: Charts and Lists (Retail Mode) -->
-<div class="dashboard-layout">
+<div class="dashboard-layout layout-3-1">
     <!-- Left Column: Weekly trends and business-specific inventory -->
     <div style="display: flex; flex-direction: column; gap: 1.5rem;">
         <!-- Sales trends chart -->
@@ -561,6 +561,77 @@
             <p style="font-size: 0.85rem; color: var(--text-muted);">No inventory has been added yet.</p>
             {% endif %}
         </div>
+
+        {% if business_type == 'BOOK_ACCESSORIES' %}
+        <section class="glass-panel" style="padding:1.5rem;">
+            <div class="panel-header" style="margin-bottom:1rem;">
+                <div>
+                    <h2 class="panel-title">Bookshop &amp; Accessories Overview</h2>
+                    <p style="margin:.25rem 0 0; font-size:.78rem; color:var(--text-muted);">Catalogue, stock value, and best-selling titles over the last 30 days.</p>
+                </div>
+                <a href="{% url 'products' %}" style="font-size:.78rem; color:var(--color-primary); text-decoration:none;">Manage catalogue</a>
+            </div>
+
+            <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:.75rem; margin-bottom:1rem;">
+                <div style="padding:.85rem; border:1px solid var(--border-color); border-radius:10px;">
+                    <span style="font-size:.75rem; color:var(--text-muted);">Books catalogued</span>
+                    <strong style="display:block; margin-top:.25rem; font-size:1.25rem; color:var(--text-primary);">{{ book_accessories_metrics.book_count }}</strong>
+                </div>
+                <div style="padding:.85rem; border:1px solid var(--border-color); border-radius:10px;">
+                    <span style="font-size:.75rem; color:var(--text-muted);">Accessories</span>
+                    <strong style="display:block; margin-top:.25rem; font-size:1.25rem; color:var(--text-primary);">{{ book_accessories_metrics.accessory_count }}</strong>
+                </div>
+                <div style="padding:.85rem; border:1px solid var(--border-color); border-radius:10px;">
+                    <span style="font-size:.75rem; color:var(--text-muted);">Authors represented</span>
+                    <strong style="display:block; margin-top:.25rem; font-size:1.25rem; color:var(--text-primary);">{{ book_accessories_metrics.author_count }}</strong>
+                </div>
+                <div style="padding:.85rem; border:1px solid var(--border-color); border-radius:10px;">
+                    <span style="font-size:.75rem; color:var(--text-muted);">Book stock cost value</span>
+                    <strong style="display:block; margin-top:.25rem; font-size:1.05rem; color:var(--text-primary);">NGN {{ book_accessories_metrics.book_inventory_value|floatformat:2 }}</strong>
+                </div>
+            </div>
+
+            <div style="display:grid; grid-template-columns:minmax(0,1.4fr) minmax(240px,.9fr); gap:1rem; align-items:start;">
+                <div>
+                    <h3 style="font-size:.9rem; margin:0 0 .65rem;">Best-selling books</h3>
+                    {% if book_accessories_metrics.best_selling_books %}
+                    <div class="table-responsive">
+                        <table class="custom-table">
+                            <thead><tr><th>Title</th><th>Author</th><th>Sold</th><th>Revenue</th></tr></thead>
+                            <tbody>
+                                {% for book in book_accessories_metrics.best_selling_books %}
+                                <tr>
+                                    <td>{{ book.product__name }}{% if book.product__isbn %}<small style="display:block; color:var(--text-muted);">ISBN {{ book.product__isbn }}</small>{% endif %}</td>
+                                    <td>{{ book.product__author|default:"—" }}</td>
+                                    <td>{{ book.total_qty }}</td>
+                                    <td>NGN {{ book.total_revenue|floatformat:2 }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <p style="font-size:.82rem; color:var(--text-muted);">Book sales will appear here after checkout.</p>
+                    {% endif %}
+                </div>
+                <div>
+                    <h3 style="font-size:.9rem; margin:0 0 .65rem;">Accessories to restock</h3>
+                    {% if book_accessories_metrics.accessory_low_stock %}
+                    <ul style="list-style:none; padding:0; margin:0; display:flex; flex-direction:column; gap:.5rem;">
+                        {% for accessory in book_accessories_metrics.accessory_low_stock %}
+                        <li style="display:flex; justify-content:space-between; gap:.5rem; padding:.6rem; border:1px solid var(--border-color); border-radius:8px;">
+                            <span style="font-size:.82rem;">{{ accessory.name }}{% if accessory.color %}<small style="display:block; color:var(--text-muted);">{{ accessory.color }}{% if accessory.size %} · {{ accessory.size }}{% endif %}</small>{% endif %}</span>
+                            <strong style="white-space:nowrap; font-size:.8rem; color:var(--color-danger);">{{ accessory.stock_quantity }} left</strong>
+                        </li>
+                        {% endfor %}
+                    </ul>
+                    {% else %}
+                    <p style="font-size:.82rem; color:var(--text-muted);">No low-stock accessories need restocking.</p>
+                    {% endif %}
+                </div>
+            </div>
+        </section>
+        {% endif %}
 
         {% if request.user.profile.business_type == 'PHARMACEUTICAL' %}
         <!-- Pharma specific Rx vs OTC breakdown -->

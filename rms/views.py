@@ -30,7 +30,7 @@ def activate_subscription_upgrade(payment, confirmed_by=None):
         'is_suspended', 'suspended_at', 'suspension_reason', 'suspension_notified'
     ])
 
-    AdminNotification.objects.create(
+    create_admin_notification(
         title="Subscription Upgraded & Active!",
         message=f"Congratulations! Your business subscription has been upgraded to {payment.get_plan_display()} ({payment.get_billing_cycle_display()}). Your account is active until {payment.expires_at.strftime('%b %d, %Y')}.",
         notification_type="SUCCESS",
@@ -39,6 +39,7 @@ def activate_subscription_upgrade(payment, confirmed_by=None):
     )
 
 import csv
+import logging
 import json
 import uuid
 from io import BytesIO
@@ -50,18 +51,29 @@ from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required, user_passes_test
 from django.contrib.auth import login, logout, authenticate
 from django.contrib.auth.forms import AuthenticationForm
+from django.contrib.auth import views as auth_views
 from django.contrib import messages
 from django.core.files.base import ContentFile
-from django.core.exceptions import PermissionDenied
+from django.core.exceptions import PermissionDenied, ValidationError as DjangoValidationError
+from django.core import signing
+from django.contrib.auth.password_validation import validate_password
 from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.cache import never_cache
 from .remita import get_remita_credentials, generate_rrr, verify_remita_payment, verify_remita_webhook_signature
 from django.http import JsonResponse, HttpResponse
 from django.db import IntegrityError, transaction
 from django.db.models import Sum, F, Count, Q
+from django.core.paginator import Paginator
 from django.urls import reverse
 from django.utils import timezone
+from django.utils.http import url_has_allowed_host_and_scheme
 from django.contrib.auth.models import User
-from .models import Category, Product, Sale, SaleItem, StoreSettings, Shop, UserProfile, Advertisement, AdminNotification, NotificationReadStatus, SubscriptionPayment
+from .models import Category, Product, Sale, SaleItem, StoreSettings, Shop, UserProfile, Advertisement, AdminNotification, NotificationReadStatus, SubscriptionPayment, ActivityLog, StockInReport, AccountAppeal
+from .notification_delivery import create_admin_notification
+from .stock_reporting import record_stock_additions
+from .activity_logging import log_business_activity
+
+logger = logging.getLogger(__name__)
 
 MAX_PRODUCT_IMAGE_SIZE = 5 * 1024 * 1024
 MAX_COMPRESSED_PRODUCT_IMAGE_SIZE = 50 * 1024
@@ -186,6 +198,11 @@ def assign_product_batch(shop, sku, name, requested_batch=None):
         return batch_num, False, None
 
 
+def generate_internal_product_sku():
+    """Create a unique internal identifier when the business does not use SKU codes."""
+    return f"BTQ-{uuid.uuid4().hex[:12].upper()}"
+
+
 def create_bulk_products(request, user_profile, tenant, is_user_admin, user_shop):
     try:
         product_count = int(request.POST.get('product_count', '0'))
@@ -213,7 +230,7 @@ def create_bulk_products(request, user_profile, tenant, is_user_admin, user_shop
         messages.error(request, "Choose a valid shop for the bulk product submission.")
         return
 
-    categories = Category.objects.filter(Q(tenant_owner=tenant) | Q(tenant_owner__isnull=True)) if tenant else Category.objects.all()
+    categories = Category.objects.filter(tenant_owner=tenant) if tenant else Category.objects.all()
     products_to_create = []
     errors = []
     submitted_keys = set()
@@ -237,12 +254,13 @@ def create_bulk_products(request, user_profile, tenant, is_user_admin, user_shop
 
         row_errors = []
         name = values['name']
-        sku = values['sku']
+        is_boutique = user_profile.business_type == 'BOUTIQUE'
+        sku = values['sku'] or (generate_internal_product_sku() if is_boutique else '')
         if not name:
             row_errors.append("product name is required")
         elif len(name) > 200:
             row_errors.append("product name must be 200 characters or fewer")
-        if not sku:
+        if not sku and not is_boutique:
             row_errors.append("SKU/barcode is required")
         elif len(sku) > 50:
             row_errors.append("SKU/barcode must be 50 characters or fewer")
@@ -259,6 +277,8 @@ def create_bulk_products(request, user_profile, tenant, is_user_admin, user_shop
                 for amount in (cost_price, selling_price)
             ):
                 raise ValueError
+            if cost_price > selling_price:
+                row_errors.append("cost price cannot be greater than selling price")
         except (ArithmeticError, ValueError):
             row_errors.append("cost and selling prices must fit a non-negative amount with up to 2 decimal places")
 
@@ -284,7 +304,7 @@ def create_bulk_products(request, user_profile, tenant, is_user_admin, user_shop
         if material and material not in allowed_materials:
             row_errors.append("material is not a valid choice")
         expiry = None
-        if values['expiry_date'] and not (
+        if values['expiry_date'] and not is_boutique and not (
             user_profile.business_type == 'UTENSILS' and material == 'PLASTIC'
         ):
             try:
@@ -354,19 +374,31 @@ def create_bulk_products(request, user_profile, tenant, is_user_admin, user_shop
         return
 
     saved_images = []
+    stock_report = None
     try:
         with transaction.atomic():
             for product in products_to_create:
                 product.save()
                 if product.image:
                     saved_images.append((product.image.storage, product.image.name))
+            stock_report = record_stock_additions(
+                [(product, 0) for product in products_to_create],
+                actor=request.user,
+                tenant_owner=tenant,
+            )
+            for product in products_to_create:
+                log_business_activity(
+                    actor=request.user, tenant_owner=tenant, action='Product created',
+                    details=f"{product.name} ({product.sku}) added to {product.shop.name} with {product.stock_quantity} in stock.",
+                )
     except IntegrityError:
         for storage, image_name in saved_images:
             storage.delete(image_name)
         messages.error(request, "No products were added because a product conflicts with existing inventory.")
         return
 
-    messages.success(request, f"Successfully added {len(products_to_create)} products to {product_shop.name}.")
+    report_note = " Stock report queued for the tenant admin." if stock_report else ""
+    messages.success(request, f"Successfully added {len(products_to_create)} products to {product_shop.name}.{report_note}")
 
 
 def is_admin(user):
@@ -386,86 +418,221 @@ def get_tenant_scope(user):
         return profile.tenant_owner if profile.tenant_owner else user
     return user
 
+def has_wholesale_access(user):
+    tenant_owner = get_tenant_scope(user)
+    profile = getattr(tenant_owner, 'profile', None) if tenant_owner else None
+    return bool(
+        profile
+        and profile.plan != 'STANDARD'
+        and profile.tenant_type in {'WHOLESALE', 'RETAIL_WHOLESALE'}
+    )
+
 def register_view(request):
     if request.user.is_authenticated:
         return redirect('dashboard')
 
     if request.method == 'POST':
-        username = request.POST.get('username', '').strip().lower()
-        email = request.POST.get('email', '').strip()
-        # Validate email domain against allowed list
-        allowed_domains = {'gmail.com', 'icloud.com', 'hotmail.com', 'outlook.com'}
-        domain = email.split('@')[-1].lower() if '@' in email else ''
-        if domain not in allowed_domains:
-            messages.error(request, "Registration is only allowed with Gmail, iCloud, Hotmail, or Outlook email addresses.")
+        from django.core.mail import send_mail
+        from django.conf import settings
+        stage = request.POST.get('stage')
+        if stage == 'send_verification':
+            email = request.POST.get('email', '').strip().lower()
+            first_name = request.POST.get('first_name', '').strip()
+            last_name = request.POST.get('last_name', '').strip()
+            # Public signup always starts on the Free trial; paid plans require checkout.
+            plan = 'FREE'
+            context = {'email': email, 'first_name': first_name, 'last_name': last_name, 'selected_plan': plan}
+            try:
+                User._meta.get_field('email').clean(email, None)
+            except DjangoValidationError:
+                messages.error(request, "Enter a valid email address.")
+                return render(request, 'register.html', context)
+            if not first_name or not last_name:
+                messages.error(request, "Enter your first and last name to continue.")
+            elif len(first_name) > 150 or len(last_name) > 150:
+                messages.error(request, "Names must be 150 characters or fewer.")
+            elif plan != 'FREE':
+                messages.error(request, "Choose a valid plan.")
+            elif User.objects.filter(email__iexact=email).exists():
+                context['existing_account'] = True
+                messages.error(request, "An account with this email already exists. Try signing in or reset your password.")
+            else:
+                token = signing.dumps(
+                    {'email': email, 'first_name': first_name, 'last_name': last_name, 'plan': plan},
+                    salt='rms.signup-email-verification',
+                )
+                verify_url = request.build_absolute_uri(reverse('verify_signup_email', args=[token]))
+                message = (
+                    f"Hi {first_name},\n\n"
+                    "Please verify your email address to continue creating your viARMS account.\n\n"
+                    f"Verify your email: {verify_url}\n\n"
+                    "This link expires in 24 hours. If you did not request this, you can ignore this email."
+                )
+                try:
+                    sent_count = send_mail('Verify your email to continue with viARMS', message, None, [email], fail_silently=False)
+                    if not sent_count:
+                        raise RuntimeError('The email backend did not accept the verification message.')
+                    context['verification_sent'] = True
+                    if settings.EMAIL_BACKEND.endswith('.console.EmailBackend'):
+                        context['verification_console'] = True
+                        messages.warning(request, "Email delivery is not configured. The verification link was written to the application server console, not sent to your inbox.")
+                    else:
+                        messages.success(request, f"Your verification email was handed to the mail server for {email}. Check your inbox and spam folder.")
+                except Exception:
+                    logger.exception("Signup verification email delivery failed (backend=%s).", settings.EMAIL_BACKEND)
+                    messages.error(request, "We could not send the verification email. Please try again later.")
+            return render(request, 'register.html', context)
+
+        signup = request.session.get('verified_signup')
+        if signup and timezone.now().timestamp() - float(signup.get('verified_at', 0)) > 60 * 60 * 24:
+            request.session.pop('verified_signup', None)
+            signup = None
+        if stage != 'complete' or not signup:
+            messages.error(request, "Verify your email using the link we sent before continuing. Verification links expire after 24 hours.")
             return render(request, 'register.html')
+
+        username = request.POST.get('username', '').strip().lower()
+        email = signup['email']
         password = request.POST.get('password')
         confirm_password = request.POST.get('confirm_password')
         business_name = request.POST.get('business_name', '').strip()
         business_type = request.POST.get('business_type', 'GENERAL')
-        plan = request.POST.get('plan', 'FREE')
+        plan = 'FREE'
         tenant_type = request.POST.get('tenant_type', 'RETAIL')
         kyc_document_type = request.POST.get('kyc_document_type', '').strip()
         kyc_document_number = request.POST.get('kyc_document_number', '').strip()
-        password = request.POST.get('password')
-        confirm_password = request.POST.get('confirm_password')
-        business_name = request.POST.get('business_name', '').strip()
-        business_type = request.POST.get('business_type', 'GENERAL')
-        plan = request.POST.get('plan', 'FREE')
-        kyc_document_type = request.POST.get('kyc_document_type', '').strip()
-        kyc_document_number = request.POST.get('kyc_document_number', '').strip()
+        context = {
+            'email_verified': True, 'verified_email': email,
+            'first_name': signup['first_name'], 'last_name': signup['last_name'],
+            'selected_plan': plan,
+            'username': username, 'business_name': business_name,
+        }
 
-        agree_terms = request.POST.get('agree_terms')
-        if not agree_terms:
-            messages.error(request, "You must agree to the Terms and Agreement & Privacy Policy to register.")
-            return render(request, 'register.html')
-
+        if not username or not business_name:
+            messages.error(request, "Enter a username and business name to continue.")
+            return render(request, 'register.html', context)
+        if plan != 'FREE':
+            messages.error(request, "Choose a valid plan.")
+            return render(request, 'register.html', context)
+        if not password or not confirm_password:
+            messages.error(request, "Enter and confirm a password.")
+            return render(request, 'register.html', context)
+        try:
+            User._meta.get_field('username').clean(username, None)
+            validate_password(password, User(username=username, email=email))
+        except DjangoValidationError as error:
+            messages.error(request, ' '.join(error.messages))
+            return render(request, 'register.html', context)
         if password != confirm_password:
             messages.error(request, "Passwords do not match.")
-            return render(request, 'register.html')
+            return render(request, 'register.html', context)
+        if not request.POST.get('agree_terms'):
+            messages.error(request, "You must agree to the Terms and Agreement & Privacy Policy to register.")
+            return render(request, 'register.html', context)
+        if business_type not in dict(UserProfile._meta.get_field('business_type').choices):
+            messages.error(request, "Choose a valid business type.")
+            return render(request, 'register.html', context)
+        if tenant_type not in dict(UserProfile.TENANT_TYPE_CHOICES):
+            messages.error(request, "Choose a valid business model.")
+            return render(request, 'register.html', context)
+        if not kyc_document_type or not kyc_document_number:
+            messages.error(request, "Enter your verification document type and number.")
+            return render(request, 'register.html', context)
+        if User.objects.filter(username__iexact=username).exists():
+            messages.error(request, f"Username '{username}' is already in use.")
+            return render(request, 'register.html', context)
+        if User.objects.filter(email__iexact=email).exists():
+            request.session.pop('verified_signup', None)
+            messages.error(request, "An account with this email already exists. Sign in or reset your password if needed.")
+            return redirect('login')
 
-        if User.objects.filter(username=username).exists():
-            messages.error(request, f"Username '{username}' already exists.")
-            return render(request, 'register.html')
+        try:
+            with transaction.atomic():
+                user = User.objects.create_user(
+                    username=username,
+                    email=email,
+                    password=password,
+                    first_name=signup['first_name'],
+                    last_name=signup['last_name'],
+                )
+                profile, created = UserProfile.objects.get_or_create(user=user)
+                profile.role = 'ADMIN'
+                profile.tenant_owner = user
+                profile.plan = plan
+                profile.business_type = business_type
+                profile.tenant_type = tenant_type
+                profile.is_approved = False
+                if plan == 'FREE':
+                    profile.trial_start_date = timezone.localdate()
+                profile.kyc_document_type = kyc_document_type
+                profile.kyc_document_number = kyc_document_number
+                profile.kyc_status = 'PENDING'
+                profile.save()
 
-        with transaction.atomic():
-            user = User.objects.create_user(username=username, email=email, password=password)
-            profile, created = UserProfile.objects.get_or_create(user=user)
-            profile.role = 'ADMIN'
-            profile.tenant_owner = user
-            profile.plan = plan
-            profile.business_type = business_type
-            profile.tenant_type = tenant_type
-            profile.is_approved = False
-            if plan == 'FREE':
-                profile.trial_start_date = timezone.localdate()
-            profile.kyc_document_type = kyc_document_type
-            profile.kyc_document_number = kyc_document_number
-            profile.kyc_status = 'PENDING'
-            profile.save()
+                shop = Shop.objects.create(name=business_name, tenant_owner=user, manager=user)
+                profile.shop = shop
+                profile.save()
+        except IntegrityError:
+            messages.error(request, "This username or email is already registered. Please try another.")
+            return render(request, 'register.html', context)
 
-            # Create first Shop branch automatically
-            shop = Shop.objects.create(
-                name=business_name,
-                tenant_owner=user,
-                manager=user
-            )
-            profile.shop = shop
-            profile.save()
-
+        request.session.pop('verified_signup', None)
         messages.success(request, "Your account has been created successfully! It is pending administrator approval.")
         return redirect('login')
 
-    return render(request, 'register.html')
+    signup = request.session.get('verified_signup')
+    if signup and timezone.now().timestamp() - float(signup.get('verified_at', 0)) > 60 * 60 * 24:
+        request.session.pop('verified_signup', None)
+        signup = None
+        messages.error(request, "Your verified signup session expired. Request a new email verification link.")
+    context = {'selected_plan': 'FREE'}
+    if signup:
+        context.update({
+            'email_verified': True,
+            'verified_email': signup['email'],
+            'first_name': signup['first_name'],
+            'last_name': signup['last_name'],
+            'selected_plan': signup.get('plan', 'FREE'),
+        })
+    return render(request, 'register.html', context)
 
+
+def verify_signup_email_view(request, token):
+    if request.user.is_authenticated:
+        return redirect('dashboard')
+    try:
+        signup = signing.loads(token, salt='rms.signup-email-verification', max_age=60 * 60 * 24)
+    except signing.SignatureExpired:
+        messages.error(request, "This verification link has expired. Request a new one to continue.")
+        return redirect('register')
+    except signing.BadSignature:
+        messages.error(request, "This verification link is invalid. Request a new one to continue.")
+        return redirect('register')
+
+    if User.objects.filter(email__iexact=signup.get('email', '')).exists():
+        messages.error(request, "An account with this email already exists. Sign in or reset your password if needed.")
+        return redirect('login')
+    signup['verified_at'] = timezone.now().timestamp()
+    request.session['verified_signup'] = signup
+    messages.success(request, "Email verified. Finish setting up your account.")
+    return redirect('register')
+
+@never_cache
 def login_view(request):
     if request.user.is_authenticated:
         if request.user.is_superuser:
             return redirect('admin_panel')
         return redirect('dashboard')
     
+    login_notice = None
     if request.method == 'POST':
-        form = AuthenticationForm(request, data=request.POST)
+        login_data = request.POST.copy()
+        submitted_identity = request.POST.get('username', '').strip()
+        if '@' in submitted_identity:
+            email_user = User.objects.filter(email__iexact=submitted_identity).order_by('id').first()
+            if email_user:
+                login_data['username'] = email_user.username
+        form = AuthenticationForm(request, data=login_data)
         if form.is_valid():
             username = form.cleaned_data.get('username')
             password = form.cleaned_data.get('password')
@@ -475,21 +642,226 @@ def login_view(request):
                 profile, created = UserProfile.objects.get_or_create(user=user, defaults={'role': 'ADMIN' if user.is_superuser else 'CASHIER'})
                 owner = profile.tenant_owner if profile.tenant_owner else user
                 if not owner.is_active:
-                    messages.error(request, "This business account has been suspended. Contact support for assistance.")
-                    return redirect('login')
+                    login_notice = {
+                        'kind': 'suspended',
+                        'message': 'An account with this email exists, but the business account is suspended.',
+                        'status_url': reverse('account_status') + '?' + urlencode({'email': owner.email}),
+                    }
+                    form = AuthenticationForm()
+                    return render(request, 'login.html', {
+                        'form': form, 'next': request.POST.get('next') or request.GET.get('next', ''),
+                        'login_notice': login_notice,
+                    })
                 if not owner.is_superuser and not owner.profile.is_approved:
-                    messages.error(request, "Your account is pending administrator approval.")
-                    return redirect('login')
+                    login_notice = {
+                        'kind': 'pending',
+                        'message': 'An account with this email exists and is awaiting administrator approval.',
+                        'status_url': reverse('account_status') + '?' + urlencode({'email': owner.email}),
+                    }
+                    return render(request, 'login.html', {
+                        'form': form, 'next': request.POST.get('next') or request.GET.get('next', ''),
+                        'login_notice': login_notice,
+                    })
+
+                owner_profile = getattr(owner, 'profile', None)
+                subscription_expired = bool(owner_profile and (
+                    owner_profile.is_trial_expired or owner_profile.is_subscription_expired
+                ))
+                if owner_profile and owner_profile.is_account_suspended and subscription_expired:
+                    login(request, user)
+                    messages.warning(
+                        request,
+                        'Your account exists, but access is paused because its trial or subscription has expired. Review renewal options below.',
+                    )
+                    return redirect('subscription')
+                if owner_profile and owner_profile.is_suspended and not subscription_expired:
+                    return render(request, 'login.html', {
+                        'form': AuthenticationForm(),
+                        'next': request.POST.get('next') or request.GET.get('next', ''),
+                        'login_notice': {
+                            'kind': 'suspended',
+                            'message': 'An account with this email exists, but this account is suspended.',
+                            'status_url': reverse('account_status') + '?' + urlencode({'email': owner.email}),
+                        },
+                    })
 
                 login(request, user)
                 if user.is_superuser:
                     return redirect('admin_panel')
+                next_url = request.POST.get('next') or request.GET.get('next')
+                if next_url and url_has_allowed_host_and_scheme(
+                    next_url,
+                    allowed_hosts={request.get_host()},
+                    require_https=request.is_secure(),
+                ):
+                    return redirect(next_url)
                 return redirect('dashboard')
         else:
-            messages.error(request, "Invalid username or password.")
+            existing_user = User.objects.filter(
+                Q(username__iexact=submitted_identity) | Q(email__iexact=submitted_identity)
+            ).select_related('profile', 'profile__tenant_owner').first() if submitted_identity else None
+            if existing_user:
+                profile = getattr(existing_user, 'profile', None)
+                owner = profile.tenant_owner if profile and profile.tenant_owner_id else existing_user
+                owner_profile = getattr(owner, 'profile', None)
+                if (not existing_user.is_active or not owner.is_active) and existing_user.check_password(request.POST.get('password', '')):
+                    login_notice = {
+                        'kind': 'suspended',
+                        'message': 'An account with this email exists, but this account is suspended.',
+                        'status_url': reverse('account_status') + '?' + urlencode({'email': owner.email}),
+                    }
+                elif owner_profile and not owner_profile.is_approved:
+                    login_notice = {
+                        'kind': 'pending',
+                        'message': 'An account with this email exists and is awaiting administrator approval.',
+                        'status_url': reverse('account_status') + '?' + urlencode({'email': owner.email}),
+                    }
+                else:
+                    login_notice = {
+                        'kind': 'password',
+                        'message': 'A user with this email exists. Sign in with your credentials, or reset your password if you cannot remember it.',
+                    }
+            else:
+                login_notice = {
+                    'kind': 'invalid',
+                    'message': 'We could not find an account matching those credentials. Check your email or username and password.',
+                }
     else:
         form = AuthenticationForm()
-    return render(request, 'login.html', {'form': form})
+    return render(request, 'login.html', {
+        'form': form,
+        'next': request.POST.get('next') or request.GET.get('next', ''),
+        'login_notice': login_notice,
+    })
+
+
+def account_inactive_view(request):
+    email = (request.POST.get('email') or request.GET.get('email') or '').strip().lower()
+    account = None
+    owner = None
+    profile = None
+    status_detail = ''
+    inactive_reason = ''
+    appeal_allowed = False
+    renewal_available = False
+    latest_appeal = None
+
+    if email:
+        account = User.objects.filter(email__iexact=email, is_superuser=False).select_related(
+            'profile', 'profile__tenant_owner', 'profile__tenant_owner__profile'
+        ).first()
+        if account:
+            account_profile = getattr(account, 'profile', None)
+            owner = account_profile.tenant_owner if account_profile and account_profile.tenant_owner_id else account
+            profile = getattr(owner, 'profile', None)
+            expired = bool(profile and (profile.is_trial_expired or profile.is_subscription_expired))
+
+            if expired:
+                inactive_reason = 'Your trial or subscription has expired.'
+                status_detail = 'Renew your subscription to restore access. Sign in to continue to the subscription page.'
+                renewal_available = account.is_active and owner.is_active
+                appeal_allowed = not account.is_active or not owner.is_active
+                if appeal_allowed and profile and profile.suspension_reason:
+                    status_detail = f"Administrator suspension: {profile.suspension_reason} Renew the subscription after access is restored."
+            elif not account.is_active or not owner.is_active:
+                inactive_reason = (profile.suspension_reason if profile else '') or 'An administrator suspended this account.'
+                status_detail = inactive_reason
+                appeal_allowed = True
+            elif profile and profile.is_suspended:
+                inactive_reason = profile.suspension_reason or 'An administrator suspended this account.'
+                status_detail = inactive_reason
+                appeal_allowed = True
+            elif profile and not profile.is_approved:
+                inactive_reason = 'Your account is awaiting administrator approval.'
+                status_detail = inactive_reason
+            else:
+                inactive_reason = 'The account is marked inactive.'
+                status_detail = 'Please contact the administrator if you need help restoring access.'
+                appeal_allowed = True
+
+            latest_appeal = AccountAppeal.objects.filter(user=owner).first()
+            if request.method == 'POST' and request.POST.get('action') == 'submit_appeal':
+                reason = request.POST.get('reason', '').strip()
+                if not appeal_allowed:
+                    messages.error(request, 'An appeal is available only for an administrator-suspended account.')
+                elif len(reason) < 10:
+                    messages.error(request, 'Please provide at least 10 characters explaining your appeal.')
+                else:
+                    pending_appeal = AccountAppeal.objects.filter(user=owner, status='PENDING').first()
+                    if pending_appeal:
+                        pending_appeal.reason = reason[:2000]
+                        pending_appeal.save(update_fields=['reason'])
+                        latest_appeal = pending_appeal
+                    else:
+                        latest_appeal = AccountAppeal.objects.create(user=owner, reason=reason[:2000])
+                    messages.success(request, 'Your appeal has been submitted for administrator review.')
+
+    return render(request, 'account/account_inactive.html', {
+        'email': email,
+        'account_found': bool(account),
+        'inactive_reason': inactive_reason,
+        'status_detail': status_detail,
+        'appeal_allowed': appeal_allowed,
+        'renewal_available': renewal_available,
+        'latest_appeal': latest_appeal,
+    })
+
+
+def account_status_view(request):
+    email = (request.POST.get('email') or request.GET.get('email') or '').strip().lower()
+    account_status = None
+    status_detail = ''
+    appeal_allowed = False
+    latest_appeal = None
+    if email:
+        account = User.objects.filter(email__iexact=email, is_superuser=False).select_related(
+            'profile', 'profile__tenant_owner'
+        ).first()
+        if not account:
+            account_status = 'not_found'
+        else:
+            account_profile = getattr(account, 'profile', None)
+            owner = account_profile.tenant_owner if account_profile and account_profile.tenant_owner_id else account
+            profile = getattr(owner, 'profile', None)
+            if not account.is_active or not owner.is_active:
+                account_status = 'suspended'
+                status_detail = (profile.suspension_reason if profile else '') or 'Sign-in has been disabled by an administrator.'
+                appeal_allowed = True
+            elif profile and profile.is_account_suspended:
+                account_status = 'suspended'
+                status_detail = 'Store access is paused because the trial or subscription has expired. Sign in to review subscription options, or submit an appeal if you believe this is an error.'
+                appeal_allowed = True
+            elif profile and not profile.is_approved:
+                account_status = 'pending'
+                status_detail = 'Your registration is waiting for administrator approval.'
+            else:
+                account_status = 'active'
+                status_detail = 'Your account is active. If you cannot sign in, reset your password.'
+
+            latest_appeal = AccountAppeal.objects.filter(user=owner).first()
+            if request.method == 'POST' and request.POST.get('action') == 'submit_appeal':
+                reason = request.POST.get('reason', '').strip()
+                if not appeal_allowed:
+                    messages.error(request, 'An appeal is available only for a suspended account.')
+                elif len(reason) < 10:
+                    messages.error(request, 'Please provide at least 10 characters explaining your appeal.')
+                else:
+                    pending_appeal = AccountAppeal.objects.filter(user=owner, status='PENDING').first()
+                    if pending_appeal:
+                        pending_appeal.reason = reason[:2000]
+                        pending_appeal.save(update_fields=['reason'])
+                        latest_appeal = pending_appeal
+                    else:
+                        latest_appeal = AccountAppeal.objects.create(user=owner, reason=reason[:2000])
+                    messages.success(request, 'Your appeal has been submitted for administrator review.')
+
+    return render(request, 'account_status.html', {
+        'email': email,
+        'account_status': account_status,
+        'status_detail': status_detail,
+        'appeal_allowed': appeal_allowed,
+        'latest_appeal': latest_appeal,
+    })
 
 def logout_view(request):
     logout(request)
@@ -503,21 +875,35 @@ def landing_view(request):
     return render(request, 'landing.html')
 
 def get_managed_tenant_profile(user_id):
-    return get_object_or_404(
+    profile = get_object_or_404(
         UserProfile.objects.select_related('user', 'shop'),
+        Q(tenant_owner=F('user')) | Q(tenant_owner__isnull=True),
         user_id=user_id,
-        tenant_owner=F('user'),
         user__is_superuser=False,
     )
+    # Older social signups can have a profile created before tenant ownership
+    # was assigned. They are standalone accounts elsewhere in the app, so adopt
+    # them as tenant owners when an administrator reviews the account.
+    if profile.tenant_owner_id is None:
+        profile.tenant_owner = profile.user
+        profile.role = 'ADMIN'
+        profile.save(update_fields=['tenant_owner', 'role'])
+    return profile
 
 def delete_tenant_accounts(owner):
     if owner.is_superuser:
         raise PermissionDenied("Superusers cannot be deleted.")
-    User.objects.filter(profile__tenant_owner=owner).exclude(pk=owner.pk).delete()
+    tenant_user_ids = UserProfile.objects.filter(
+        Q(tenant_owner=owner) | Q(shop__tenant_owner=owner) | Q(user__managed_shops__tenant_owner=owner)
+    ).values_list('user_id', flat=True).distinct()
+    related_users = User.objects.filter(pk__in=tenant_user_ids).exclude(pk=owner.pk)
+    deleted_user_count = related_users.count() + 1
+    related_users.delete()
     owner.delete()
+    return deleted_user_count
 
-def send_suspension_email(user, days_until_deletion=30):
-    """Sends email notice to tenant informing them of account suspension and 30-day deletion countdown."""
+def send_suspension_email(user):
+    """Send a suspension notice that makes clear the tenant's data is retained."""
     if not user or not user.email:
         return False
     from django.core.mail import send_mail
@@ -531,8 +917,7 @@ def send_suspension_email(user, days_until_deletion=30):
         f"  1. Standard Plan (₦8,000/mo) — 1 shop branch, POS & text inventory management\n"
         f"  2. Premium Plan (₦15,000/mo) — Up to 5 branches, full product images, analytics & CSV export\n"
         f"  3. Golden Premium Plan (₦35,000/mo) — Unlimited branches & staff, stock transfers & priority support\n\n"
-        f"IMPORTANT WARNING: Accounts that remain suspended without being redeemed will be PERMANENTLY "
-        f"DELETED in {days_until_deletion} days, including all associated products, sales, and branch records.\n\n"
+        "Your account and business records remain stored while suspended. They will not be automatically deleted.\n\n"
         f"Redeem your subscription now: https://scales.pythonanywhere.com/subscription/upgrade/\n\n"
         f"Best regards,\n"
         f"viARMS Support Team"
@@ -554,9 +939,9 @@ def check_and_process_tenant_lifecycle(owner):
     """
     Checks a tenant's trial and suspension lifecycle:
     - Superusers exempt.
-    - If trial expired (>= 14 days), marks is_suspended=True and dispatches in-app and email notices.
-    - If suspended >= 30 days without redeem, permanently deletes the account and all data.
-    Returns True if account was deleted, False otherwise.
+    - If trial expired (>= 14 days), marks is_suspended=True and dispatches an in-app notice.
+    - Suspended accounts and business data are retained until an administrator explicitly deletes them.
+    Returns False; lifecycle processing never deletes tenant data.
     """
     if not owner or owner.is_superuser:
         return False
@@ -578,18 +963,12 @@ def check_and_process_tenant_lifecycle(owner):
             if not profile.suspension_notified:
                 profile.suspension_notified = True
                 profile.save(update_fields=['suspension_notified'])
-                AdminNotification.objects.create(
+                create_admin_notification(
                     title="Store Suspended - Free Trial Ended",
-                    message="Your 14-day free trial has expired and your store operations are suspended. Please redeem your subscription by choosing a plan (Standard, Premium, or Golden Premium). Accounts not redeemed within 30 days will be permanently deleted.",
+                    message="Your 14-day free trial has expired and your store operations are suspended. Choose a subscription plan to restore access. Your account and business data are retained while suspended and are not automatically deleted.",
                     notification_type="WARNING",
                     target_tenant=owner
                 )
-                send_suspension_email(owner, days_until_deletion=30)
-
-            # Check 30-day auto-deletion threshold
-            if profile.days_suspended >= 30:
-                delete_tenant_accounts(owner)
-                return True
 
     # 2. Paid Subscription Expired
     elif profile.plan != 'FREE' and profile.is_subscription_expired:
@@ -599,33 +978,29 @@ def check_and_process_tenant_lifecycle(owner):
             profile.suspension_reason = "Paid subscription expired"
             profile.save(update_fields=['is_suspended', 'suspended_at', 'suspension_reason'])
 
-        if profile.days_suspended >= 30:
-            delete_tenant_accounts(owner)
-            return True
-
     return False
 
 def process_all_tenants_lifecycle():
-    """Scans all non-superuser tenant owners and applies trial suspension and 30-day deletion rules."""
-    tenants = User.objects.filter(is_superuser=False, profile__tenant_owner__isnull=True)
+    """Scans tenant owners and applies suspension rules without deleting tenant data."""
+    tenants = User.objects.filter(is_superuser=False).filter(
+        Q(profile__tenant_owner=F('id')) | Q(profile__tenant_owner__isnull=True)
+    ).distinct()
     suspended_count = 0
-    deleted_count = 0
+    deleted_count = 0  # Kept in the return value for callers using the existing command API.
     for tenant in list(tenants):
         profile = getattr(tenant, 'profile', None)
         if not profile:
             continue
         was_suspended = profile.is_suspended
-        deleted = check_and_process_tenant_lifecycle(tenant)
-        if deleted:
-            deleted_count += 1
-        elif not was_suspended and profile.is_suspended:
+        check_and_process_tenant_lifecycle(tenant)
+        if not was_suspended and profile.is_suspended:
             suspended_count += 1
     return suspended_count, deleted_count
 
 @login_required
 @user_passes_test(lambda u: u.is_superuser)
 def admin_panel_view(request):
-    # Refresh tenant lifecycle statuses (suspensions & 30-day auto-deletions)
+    # Refresh tenant lifecycle statuses without deleting suspended tenant data.
     process_all_tenants_lifecycle()
     if request.method == 'POST':
         action = request.POST.get('action')
@@ -664,8 +1039,8 @@ def admin_panel_view(request):
             else:
                 username = user.username
                 with transaction.atomic():
-                    delete_tenant_accounts(user)
-                messages.success(request, f"Registration for {username} and its tenant data was permanently deleted.")
+                    deleted_accounts = delete_tenant_accounts(user)
+                messages.success(request, f"Registration for {username} and its tenant data was permanently deleted ({deleted_accounts} user account(s) removed).")
         elif action in ('suspend_tenant', 'activate_tenant', 'delete_tenant'):
             user_profile = get_managed_tenant_profile(request.POST.get('user_id'))
             user = user_profile.user
@@ -692,8 +1067,28 @@ def admin_panel_view(request):
                 else:
                     username = user.username
                     with transaction.atomic():
-                        delete_tenant_accounts(user)
-                    messages.success(request, f"Tenant {username} and its business data were permanently deleted.")
+                        deleted_accounts = delete_tenant_accounts(user)
+                    messages.success(request, f"Tenant {username} and its business data were permanently deleted ({deleted_accounts} user account(s) removed).")
+        elif action == 'review_appeal':
+            appeal = get_object_or_404(AccountAppeal.objects.select_related('user'), id=request.POST.get('appeal_id'), status='PENDING')
+            response_text = request.POST.get('admin_response', '').strip()[:2000]
+            appeal.status = 'REVIEWED'
+            appeal.admin_response = response_text
+            appeal.reviewed_at = timezone.now()
+            appeal.save(update_fields=['status', 'admin_response', 'reviewed_at'])
+            if appeal.user.email:
+                try:
+                    from django.core.mail import send_mail
+                    send_mail(
+                        'Update on your viARMS account appeal',
+                        f"Your account appeal has been reviewed.\n\nAdministrator response: {response_text or 'Please sign in or contact support for assistance.'}",
+                        None,
+                        [appeal.user.email],
+                        fail_silently=False,
+                    )
+                except Exception:
+                    logger.exception('Could not email account appeal review for user id %s.', appeal.user_id)
+            messages.success(request, f"The account appeal from {appeal.user.username} was marked reviewed.")
         elif action == 'update_plan':
             new_plan = request.POST.get('plan')
             user_profile = get_managed_tenant_profile(request.POST.get('user_id'))
@@ -730,8 +1125,15 @@ def admin_panel_view(request):
             else:
                 target_tenant = None
                 if target_tenant_id and target_tenant_id != 'ALL':
-                    target_tenant = User.objects.filter(id=target_tenant_id).first()
-                AdminNotification.objects.create(
+                    target_tenant = User.objects.filter(
+                        id=target_tenant_id, is_superuser=False
+                    ).first()
+                    if not target_tenant:
+                        messages.error(request, "The selected tenant could not be found.")
+                        return redirect('admin_panel')
+                if notification_type not in dict(AdminNotification.NOTIFICATION_TYPES):
+                    notification_type = 'INFO'
+                notification = create_admin_notification(
                     title=title,
                     message=message,
                     notification_type=notification_type,
@@ -739,7 +1141,11 @@ def admin_panel_view(request):
                     sender=request.user
                 )
                 target_label = target_tenant.username if target_tenant else "All Tenants"
-                messages.success(request, f"Broadcast notification '{title}' sent to {target_label} successfully.")
+                queued_count = notification.email_deliveries.count()
+                messages.success(
+                    request,
+                    f"Notification '{title}' saved for {target_label}; {queued_count} email(s) queued for delivery."
+                )
         elif action == 'confirm_subscription':
             payment_id = request.POST.get('payment_id')
             payment = get_object_or_404(SubscriptionPayment, id=payment_id, status='PENDING')
@@ -754,7 +1160,7 @@ def admin_panel_view(request):
             payment.confirmed_at = timezone.now()
             payment.confirmed_by = request.user
             payment.save(update_fields=['status', 'rejection_reason', 'confirmed_at', 'confirmed_by'])
-            AdminNotification.objects.create(
+            create_admin_notification(
                 title="Subscription Payment Not Approved",
                 message=f"Your subscription payment submission (#{payment.reference}) could not be confirmed. Reason: {rejection_reason or 'Details could not be verified'}. Please contact support or retry.",
                 notification_type="URGENT",
@@ -789,13 +1195,13 @@ def admin_panel_view(request):
         return redirect(redirect_url)
 
     pending_users = UserProfile.objects.filter(
+        Q(tenant_owner=F('user')) | Q(tenant_owner__isnull=True),
         is_approved=False,
-        tenant_owner=F('user'),
         user__is_superuser=False,
     ).select_related('user', 'shop')
     pending_kyc = pending_users.exclude(kyc_status='VERIFIED')
     tenant_profiles = UserProfile.objects.filter(
-        tenant_owner=F('user'),
+        Q(tenant_owner=F('user')) | Q(tenant_owner__isnull=True),
         user__is_superuser=False,
     ).select_related('user', 'shop')
     tenant_search = request.GET.get('tenant_search', '').strip()
@@ -807,28 +1213,40 @@ def admin_panel_view(request):
         )
     all_tenants = tenant_profiles.order_by('-user__date_joined')
     all_tenant_profiles = UserProfile.objects.filter(
-        tenant_owner=F('user'),
+        Q(tenant_owner=F('user')) | Q(tenant_owner__isnull=True),
         user__is_superuser=False,
     )
+    counted_tenant_profiles = all_tenant_profiles.filter(tenant_owner=F('user'))
     ads = Advertisement.objects.all()
-    admin_notifications = AdminNotification.objects.filter(is_active=True).select_related('target_tenant', 'sender').order_by('-created_at')
+    admin_notifications = AdminNotification.objects.filter(is_active=True).select_related(
+        'target_tenant', 'sender'
+    ).annotate(
+        email_pending_count=Count('email_deliveries', filter=Q(email_deliveries__status='PENDING')),
+        email_sent_count=Count('email_deliveries', filter=Q(email_deliveries__status='SENT')),
+        email_failed_count=Count('email_deliveries', filter=Q(email_deliveries__status='FAILED')),
+    ).order_by('-created_at')
     tenant_options = all_tenant_profiles.select_related('user', 'shop').order_by('user__username')
     pending_payments = SubscriptionPayment.objects.filter(status='PENDING').select_related('tenant', 'tenant__profile').order_by('-created_at')
     all_payments = SubscriptionPayment.objects.select_related('tenant', 'confirmed_by').order_by('-created_at')[:25]
+    pending_account_appeals = AccountAppeal.objects.filter(status='PENDING').select_related('user').order_by('-created_at')
     store_settings = StoreSettings.get_settings()
 
     context = {
         'pending_payments': pending_payments,
         'all_payments': all_payments,
         'pending_payments_count': pending_payments.count(),
+        'pending_account_appeals': pending_account_appeals,
+        'pending_account_appeals_count': pending_account_appeals.count(),
+        'total_auth_user_count': User.objects.count(),
+        'business_auth_user_count': User.objects.filter(is_superuser=False).count(),
         'store_settings': store_settings,
         'pending_users': pending_users,
         'pending_kyc': pending_kyc,
         'all_tenants': all_tenants,
         'tenant_search': tenant_search,
-        'active_tenant_count': all_tenant_profiles.filter(is_approved=True, user__is_active=True).count(),
-        'suspended_tenant_count': all_tenant_profiles.filter(user__is_active=False).count(),
-        'pending_tenant_count': all_tenant_profiles.filter(is_approved=False, user__is_active=True).count(),
+        'active_tenant_count': counted_tenant_profiles.filter(is_approved=True, user__is_active=True).count(),
+        'suspended_tenant_count': counted_tenant_profiles.filter(user__is_active=False).count(),
+        'pending_tenant_count': counted_tenant_profiles.filter(is_approved=False, user__is_active=True).count(),
         'ads': ads,
         'admin_notifications': admin_notifications,
         'tenant_options': tenant_options,
@@ -855,6 +1273,10 @@ def toggle_dashboard_mode(request):
     """Toggle between retail and wholesale dashboard modes.
     Stores the choice in the session as 'dashboard_mode'."""
     current = request.session.get('dashboard_mode', 'retail')
+    if not has_wholesale_access(request.user):
+        request.session['dashboard_mode'] = 'retail'
+        messages.info(request, 'Wholesale mode is not included with the Standard plan.')
+        return redirect('dashboard')
     new_mode = 'wholesale' if current == 'retail' else 'retail'
     request.session['dashboard_mode'] = new_mode
     request.session.modified = True
@@ -865,6 +1287,10 @@ def toggle_dashboard_mode(request):
 @login_required
 def wholesale_dashboard_view(request):
     """Wholesale dashboard entry point. Sets session mode to wholesale and delegates to dashboard_view."""
+    if not has_wholesale_access(request.user):
+        request.session['dashboard_mode'] = 'retail'
+        messages.info(request, 'Wholesale mode is not included with the Standard plan.')
+        return redirect('dashboard')
     request.session['dashboard_mode'] = 'wholesale'
     request.session.modified = True
     return dashboard_view(request)
@@ -880,6 +1306,9 @@ def dashboard_view(request):
 
     # Active dashboard mode: 'retail' or 'wholesale'
     dashboard_mode = request.session.get('dashboard_mode', 'retail')
+    if dashboard_mode == 'wholesale' and not has_wholesale_access(request.user):
+        dashboard_mode = 'retail'
+        request.session['dashboard_mode'] = 'retail'
 
     today = timezone.localdate()
     
@@ -994,6 +1423,39 @@ def dashboard_view(request):
         .annotate(total_qty=Sum('quantity'), total_rev=Sum('subtotal')) \
         .order_by('-total_qty')[:5]
 
+    book_accessories_metrics = {}
+    if user_profile.business_type == 'BOOK_ACCESSORIES':
+        book_products = products_qs.filter(
+            Q(isbn__gt='') | Q(author__gt='') | Q(publisher__gt='')
+        )
+        accessory_products = products_qs.filter(
+            Q(color__gt='') | Q(size__gt='') | Q(warranty_period__gt='') | Q(material__gt='')
+        )
+        book_sales_window = sales_qs.filter(timestamp__gte=thirty_days_ago)
+        best_selling_books = SaleItem.objects.filter(
+            sale__in=book_sales_window,
+            product__in=book_products,
+        ).values(
+            'product__name', 'product__author', 'product__publisher', 'product__isbn'
+        ).annotate(
+            total_qty=Sum('quantity'),
+            total_revenue=Sum('subtotal'),
+        ).order_by('-total_qty')[:6]
+        accessory_low_stock = accessory_products.filter(
+            stock_quantity__lte=F('min_stock_level')
+        ).select_related('category').order_by('stock_quantity', 'name')[:6]
+        book_inventory_value = book_products.aggregate(
+            value=Sum(F('stock_quantity') * F('cost_price'))
+        )['value'] or Decimal('0.00')
+        book_accessories_metrics = {
+            'book_count': book_products.count(),
+            'accessory_count': accessory_products.count(),
+            'author_count': book_products.exclude(author__isnull=True).exclude(author='').values('author').distinct().count(),
+            'book_inventory_value': book_inventory_value,
+            'best_selling_books': best_selling_books,
+            'accessory_low_stock': accessory_low_stock,
+        }
+
     # Pharmaceutical specific metrics
     pharmaceutical_metrics = {}
     if user_profile.business_type == 'PHARMACEUTICAL':
@@ -1106,6 +1568,7 @@ def dashboard_view(request):
         'business_type': user_profile.business_type,
         'dashboard_products': dashboard_products,
         'pharmaceutical_metrics': pharmaceutical_metrics,
+        'book_accessories_metrics': book_accessories_metrics,
         'is_admin': is_admin(request.user),
         'is_manager': is_manager(request.user),
         'shops': shops,
@@ -1122,7 +1585,7 @@ def pos_view(request):
         return redirect('admin_panel')
     user_profile = request.user.profile
     if not request.user.is_superuser and user_profile.is_account_suspended:
-        messages.error(request, f"Store operations are suspended. You have {user_profile.days_until_deletion} days to redeem your subscription before permanent account deletion.")
+        messages.error(request, "Store operations are suspended because the subscription is inactive. Renew to restore access; your business data is retained.")
         return redirect('dashboard')
     user_shop = user_profile.shop
     user_is_admin = is_admin(request.user)
@@ -1162,7 +1625,7 @@ def pos_view(request):
     ).order_by('name')
 
     if tenant:
-        categories = Category.objects.filter(Q(tenant_owner=tenant) | Q(tenant_owner__isnull=True)).order_by('name')
+        categories = Category.objects.filter(tenant_owner=tenant).order_by('name')
         shops = Shop.objects.filter(tenant_owner=tenant).order_by('name') if user_is_admin else None
     else:
         categories = Category.objects.all().order_by('name')
@@ -1205,11 +1668,21 @@ def pos_view(request):
             'image_url': p.image.url if p.image else '',
         })
 
+    allowed_page_sizes = (12, 24, 48, 96)
+    try:
+        pos_page_size = int(request.GET.get('page_size', 24))
+    except (TypeError, ValueError):
+        pos_page_size = 24
+    if pos_page_size not in allowed_page_sizes:
+        pos_page_size = 24
+
     context = {
         'products': products,
         'categories': categories,
         'settings': settings,
         'products_json': json.dumps(products_json),
+        'pos_page_size': pos_page_size,
+        'pos_page_sizes': allowed_page_sizes,
         'is_admin': user_is_admin,
         'is_manager': is_manager(request.user),
         'user_shop': user_shop,
@@ -1226,7 +1699,7 @@ def checkout_api(request):
     
     user_profile = request.user.profile
     if not request.user.is_superuser and user_profile.is_account_suspended:
-        return JsonResponse({'success': False, 'error': f'Store account is suspended (free trial expired). You have {user_profile.days_until_deletion} days to redeem your subscription before permanent account deletion.'}, status=403)
+        return JsonResponse({'success': False, 'error': 'Store account is suspended because the subscription expired or is inactive. Renew to restore access; your business data is retained.'}, status=403)
     user_shop = user_profile.shop
 
     if not user_shop:
@@ -1329,6 +1802,13 @@ def checkout_api(request):
             product.stock_quantity -= qty
             product.save()
 
+        log_business_activity(
+            actor=request.user,
+            tenant_owner=get_tenant_scope(request.user),
+            action='Sale completed',
+            details=f"Receipt {sale.receipt_number}: {len(sale_items_data)} product line(s), total ₦{sale.total_amount:,.2f} at {user_shop.name if user_shop else 'Unassigned shop'}.",
+        )
+
         # Build receipt response details
         receipt_items = []
         for item in sale.items.all():
@@ -1359,7 +1839,7 @@ def checkout_api(request):
             'store_address': settings.address or user_shop.location or '',
             'store_phone': settings.phone or user_shop.phone or '',
             'store_email': settings.email or '',
-            'receipt_footer': settings.receipt_footer or '',
+            'receipt_footer': settings.receipt_footer or 'Thank you for shopping with viARMS Record Management System. Powered by Scales Technologies.',
             'items': receipt_items
         }
 
@@ -1381,7 +1861,7 @@ def product_list_view(request):
     tenant = get_tenant_scope(request.user)
 
     if tenant:
-        categories = Category.objects.filter(Q(tenant_owner=tenant) | Q(tenant_owner__isnull=True)).order_by('name')
+        categories = Category.objects.filter(tenant_owner=tenant).order_by('name')
         if is_user_admin:
             shops = Shop.objects.filter(tenant_owner=tenant).order_by('name')
             shop_filter = request.GET.get('shop_id')
@@ -1410,7 +1890,7 @@ def product_list_view(request):
     # Handle Category and Product CRUD
     if request.method == 'POST' and 'action' in request.POST:
         if not request.user.is_superuser and user_profile.is_account_suspended:
-            messages.error(request, f"Store operations are suspended. You have {user_profile.days_until_deletion} days to redeem your subscription before permanent account deletion.")
+            messages.error(request, "Store operations are suspended because the subscription is inactive. Renew to restore access; your business data is retained.")
             return redirect('products')
         # Permission validation: Only Admin or Manager can modify inventory
         if not is_user_admin and not is_manager(request.user):
@@ -1486,14 +1966,20 @@ def product_list_view(request):
         # Products (Admin & Manager)
         elif action == 'add_product':
             name = request.POST.get('name')
-            sku = request.POST.get('sku')
+            is_boutique = user_profile.business_type == 'BOUTIQUE'
+            sku = (request.POST.get('sku') or '').strip()
+            if is_boutique and not sku:
+                sku = generate_internal_product_sku()
             cat_id = request.POST.get('category_id')
             cost = Decimal(request.POST.get('cost_price', 0.00))
             sell = Decimal(request.POST.get('selling_price', 0.00))
+            if cost > sell:
+                messages.error(request, "Cost price cannot be greater than selling price.")
+                return redirect('products')
             qty = int(request.POST.get('stock_quantity', 0))
             min_lvl = int(request.POST.get('min_stock_level', 5))
             desc = request.POST.get('description')
-            expiry = request.POST.get('expiry_date') or None
+            expiry = None if is_boutique else (request.POST.get('expiry_date') or None)
 
             # Custom business-specific attributes
             dosage_form = request.POST.get('dosage_form', '')
@@ -1545,10 +2031,7 @@ def product_list_view(request):
             category = None
             if cat_id and str(cat_id).strip() not in ('', 'None', '0'):
                 if tenant:
-                    category = Category.objects.filter(
-                        Q(tenant_owner=tenant) | Q(tenant_owner__isnull=True),
-                        id=cat_id
-                    ).first()
+                    category = Category.objects.filter(tenant_owner=tenant, id=cat_id).first()
                 else:
                     category = Category.objects.filter(id=cat_id).first()
                 if not category:
@@ -1559,7 +2042,7 @@ def product_list_view(request):
                 if duplicate_error:
                     messages.error(request, duplicate_error)
                 else:
-                    Product.objects.create(
+                    product = Product.objects.create(
                         name=name, sku=sku, category=category, cost_price=cost,
                         selling_price=sell, stock_quantity=qty, min_stock_level=min_lvl,
                         description=desc, expiry_date=expiry, shop=prod_shop,
@@ -1570,8 +2053,16 @@ def product_list_view(request):
                         color=color, size=size, warranty_period=warranty_period,
                         material=material, image=uploaded_image
                     )
+                    stock_report = record_stock_additions(
+                        [(product, 0)], actor=request.user, tenant_owner=tenant
+                    )
+                    log_business_activity(
+                        actor=request.user, tenant_owner=tenant, action='Product created',
+                        details=f"{product.name} ({product.sku}) added to {prod_shop.name} with {product.stock_quantity} in stock.",
+                    )
                     batch_info = f" ({batch_number})" if batch_number else ""
-                    messages.success(request, f"Product '{name}'{batch_info} created successfully under '{prod_shop.name}'.")
+                    report_note = " Stock report queued for the tenant admin." if stock_report else ""
+                    messages.success(request, f"Product '{name}'{batch_info} created successfully under '{prod_shop.name}'.{report_note}")
 
         elif action == 'edit_product':
             prod_id = request.POST.get('product_id')
@@ -1591,8 +2082,9 @@ def product_list_view(request):
                 prod = get_object_or_404(Product, id=prod_id, shop=user_shop)
 
             prod.name = request.POST.get('name')
-            sku = request.POST.get('sku')
-            new_expiry = request.POST.get('expiry_date') or None
+            is_boutique = user_profile.business_type == 'BOUTIQUE'
+            sku = (request.POST.get('sku') or '').strip() or prod.sku
+            new_expiry = None if is_boutique else (request.POST.get('expiry_date') or None)
             new_material = request.POST.get('material', '')
             uploaded_image = request.FILES.get('image')
 
@@ -1619,23 +2111,26 @@ def product_list_view(request):
             if conflict:
                 messages.error(request, f"Another product with SKU '{sku}' and batch '{new_batch}' already exists in this shop.")
             else:
+                quantity_before = prod.stock_quantity
                 prod.sku = sku
                 prod.batch_number = new_batch
                 cat_id = request.POST.get('category_id')
                 if cat_id and str(cat_id).strip() not in ('', 'None', '0'):
                     if tenant:
-                        prod.category = Category.objects.filter(
-                            Q(tenant_owner=tenant) | Q(tenant_owner__isnull=True),
-                            id=cat_id
-                        ).first()
+                        prod.category = Category.objects.filter(tenant_owner=tenant, id=cat_id).first()
                     else:
                         prod.category = Category.objects.filter(id=cat_id).first()
                     if not prod.category:
                         messages.warning(request, "Selected category was not found; product saved as Uncategorized.")
                 else:
                     prod.category = None
-                prod.cost_price = Decimal(request.POST.get('cost_price', 0.00))
-                prod.selling_price = Decimal(request.POST.get('selling_price', 0.00))
+                new_cost = Decimal(request.POST.get('cost_price', 0.00))
+                new_sell = Decimal(request.POST.get('selling_price', 0.00))
+                if new_cost > new_sell:
+                    messages.error(request, "Cost price cannot be greater than selling price.")
+                    return redirect('products')
+                prod.cost_price = new_cost
+                prod.selling_price = new_sell
                 prod.stock_quantity = int(request.POST.get('stock_quantity', 0))
                 prod.min_stock_level = int(request.POST.get('min_stock_level', 5))
                 prod.description = request.POST.get('description')
@@ -1663,9 +2158,18 @@ def product_list_view(request):
                     prod.image = None
 
                 prod.save()
+                stock_report = record_stock_additions(
+                    [(prod, quantity_before)], actor=request.user, tenant_owner=tenant
+                )
+                if prod.stock_quantity < quantity_before:
+                    log_business_activity(
+                        actor=request.user, tenant_owner=tenant, action='Stock adjusted',
+                        details=f"{prod.name}: quantity reduced from {quantity_before} to {prod.stock_quantity}.",
+                    )
                 if old_image_name and old_image_name != (prod.image.name if prod.image else None):
                     prod.image.storage.delete(old_image_name)
-                messages.success(request, f"Product '{prod.name}' updated successfully.")
+                report_note = " Stock report queued for the tenant admin." if stock_report else ""
+                messages.success(request, f"Product '{prod.name}' updated successfully.{report_note}")
 
         elif action == 'delete_product':
             prod_id = request.POST.get('product_id')
@@ -1679,6 +2183,10 @@ def product_list_view(request):
             
             prod.is_active = False
             prod.save()
+            log_business_activity(
+                actor=request.user, tenant_owner=tenant, action='Product archived',
+                details=f"{prod.name} ({prod.sku}) was archived from {prod.shop.name if prod.shop_id else 'Unassigned shop'}.",
+            )
             messages.success(request, f"Product '{prod.name}' deleted successfully.")
 
         return redirect('products')
@@ -1785,8 +2293,24 @@ def sales_history_view(request):
 
     payment_choices = Sale.PAYMENT_METHODS
 
+    allowed_page_sizes = (25, 50, 100)
+    try:
+        page_size = int(request.GET.get('page_size', 25))
+    except (TypeError, ValueError):
+        page_size = 25
+    if page_size not in allowed_page_sizes:
+        page_size = 25
+    query_params = request.GET.copy()
+    query_params.pop('page', None)
+    pagination_query = query_params.urlencode()
+    sales_page = Paginator(sales, page_size).get_page(request.GET.get('page'))
+
     context = {
-        'sales': sales,
+        'sales': sales_page.object_list,
+        'sales_page': sales_page,
+        'page_size': page_size,
+        'page_sizes': allowed_page_sizes,
+        'pagination_query': pagination_query,
         'cashiers': cashiers,
         'shops': shops,
         'payment_choices': payment_choices,
@@ -1843,10 +2367,68 @@ def sale_detail_json(request, sale_id):
         'store_address': settings.address or (sale.shop.location if sale.shop and sale.shop.location else ""),
         'store_phone': settings.phone or (sale.shop.phone if sale.shop and sale.shop.phone else ""),
         'store_email': settings.email or '',
-        'receipt_footer': settings.receipt_footer or '',
+        'receipt_footer': settings.receipt_footer or 'Thank you for shopping with viARMS Record Management System. Powered by Scales Technologies.',
         'items': items_data
     }
     return JsonResponse({'success': True, 'receipt': receipt_data})
+
+@login_required
+@user_passes_test(lambda u: not u.is_superuser and is_admin(u))
+def activity_log_view(request):
+    tenant = get_tenant_scope(request.user)
+    activity = ActivityLog.objects.filter(tenant_owner=tenant).select_related('actor')[:100]
+    return render(request, 'activity_log.html', {'activity_entries': activity, 'is_admin': True})
+
+
+@login_required
+@user_passes_test(lambda u: not u.is_superuser and is_admin(u))
+def inventory_report_download_view(request):
+    tenant = get_tenant_scope(request.user)
+    if request.method != 'POST':
+        return redirect('activity_log')
+    report = StockInReport(
+        tenant_owner=tenant,
+        actor=request.user,
+        include_inventory_snapshot=True,
+        created_at=timezone.now(),
+    )
+    from .management.commands.send_notification_emails import Command as EmailCommand
+    workbook = EmailCommand._build_stock_workbook(report, [])
+    log_business_activity(
+        actor=request.user, tenant_owner=tenant, action='Inventory report downloaded',
+        details='Downloaded a current categorized inventory report.',
+    )
+    response = HttpResponse(
+        workbook,
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    )
+    response['Content-Disposition'] = f'attachment; filename="viarms_inventory_{timezone.localdate():%Y%m%d}.xlsx"'
+    return response
+
+
+@login_required
+@user_passes_test(lambda u: not u.is_superuser and is_admin(u))
+def inventory_report_email_view(request):
+    if request.method != 'POST':
+        return redirect('activity_log')
+    tenant = get_tenant_scope(request.user)
+    recipient = (tenant.email or '').strip()
+    if not recipient:
+        messages.error(request, 'Add an email address to the business admin account before requesting an emailed report.')
+        return redirect('activity_log')
+    report = StockInReport.objects.create(
+        tenant_owner=tenant,
+        actor=request.user,
+        recipient=recipient,
+        include_inventory_snapshot=True,
+    )
+    log_business_activity(
+        actor=request.user, tenant_owner=tenant, action='Inventory report emailed',
+        details=f'Queued a current categorized inventory report for {recipient}.',
+    )
+    messages.success(request, f'Inventory report queued for {recipient}. It will be sent by the configured email worker.')
+    return redirect('activity_log')
+
 
 @login_required
 def export_sales_csv(request):
@@ -1921,6 +2503,9 @@ def export_wholesale_catalog_csv(request):
     """Exports active product catalog with wholesale prices, batch numbers, and stock levels as CSV."""
     tenant = get_tenant_scope(request.user)
     user_profile = request.user.profile
+    if not has_wholesale_access(request.user):
+        messages.info(request, 'Wholesale features are not included with the Standard plan.')
+        return redirect('dashboard')
     is_user_admin = is_admin(request.user)
     user_shop = user_profile.shop
 
@@ -1966,6 +2551,8 @@ def settings_view(request):
     if request.user.is_superuser:
         return redirect('admin_panel')
     settings = StoreSettings.get_settings()
+    tenant_owner = get_tenant_scope(request.user) or request.user
+    can_edit_receipt_footer = getattr(getattr(tenant_owner, 'profile', None), 'plan', 'FREE') != 'FREE'
     
     if request.method == 'POST':
         settings.store_name = request.POST.get('store_name', settings.store_name)
@@ -1973,7 +2560,8 @@ def settings_view(request):
         settings.phone = request.POST.get('phone', settings.phone)
         settings.email = request.POST.get('email', settings.email)
         settings.tax_rate = Decimal(request.POST.get('tax_rate', '0.00'))
-        settings.receipt_footer = request.POST.get('receipt_footer', settings.receipt_footer)
+        if can_edit_receipt_footer:
+            settings.receipt_footer = request.POST.get('receipt_footer', settings.receipt_footer)
         
         try:
             settings.save()
@@ -1985,6 +2573,7 @@ def settings_view(request):
     context = {
         'settings': settings,
         'is_admin': True,
+        'can_edit_receipt_footer': can_edit_receipt_footer,
     }
     return render(request, 'settings.html', context)
 
@@ -2513,7 +3102,9 @@ def subscription_upgrade_view(request):
             )
             return redirect('subscription')
 
-    initial_plan = request.GET.get('plan', 'PREMIUM')
+    initial_plan = request.GET.get('plan', 'PREMIUM').upper()
+    if initial_plan not in pricing:
+        initial_plan = 'PREMIUM'
     context = {
         'profile': profile,
         'settings': settings,
@@ -2762,10 +3353,7 @@ def category_detail_view(request, category_id):
     """
     tenant = get_tenant_scope(request.user)
     if tenant:
-        category = Category.objects.filter(
-            Q(tenant_owner=tenant) | Q(tenant_owner__isnull=True),
-            id=category_id
-        ).first()
+        category = Category.objects.filter(tenant_owner=tenant, id=category_id).first()
         if not category:
             from django.http import Http404
             raise Http404("No Category matches the given query.")
@@ -2842,7 +3430,7 @@ def expired_products_view(request):
 
     if tenant:
         base_qs = Product.objects.filter(is_active=True, expiry_date__lt=today, shop__tenant_owner=tenant)
-        all_categories = Category.objects.filter(Q(tenant_owner=tenant) | Q(tenant_owner__isnull=True))
+        all_categories = Category.objects.filter(tenant_owner=tenant)
     else:
         base_qs = Product.objects.filter(is_active=True, expiry_date__lt=today)
         all_categories = Category.objects.all()
@@ -2923,7 +3511,7 @@ def stock_batches_view(request):
 
     if tenant:
         all_products = list(Product.objects.filter(is_active=True, shop__tenant_owner=tenant).select_related('category', 'shop'))
-        all_categories = list(Category.objects.filter(Q(tenant_owner=tenant) | Q(tenant_owner__isnull=True)))
+        all_categories = list(Category.objects.filter(tenant_owner=tenant))
     else:
         all_products = list(Product.objects.filter(is_active=True).select_related('category', 'shop'))
         all_categories = list(Category.objects.all())

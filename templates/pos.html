@@ -38,6 +38,7 @@
                 {% if is_admin %}
                 <div style="min-width: 200px;">
                     <form method="GET" id="pos-shop-form" style="margin: 0;">
+                        <input type="hidden" name="page_size" value="{{ pos_page_size }}">
                         <select name="shop_id" class="form-control"
                             onchange="document.getElementById('pos-shop-form').submit()">
                             {% for s in shops %}
@@ -60,6 +61,19 @@
         <!-- Products Grid -->
         <div class="products-grid" id="products-catalog" aria-live="polite">
             <!-- Dynamic products injected here by JS -->
+        </div>
+        <div class="glass-panel" id="catalog-pagination" style="display:flex; align-items:center; justify-content:space-between; gap:.75rem; flex-wrap:wrap; padding:.75rem 1rem; margin-top:.75rem;">
+            <label for="catalog-page-size" style="display:flex; align-items:center; gap:.5rem; color:var(--text-secondary); font-size:.85rem;">
+                Products per page
+                <select id="catalog-page-size" class="form-control" style="width:auto; min-width:78px; padding:.35rem .5rem;">
+                    {% for size in pos_page_sizes %}<option value="{{ size }}" {% if size == pos_page_size %}selected{% endif %}>{{ size }}</option>{% endfor %}
+                </select>
+            </label>
+            <div style="display:flex; align-items:center; gap:.6rem;">
+                <span id="catalog-page-status" style="color:var(--text-secondary); font-size:.85rem;" aria-live="polite"></span>
+                <button type="button" id="catalog-prev-page" class="btn btn-secondary btn-sm" aria-label="Previous product page">Previous</button>
+                <button type="button" id="catalog-next-page" class="btn btn-secondary btn-sm" aria-label="Next product page">Next</button>
+            </div>
         </div>
     </div>
 
@@ -192,13 +206,14 @@
 <script>
     // Embed products list from django context view safely into JS variable
     const productsData = {{ products_json| safe }};
+    const initialCatalogPageSize = {{ pos_page_size }};
     const defaultTaxRate = parseFloat("{{ settings.tax_rate }}");
     const storeSettings = {
         store_name: "{{ settings.store_name|default:'Our Shop'|escapejs }}",
         store_address: "{{ settings.address|default:''|escapejs }}",
         store_phone: "{{ settings.phone|default:''|escapejs }}",
         store_email: "{{ settings.email|default:''|escapejs }}",
-        receipt_footer: "{{ settings.receipt_footer|default:'Thank you for shopping with us!'|escapejs }}"
+        receipt_footer: "{{ settings.receipt_footer|default:'Thank you for shopping with viARMS Record Management System. Powered by Scales Technologies.'|escapejs }}"
     };
     const checkoutUrl = "{% url 'checkout_api' %}";
     const csrfToken = "{{ csrf_token }}";

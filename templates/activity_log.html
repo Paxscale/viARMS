@@ -1,0 +1,46 @@
+{% extends 'base.html' %}
+
+{% block title %}Activity & Reports - viARMS{% endblock %}
+
+{% block content %}
+<div class="panel-header" style="gap: 1rem; flex-wrap: wrap;">
+    <div>
+        <h1 style="font-size: 1.75rem; font-weight: 700;">Activity &amp; Business Reports</h1>
+        <p style="color: var(--text-secondary); font-size: .9rem;">Review recent stock and sales activity, or create a current inventory report.</p>
+    </div>
+    <div style="display: flex; gap: .65rem; flex-wrap: wrap;">
+        <form method="post" action="{% url 'inventory_report_download' %}">
+            {% csrf_token %}
+            <button class="btn btn-primary" type="submit">Download inventory report</button>
+        </form>
+        <form method="post" action="{% url 'inventory_report_email' %}">
+            {% csrf_token %}
+            <button class="btn btn-secondary" type="submit">Email report to admin</button>
+        </form>
+    </div>
+</div>
+
+<p style="color: var(--text-muted); font-size: .82rem; margin: -.5rem 0 1.25rem;">The Excel report is generated when requested and is not saved as a file. Emailed reports enter the existing delivery queue.</p>
+
+<section class="glass-panel" style="padding: 1.25rem;">
+    <h2 style="font-size: 1.1rem; margin: 0 0 1rem;">Recent activity</h2>
+    <div class="table-responsive">
+        <table class="custom-table">
+            <thead><tr><th>Date &amp; time</th><th>Activity</th><th>Details</th><th>By</th></tr></thead>
+            <tbody>
+                {% for entry in activity_entries %}
+                <tr>
+                    <td>{{ entry.created_at|date:"M d, Y H:i" }}</td>
+                    <td><strong>{{ entry.action }}</strong></td>
+                    <td>{{ entry.details }}</td>
+                    <td>{{ entry.actor.username|default:"System" }}</td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="4" style="text-align: center; padding: 2rem; color: var(--text-muted);">No activity has been recorded yet. New sales, stock additions, and report requests will appear here.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <p style="color: var(--text-muted); font-size: .78rem; margin: 1rem 0 0;">Showing the latest 100 entries.</p>
+</section>
+{% endblock %}

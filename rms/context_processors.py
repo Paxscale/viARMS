@@ -1,4 +1,5 @@
 from django.db.models import Q
+from django.conf import settings
 from .models import AdminNotification, NotificationReadStatus
 
 
@@ -13,8 +14,18 @@ def user_roles(request):
     unread_notifications_count = 0
     has_urgent_notification = False
     urgent_notification = None
+    wholesale_access = False
 
     if request.user.is_authenticated:
+        try:
+            owner = request.user.profile.tenant_owner or request.user
+            wholesale_access = (
+                owner.profile.plan != 'STANDARD'
+                and owner.profile.tenant_type in {'WHOLESALE', 'RETAIL_WHOLESALE'}
+            )
+        except Exception:
+            wholesale_access = False
+
         is_admin = request.user.is_superuser or (
             hasattr(request.user, 'profile') and request.user.profile.role == 'ADMIN'
         )
@@ -64,4 +75,20 @@ def user_roles(request):
         'unread_notifications_count': unread_notifications_count,
         'has_urgent_notification': urgent_notification is not None,
         'urgent_notification': urgent_notification,
+        'wholesale_access': wholesale_access,
+    }
+
+
+def social_login_options(request):
+    return {
+        'google_login_enabled': bool(
+            getattr(settings, 'GOOGLE_OAUTH_CLIENT_ID', '')
+            and getattr(settings, 'GOOGLE_OAUTH_CLIENT_SECRET', '')
+        ),
+        'apple_login_enabled': bool(
+            getattr(settings, 'APPLE_SERVICE_ID', '')
+            and getattr(settings, 'APPLE_KEY_ID', '')
+            and getattr(settings, 'APPLE_TEAM_ID', '')
+            and getattr(settings, 'APPLE_PRIVATE_KEY', '')
+        ),
     }

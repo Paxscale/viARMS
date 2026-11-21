@@ -10,6 +10,8 @@ function formatBatch(batch) {
 let cart = [];
 let activeCategory = 'all';
 let searchQuery = '';
+let catalogPage = 1;
+let catalogPageSize = typeof initialCatalogPageSize !== 'undefined' ? initialCatalogPageSize : 24;
 let lastAddedProductId = null;
 let posBarcodeScanner = null;
 let posScannerStartPromise = null;
@@ -138,9 +140,31 @@ document.addEventListener("DOMContentLoaded", function () {
 
         searchInput.addEventListener('input', function (e) {
             searchQuery = e.target.value.toLowerCase().trim();
+            catalogPage = 1;
             renderCatalog();
         });
     }
+
+    const catalogPageSizeSelect = document.getElementById('catalog-page-size');
+    if (catalogPageSizeSelect) {
+        catalogPageSizeSelect.addEventListener('change', function () {
+            catalogPageSize = parseInt(this.value, 10) || 24;
+            catalogPage = 1;
+            const url = new URL(window.location.href);
+            url.searchParams.set('page_size', catalogPageSize);
+            window.history.replaceState({}, '', url);
+            const shopPageSize = document.querySelector('#pos-shop-form input[name="page_size"]');
+            if (shopPageSize) shopPageSize.value = catalogPageSize;
+            renderCatalog();
+        });
+    }
+    document.getElementById('catalog-prev-page')?.addEventListener('click', function () {
+        if (catalogPage > 1) { catalogPage -= 1; renderCatalog(); }
+    });
+    document.getElementById('catalog-next-page')?.addEventListener('click', function () {
+        catalogPage += 1;
+        renderCatalog();
+    });
 
     document.getElementById('pos-scan-button').addEventListener('click', startPosBarcodeScanner);
     document.getElementById('pos-scan-close').addEventListener('click', stopPosBarcodeScanner);
@@ -153,6 +177,7 @@ document.addEventListener("DOMContentLoaded", function () {
             chips.forEach(c => c.classList.remove('active'));
             this.classList.add('active');
             activeCategory = this.getAttribute('data-category-id');
+            catalogPage = 1;
             renderCatalog();
         });
     });
@@ -314,6 +339,7 @@ function renderCatalog() {
 
     if (filtered.length === 0) {
         if (catalogCount) catalogCount.textContent = '0 products';
+        updateCatalogPagination(0, 0, 0);
         catalog.innerHTML = `
             <div class="pos-empty-state">
                 <i data-lucide="search-x" aria-hidden="true"></i>
@@ -329,7 +355,13 @@ function renderCatalog() {
         catalogCount.textContent = `${filtered.length} product${filtered.length === 1 ? '' : 's'}`;
     }
 
-    filtered.forEach(product => {
+    const pageCount = Math.max(1, Math.ceil(filtered.length / catalogPageSize));
+    catalogPage = Math.min(catalogPage, pageCount);
+    const startIndex = (catalogPage - 1) * catalogPageSize;
+    const visibleProducts = filtered.slice(startIndex, startIndex + catalogPageSize);
+    updateCatalogPagination(filtered.length, startIndex, visibleProducts.length, pageCount);
+
+    visibleProducts.forEach(product => {
         const productName = escapeHtml(product.name);
         const productSku = escapeHtml(product.sku);
         const categoryName = escapeHtml(product.category_name);
@@ -446,6 +478,22 @@ function renderCatalog() {
         catalog.appendChild(card);
     });
     lucide.createIcons();
+}
+
+function updateCatalogPagination(total, startIndex, visibleCount, pageCount = 1) {
+    const status = document.getElementById('catalog-page-status');
+    const previous = document.getElementById('catalog-prev-page');
+    const next = document.getElementById('catalog-next-page');
+    const pagination = document.getElementById('catalog-pagination');
+    if (!status || !previous || !next) return;
+    if (!total) {
+        status.textContent = 'No products';
+    } else {
+        status.textContent = `Showing ${startIndex + 1}–${startIndex + visibleCount} of ${total} · Page ${catalogPage} of ${pageCount}`;
+    }
+    previous.disabled = catalogPage <= 1;
+    next.disabled = catalogPage >= pageCount;
+    if (pagination) pagination.style.display = total ? 'flex' : 'none';
 }
 
 // Add item to shopping cart

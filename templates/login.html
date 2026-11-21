@@ -1,5 +1,5 @@
 {% extends 'base.html' %}
-{% load static %}
+{% load static socialaccount %}
 
 {% block title %}Sign In - viARMS{% endblock %}
 
@@ -111,13 +111,52 @@
         color: var(--color-primary);
         transform: translateY(-1px);
     }
+    .login-notice {
+        margin: 1rem 0;
+        padding: 1rem;
+        border: 1px solid var(--border-color);
+        border-radius: 12px;
+        background: var(--bg-surface);
+        color: var(--text-primary);
+        font-size: .88rem;
+        line-height: 1.5;
+    }
+    .login-notice p { margin: 0 0 .75rem; }
+    .password-reset-link {
+        display: block;
+        width: fit-content;
+        margin: .7rem auto 0;
+        color: var(--text-secondary);
+        font-size: .82rem;
+        text-decoration: underline;
+        text-underline-offset: 3px;
+    }
+    .password-reset-link:hover { color: var(--color-primary); }
+    .auth-home-link {
+        display: inline-flex;
+        align-items: center;
+        gap: .4rem;
+        color: var(--text-secondary);
+        text-decoration: none;
+        font-size: .85rem;
+        font-weight: 600;
+        padding: .45rem .65rem;
+        border: 1px solid var(--border-color);
+        border-radius: 9px;
+        transition: color .2s, border-color .2s, background .2s;
+    }
+    .auth-home-link:hover { color: var(--color-primary); border-color: var(--color-primary); background: rgba(99,102,241,.06); }
 </style>
 
 <div class="login-container">
     <div class="login-glass-card">
 
         <!-- Language Selector -->
-        <div style="display: flex; justify-content: flex-end; margin-bottom: 1.5rem;">
+        <div style="display: flex; justify-content: space-between; align-items: center; gap: .75rem; margin-bottom: 1.5rem;">
+            <a class="auth-home-link" href="{% url 'landing' %}" aria-label="Go to home page">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 10 9-7 9 7"/><path d="M9 21V12h6v9"/><path d="M5 10v11h14V10"/></svg>
+                <span>Home</span>
+            </a>
             <select id="lang-select-login" class="form-control" style="width: auto; padding: 0.35rem 0.75rem; font-size: 0.8rem; border-radius: 8px; background: rgba(15,23,42,0.6);" aria-label="Select Language" onchange="viARMSi18n.setLang(this.value)">
                 <option value="en">English</option>
                 <option value="pidgin">Nigerian Pidgin</option>
@@ -152,6 +191,7 @@
 
         <form method="POST" action="{% url 'login' %}">
             {% csrf_token %}
+            <input type="hidden" name="next" value="{{ next }}">
             
             <div class="form-group" style="margin-bottom: 1.25rem;">
                 <label for="username" class="form-label" data-i18n="username" style="font-size: 0.8rem; font-weight: 600; letter-spacing: 0.3px; text-transform: uppercase; color: var(--text-muted);">Username</label>
@@ -159,7 +199,7 @@
                     <span class="auth-input-icon">
                         <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
                     </span>
-                    <input type="text" name="username" id="username" class="form-control auth-input" placeholder="Enter your username" required autofocus>
+                    <input type="text" name="username" id="username" class="form-control auth-input" placeholder="Enter your username" value="{{ request.POST.username|default:'' }}" required autofocus>
                 </div>
             </div>
             
@@ -173,11 +213,47 @@
                 </div>
             </div>
 
-            <button type="submit" class="btn-signin" data-i18n="sign_in">
+            <button type="submit" class="btn-signin">
                 <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h4a2 2 0 012 2v14a2 2 0 01-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
-                Sign In
+                <span data-i18n="sign_in">Sign In</span>
             </button>
         </form>
+
+        <a href="{% url 'password_reset' %}" class="password-reset-link">Forgot your password?</a>
+
+        {% if login_notice %}
+        <section class="login-notice" role="alert" aria-live="polite">
+            <p>{{ login_notice.message }}</p>
+            {% if login_notice.kind == 'subscription' %}
+            <a href="{{ login_notice.subscription_url }}" class="btn-signin" style="text-decoration:none;">Renew subscription</a>
+            {% elif login_notice.status_url %}
+            <a href="{{ login_notice.status_url }}" class="btn-signup-link" style="min-height:42px;">View account status{% if login_notice.kind == 'suspended' %} or submit an appeal{% endif %}</a>
+            {% endif %}
+        </section>
+        {% endif %}
+
+        {% if google_login_enabled or apple_login_enabled %}
+        <div style="display:flex; align-items:center; gap:.75rem; margin:1.25rem 0; color:var(--text-muted); font-size:.75rem;">
+            <span style="height:1px; flex:1; background:var(--border-color);"></span><span>OR CONTINUE WITH</span><span style="height:1px; flex:1; background:var(--border-color);"></span>
+        </div>
+        <div style="display:grid; gap:.65rem;">
+            {% if google_login_enabled %}
+            <form method="post" action="{% provider_login_url 'google' process='login' %}">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-secondary btn-block" style="min-height:44px; background:var(--bg-surface); border:1px solid var(--border-color); color:var(--text-primary); display:flex; align-items:center; justify-content:center; gap:10px;">
+                    <svg aria-hidden="true" width="18" height="18" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg"><path fill="#4285F4" d="M43.6 24.5c0-1.4-.1-2.8-.4-4.1H24v7.8h11a9.4 9.4 0 0 1-4.1 6.2v5.1h6.6c3.9-3.6 6.1-8.8 6.1-15Z"/><path fill="#34A853" d="M24 44c5.5 0 10.1-1.8 13.5-4.8l-6.6-5.1c-1.8 1.2-4 2-6.9 2-5.3 0-9.8-3.6-11.4-8.4H5.8v5.3A20 20 0 0 0 24 44Z"/><path fill="#FBBC05" d="M12.6 27.7a12 12 0 0 1 0-7.4V15H5.8a20 20 0 0 0 0 17.9l6.8-5.2Z"/><path fill="#EA4335" d="M24 12.1c3 0 5.7 1 7.8 3.1l5.8-5.8C34.1 6.1 29.5 4 24 4A20 20 0 0 0 5.8 15l6.8 5.3c1.6-4.8 6.1-8.2 11.4-8.2Z"/></svg>
+                    <span>Continue with Google</span>
+                </button>
+            </form>
+            {% endif %}
+            {% if apple_login_enabled %}
+            <form method="post" action="{% provider_login_url 'apple' process='login' %}">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-secondary btn-block" style="min-height:44px; background:var(--bg-surface); border:1px solid var(--border-color); color:var(--text-primary);">Continue with Apple</button>
+            </form>
+            {% endif %}
+        </div>
+        {% endif %}
 
         <div style="margin: 1.5rem 0 0; display: flex; flex-direction: column; gap: 0.75rem; align-items: center;">
             <p style="font-size: 0.8rem; color: var(--text-muted);" data-i18n="no_account">Don't have an account?</p>

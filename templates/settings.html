@@ -16,28 +16,38 @@
     <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 1.25rem;">
         <i data-lucide="palette" style="color: var(--color-primary); width: 20px; height: 20px;"></i>
         <h2 style="font-size: 1.1rem; font-weight: 700;">App Appearance</h2>
-        <span style="font-size: 0.75rem; color: var(--text-muted); margin-left: auto;">Saved automatically to your browser</span>
+        <span style="font-size: 0.75rem; color: var(--text-muted); margin-left: auto;">Saved automatically to this browser</span>
     </div>
-    <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 0.75rem;" id="theme-picker">
-        <button onclick="setTheme('ocean')" class="theme-btn" data-theme-val="ocean" style="display: flex; align-items: center; gap: 0.6rem; padding: 0.75rem 1rem; border-radius: 10px; border: 2px solid transparent; background: rgba(99,102,241,0.08); cursor: pointer; transition: all 0.2s; font-size: 0.85rem; font-weight: 500;">
-            <div style="width: 18px; height: 18px; border-radius: 50%; background: linear-gradient(135deg, #6366f1, #4f46e5); flex-shrink: 0; box-shadow: 0 0 8px rgba(99,102,241,0.5);"></div>
-            <span style="color: var(--text-primary);">Ocean</span>
-            <i data-lucide="check" class="theme-check" style="width: 14px; height: 14px; color: var(--color-primary); margin-left: auto; display: none;"></i>
+    <div class="theme-picker" id="theme-picker" role="group" aria-label="Choose app appearance">
+        <button type="button" onclick="setTheme('light')" class="theme-btn" data-theme-val="light" aria-pressed="false">
+            <span class="theme-preview theme-preview-light" aria-hidden="true"></span>
+            <span><strong>Light</strong><small>Clean, solid surfaces</small></span>
+            <i data-lucide="check" class="theme-check" aria-hidden="true"></i>
         </button>
-        <button onclick="setTheme('forest')" class="theme-btn" data-theme-val="forest" style="display: flex; align-items: center; gap: 0.6rem; padding: 0.75rem 1rem; border-radius: 10px; border: 2px solid transparent; background: rgba(16,185,129,0.08); cursor: pointer; transition: all 0.2s; font-size: 0.85rem; font-weight: 500;">
-            <div style="width: 18px; height: 18px; border-radius: 50%; background: linear-gradient(135deg, #10b981, #059669); flex-shrink: 0; box-shadow: 0 0 8px rgba(16,185,129,0.5);"></div>
-            <span style="color: var(--text-primary);">Forest</span>
-            <i data-lucide="check" class="theme-check" style="width: 14px; height: 14px; color: #10b981; margin-left: auto; display: none;"></i>
+        <button type="button" onclick="setTheme('glass')" class="theme-btn" data-theme-val="glass" aria-pressed="false">
+            <span class="theme-preview theme-preview-glass" aria-hidden="true"></span>
+            <span><strong>Glass Magic</strong><small>Soft, frosted surfaces</small></span>
+            <i data-lucide="check" class="theme-check" aria-hidden="true"></i>
         </button>
-        <button onclick="setTheme('crimson')" class="theme-btn" data-theme-val="crimson" style="display: flex; align-items: center; gap: 0.6rem; padding: 0.75rem 1rem; border-radius: 10px; border: 2px solid transparent; background: rgba(244,63,94,0.08); cursor: pointer; transition: all 0.2s; font-size: 0.85rem; font-weight: 500;">
-            <div style="width: 18px; height: 18px; border-radius: 50%; background: linear-gradient(135deg, #f43f5e, #e11d48); flex-shrink: 0; box-shadow: 0 0 8px rgba(244,63,94,0.5);"></div>
-            <span style="color: var(--text-primary);">Crimson</span>
-            <i data-lucide="check" class="theme-check" style="width: 14px; height: 14px; color: #f43f5e; margin-left: auto; display: none;"></i>
+        <button type="button" onclick="setTheme('ocean')" class="theme-btn" data-theme-val="ocean" aria-pressed="false">
+            <span class="theme-preview theme-preview-ocean" aria-hidden="true"></span>
+            <span><strong>Ocean</strong><small>Deep blue and indigo</small></span>
+            <i data-lucide="check" class="theme-check" aria-hidden="true"></i>
         </button>
-        <button onclick="setTheme('solar')" class="theme-btn" data-theme-val="solar" style="display: flex; align-items: center; gap: 0.6rem; padding: 0.75rem 1rem; border-radius: 10px; border: 2px solid transparent; background: rgba(245,158,11,0.08); cursor: pointer; transition: all 0.2s; font-size: 0.85rem; font-weight: 500;">
-            <div style="width: 18px; height: 18px; border-radius: 50%; background: linear-gradient(135deg, #f59e0b, #d97706); flex-shrink: 0; box-shadow: 0 0 8px rgba(245,158,11,0.5);"></div>
-            <span style="color: var(--text-primary);">Solar</span>
-            <i data-lucide="check" class="theme-check" style="width: 14px; height: 14px; color: #f59e0b; margin-left: auto; display: none;"></i>
+        <button type="button" onclick="setTheme('forest')" class="theme-btn" data-theme-val="forest" aria-pressed="false">
+            <span class="theme-preview theme-preview-forest" aria-hidden="true"></span>
+            <span><strong>Forest</strong><small>Deep green</small></span>
+            <i data-lucide="check" class="theme-check" aria-hidden="true"></i>
+        </button>
+        <button type="button" onclick="setTheme('crimson')" class="theme-btn" data-theme-val="crimson" aria-pressed="false">
+            <span class="theme-preview theme-preview-crimson" aria-hidden="true"></span>
+            <span><strong>Crimson</strong><small>Deep red</small></span>
+            <i data-lucide="check" class="theme-check" aria-hidden="true"></i>
+        </button>
+        <button type="button" onclick="setTheme('solar')" class="theme-btn" data-theme-val="solar" aria-pressed="false">
+            <span class="theme-preview theme-preview-solar" aria-hidden="true"></span>
+            <span><strong>Solar</strong><small>Warm amber</small></span>
+            <i data-lucide="check" class="theme-check" aria-hidden="true"></i>
         </button>
     </div>
 </div>
@@ -87,8 +97,13 @@
 
             <div class="form-group">
                 <label for="receipt_footer" class="form-label">Receipt Footer Message</label>
+                {% if can_edit_receipt_footer %}
                 <textarea name="receipt_footer" id="receipt_footer" class="form-control" rows="3" placeholder="e.g. Thank you for your business!">{{ settings.receipt_footer }}</textarea>
                 <span style="font-size: 0.75rem; color: var(--text-muted);">This message will print at the bottom of customer receipts.</span>
+                {% else %}
+                <textarea id="receipt_footer" class="form-control" rows="3" readonly aria-readonly="true">{{ settings.receipt_footer|default:"Thank you for shopping with viARMS Record Management System. Powered by Scales Technologies." }}</textarea>
+                <span style="font-size: 0.75rem; color: var(--text-muted);">The receipt footer is fixed during the Free trial and can’t be edited.</span>
+                {% endif %}
             </div>
 
             <div style="display: flex; justify-content: flex-end; margin-top: 2rem; border-top: 1px solid var(--border-color); padding-top: 1.25rem;">
@@ -143,7 +158,9 @@
 {% block scripts %}
 <script>
     // Theme management
+    const availableThemes = ['light', 'glass', 'ocean', 'forest', 'crimson', 'solar'];
     function setTheme(theme) {
+        theme = availableThemes.includes(theme) ? theme : 'light';
         document.documentElement.setAttribute('data-theme', theme);
         document.body.setAttribute('data-theme', theme);
         localStorage.setItem('viarms-theme', theme);
@@ -155,12 +172,14 @@
             const isActive = btn.dataset.themeVal === theme;
             btn.style.borderColor = isActive ? 'var(--color-primary)' : 'transparent';
             btn.style.opacity = isActive ? '1' : '0.75';
+            btn.setAttribute('aria-pressed', isActive ? 'true' : 'false');
             const check = btn.querySelector('.theme-check');
             if (check) check.style.display = isActive ? 'inline' : 'none';
         });
     }
     // Init on page load
-    const savedTheme = localStorage.getItem('viarms-theme') || 'ocean';
+    const storedTheme = localStorage.getItem('viarms-theme');
+    const savedTheme = availableThemes.includes(storedTheme) ? storedTheme : 'light';
     updateThemeUI(savedTheme);
 </script>
 {% endblock %}

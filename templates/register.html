@@ -1,439 +1,188 @@
 {% extends 'base.html' %}
-{% load static %}
+{% load static socialaccount %}
 
 {% block title %}Create Account - viARMS{% endblock %}
 
 {% block content %}
 <style>
-    /* Approval Popup Modal */
-    .notice-modal-overlay {
-        position: fixed;
-        inset: 0;
-        background: rgba(0, 0, 0, 0.6);
-        backdrop-filter: blur(8px);
-        -webkit-backdrop-filter: blur(8px);
-        z-index: 9999;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        padding: 1rem;
-        opacity: 0;
-        animation: fadeInOverlay 0.4s ease 0.2s forwards;
-    }
-    @keyframes fadeInOverlay {
-        to { opacity: 1; }
-    }
-    .notice-modal {
-        background: rgba(15, 23, 42, 0.85);
-        backdrop-filter: blur(24px);
-        -webkit-backdrop-filter: blur(24px);
-        border: 1px solid rgba(99, 102, 241, 0.3);
-        border-radius: 20px;
-        padding: 2.5rem;
-        max-width: 500px;
-        width: 100%;
-        box-shadow: 0 0 60px rgba(99, 102, 241, 0.15), 0 25px 50px rgba(0,0,0,0.5);
-        transform: translateY(30px);
-        animation: slideUpModal 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) 0.2s forwards;
-    }
-    @keyframes slideUpModal {
-        to { transform: translateY(0); }
-    }
-    .notice-icon-wrap {
-        width: 64px;
-        height: 64px;
-        border-radius: 50%;
-        background: linear-gradient(135deg, rgba(245,158,11,0.2), rgba(245,158,11,0.05));
-        border: 1px solid rgba(245,158,11,0.3);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        margin: 0 auto 1.5rem;
-    }
-    .notice-modal h2 {
-        text-align: center;
-        font-size: 1.4rem;
-        font-weight: 700;
-        margin-bottom: 1rem;
-        color: var(--text-primary);
-    }
-    .notice-modal p {
-        font-size: 0.9rem;
-        color: var(--text-secondary);
-        line-height: 1.7;
-        text-align: center;
-        margin-bottom: 2rem;
-    }
-    .notice-modal-actions {
-        display: flex;
-        gap: 1rem;
-    }
-    .btn-agree {
-        flex: 1;
-        padding: 0.85rem;
-        border: none;
-        border-radius: 10px;
-        background: linear-gradient(135deg, var(--color-primary), #4f46e5);
-        color: white;
-        font-size: 0.95rem;
-        font-weight: 600;
-        cursor: pointer;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        gap: 8px;
-        transition: all 0.2s ease;
-        box-shadow: 0 4px 15px rgba(99,102,241,0.3);
-    }
-    .btn-agree:hover {
-        transform: translateY(-1px);
-        box-shadow: 0 6px 20px rgba(99,102,241,0.45);
-    }
-    .btn-decline {
-        padding: 0.85rem 1.5rem;
-        border: 1px solid rgba(255,255,255,0.1);
-        border-radius: 10px;
-        background: rgba(255,255,255,0.05);
-        color: var(--text-muted);
-        font-size: 0.9rem;
-        cursor: pointer;
-        transition: all 0.2s ease;
-        text-decoration: none;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-    }
-    .btn-decline:hover {
-        background: rgba(244,63,94,0.1);
-        border-color: rgba(244,63,94,0.3);
-        color: var(--color-danger);
-    }
-    /* Register form hidden until agree */
-    #register-form-wrap {
-        display: none;
-        animation: fadeInUp 0.5s ease forwards;
-    }
-    @keyframes fadeInUp {
-        from { opacity: 0; transform: translateY(10px); }
-        to { opacity: 1; transform: translateY(0); }
-    }
-    .plan-card {
-        backdrop-filter: blur(8px);
-        -webkit-backdrop-filter: blur(8px);
-        transition: all 0.25s ease;
-    }
-    .plan-card:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 8px 25px rgba(0,0,0,0.2);
-    }
-    .register-layout {
-        max-width: 1100px;
-        width: 100%;
-        display: flex;
-        gap: 2rem;
-        margin: 0 auto;
-        flex-wrap: wrap;
-        align-items: stretch;
-        justify-content: center;
-    }
-    .register-card {
-        padding: 2.25rem;
-        flex: 1.5 1 480px;
-        min-width: 0;
-        max-width: 600px;
-        margin: 0;
-        backdrop-filter: blur(20px);
-        -webkit-backdrop-filter: blur(20px);
-    }
-    .register-plan-panel {
-        padding: 2.25rem;
-        flex: 1 1 320px;
-        min-width: 0;
-        max-width: 450px;
-        backdrop-filter: blur(20px);
-        -webkit-backdrop-filter: blur(20px);
-        display: flex;
-        flex-direction: column;
-        gap: 1rem;
-    }
+    .signup-shell { min-height: 100vh; display: grid; place-items: center; padding: 2rem 1rem; }
+    .signup-card { width: min(100%, 560px); padding: clamp(1.25rem, 4vw, 2.5rem); }
+    .signup-brand { color: var(--color-primary); font-size: 1.35rem; font-weight: 800; margin-bottom: 1.5rem; }
+    .signup-header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: 1.5rem; }
+    .signup-header .signup-brand { margin: 0; }
+    .auth-home-link { display: inline-flex; align-items: center; gap: .4rem; color: var(--text-secondary); text-decoration: none; font-size: .85rem; font-weight: 600; padding: .45rem .65rem; border: 1px solid var(--border-color); border-radius: 9px; transition: color .2s, border-color .2s, background .2s; }
+    .auth-home-link:hover { color: var(--color-primary); border-color: var(--color-primary); background: rgba(99,102,241,.06); }
+    .signup-step { display: inline-flex; gap: .45rem; align-items: center; color: var(--text-muted); font-size: .78rem; margin-bottom: .65rem; }
+    .signup-step-mark { display: grid; place-items: center; width: 1.5rem; height: 1.5rem; border-radius: 50%; color: #fff; background: var(--color-primary); font-weight: 700; }
+    .signup-card h1 { font-size: clamp(1.4rem, 4vw, 1.8rem); margin-bottom: .45rem; }
+    .signup-intro { color: var(--text-secondary); margin-bottom: 1.5rem; }
+    .signup-card .form-row-grid-2 { gap: .8rem; }
+    .signup-actions { display: flex; gap: .75rem; align-items: center; margin-top: 1.25rem; }
+    .signup-actions .btn { min-height: 46px; }
+    .signup-foot { color: var(--text-muted); font-size: .82rem; text-align: center; margin-top: 1.5rem; }
+    .signup-foot a { color: var(--color-primary); font-weight: 600; text-decoration: none; }
     @media (max-width: 576px) {
-        .login-container.register-page {
-            align-items: flex-start;
-            padding: 1rem 0.75rem !important;
-        }
-        .register-layout {
-            flex-direction: column;
-            align-items: stretch;
-            gap: 1rem;
-        }
-        .register-card,
-        .register-plan-panel {
-            width: 100%;
-            max-width: none;
-            flex: 0 1 auto;
-            padding: 1rem !important;
-            border-radius: 14px;
-        }
-        .register-card > div:first-child {
-            gap: 0.5rem;
-        }
-        .notice-modal-overlay {
-            align-items: flex-start;
-            overflow-y: auto;
-            padding: 0.75rem;
-        }
-        .notice-modal {
-            margin: auto 0;
-            padding: 1.5rem 1rem;
-            border-radius: 16px;
-        }
-        .notice-modal-actions {
-            flex-direction: column-reverse;
-        }
-        .notice-modal-actions > * {
-            min-height: 44px;
-        }
+        .signup-shell { align-items: start; padding: 1rem .75rem; }
+        .signup-card .form-row-grid-2 { grid-template-columns: 1fr; }
+        .signup-actions { flex-direction: column; }
+        .signup-actions > * { width: 100%; }
     }
 </style>
 
-<!-- Approval Notice Modal -->
-<div class="notice-modal-overlay" id="notice-modal-overlay">
-    <div class="notice-modal">
-        <div class="notice-icon-wrap">
-            <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-        </div>
-        <h2>Account Approval Required</h2>
-        <p>All new accounts registered on <strong style="color: var(--color-primary);">viARMS</strong> are subject to review and must be approved by a system administrator before you can log in and access the platform.</p>
-        <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: -1rem; margin-bottom: 1.5rem; text-align: center;">By continuing, you acknowledge and agree to the <a href="{% url 'terms_and_agreement' %}" target="_blank" style="color: var(--color-primary); text-decoration: underline;">Terms of Service &amp; Merchant Agreement</a>.</p>
-        <div class="notice-modal-actions">
-            <a href="{% url 'landing' %}" class="btn-decline">
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
-                Go Back
+<main class="signup-shell">
+    <section class="glass-panel signup-card" aria-labelledby="signup-title">
+        <div class="signup-header">
+            <div class="signup-brand"><i data-lucide="shopping-bag" aria-hidden="true"></i> viARMS</div>
+            <a class="auth-home-link" href="{% url 'landing' %}" aria-label="Go to home page">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 10 9-7 9 7"/><path d="M9 21V12h6v9"/><path d="M5 10v11h14V10"/></svg>
+                <span>Home</span>
             </a>
-            <button class="btn-agree" id="agree-btn">
-                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-                I Understand, Continue
+        </div>
+
+        {% if email_verified %}
+        <div class="signup-step"><span class="signup-step-mark"><i data-lucide="check" width="15"></i></span> Email verified · Step 2 of 2</div>
+        <h1 id="signup-title">Set up your account</h1>
+        <p class="signup-intro">Your email is verified. Add your login and business details to finish.</p>
+
+        <form method="post" action="{% url 'register' %}" autocomplete="on">
+            {% csrf_token %}
+            <input type="hidden" name="stage" value="complete">
+            <div class="form-group">
+                <label class="form-label" for="verified-email">Verified email</label>
+                <input class="form-control" type="email" id="verified-email" value="{{ verified_email }}" readonly aria-readonly="true">
+            </div>
+            <div class="form-row-grid-2">
+                <div class="form-group">
+                    <label class="form-label" for="first-name">First name</label>
+                    <input class="form-control" id="first-name" value="{{ first_name }}" readonly aria-readonly="true">
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="last-name">Last name</label>
+                    <input class="form-control" id="last-name" value="{{ last_name }}" readonly aria-readonly="true">
+                </div>
+            </div>
+            <div class="form-group">
+                <label class="form-label" for="username">Username</label>
+                <input class="form-control" type="text" name="username" id="username" maxlength="150" autocomplete="username" required value="{{ username|default:'' }}">
+            </div>
+            <div class="form-row-grid-2">
+                <div class="form-group">
+                    <label class="form-label" for="password">Password</label>
+                    <input class="form-control" type="password" name="password" id="password" autocomplete="new-password" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="confirm-password">Confirm password</label>
+                    <input class="form-control" type="password" name="confirm_password" id="confirm-password" autocomplete="new-password" required>
+                </div>
+            </div>
+
+            <hr style="border: 0; border-top: 1px solid var(--border-color); margin: .5rem 0 1.25rem;">
+            <h2 style="font-size: 1rem; margin-bottom: 1rem;">Business information</h2>
+            <div class="form-group">
+                <label class="form-label" for="business-name">Business or shop name</label>
+                <input class="form-control" type="text" name="business_name" id="business-name" maxlength="150" required value="{{ business_name|default:'' }}">
+            </div>
+            <div class="form-row-grid-2">
+                <div class="form-group">
+                    <label class="form-label" for="business-type">Business type</label>
+                    <select class="form-control" name="business_type" id="business-type" required>
+                        <option value="GENERAL">General retail / provision</option>
+                        <option value="PHARMACEUTICAL">Pharmacy</option>
+                        <option value="BOOK_ACCESSORIES">Bookshop &amp; accessories</option>
+                        <option value="UTENSILS">Utensils &amp; housewares</option>
+                        <option value="BOUTIQUE">Boutique</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="tenant-type">Business model</label>
+                    <select class="form-control" name="tenant_type" id="tenant-type" required>
+                        <option value="RETAIL">Retail</option>
+                        <option value="WHOLESALE">Wholesale</option>
+                        <option value="RETAIL_WHOLESALE">Retail and Wholesale</option>
+                    </select>
+                </div>
+            </div>
+            <div class="form-group" style="padding: 0.85rem 1rem; border: 1px solid var(--border-color); border-radius: 10px; color: var(--text-secondary); font-size: 0.88rem;">
+                Account includes the 14-day Free trial. You can choose Standard, Premium, or Golden Premium after sign-in.
+            </div>
+            <div class="form-row-grid-2">
+                <div class="form-group">
+                    <label class="form-label" for="kyc-type">Verification document</label>
+                    <select class="form-control" name="kyc_document_type" id="kyc-type" required>
+                        <option value="">Select document type</option>
+                        <option value="Business registration">Business registration</option>
+                        <option value="National ID">National ID</option>
+                        <option value="International passport">International passport</option>
+                        <option value="Driver's licence">Driver's licence</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="kyc-number">Document number</label>
+                    <input class="form-control" type="text" name="kyc_document_number" id="kyc-number" maxlength="120" required>
+                </div>
+            </div>
+            <div class="form-group" style="margin-top: .75rem;">
+                <label style="display:flex; gap:.6rem; align-items:flex-start; color:var(--text-secondary); font-size:.84rem;">
+                    <input type="checkbox" name="agree_terms" required style="margin-top:.2rem; accent-color:var(--color-primary);">
+                    <span>I agree to the <a href="{% url 'terms_and_agreement' %}" target="_blank" rel="noopener">Terms and Agreement</a> and Privacy Policy.</span>
+                </label>
+            </div>
+            <button type="submit" class="btn btn-primary btn-block" style="min-height:46px; margin-top:.75rem;">Create account</button>
+        </form>
+
+        {% else %}
+        <div class="signup-step"><span class="signup-step-mark">1</span> Verify your email · Step 1 of 2</div>
+        <h1 id="signup-title">Start your account</h1>
+        <p class="signup-intro">Enter your name and email. We’ll send you a secure link to continue setting up your account.</p>
+
+        <form method="post" action="{% url 'register' %}">
+            {% csrf_token %}
+            <input type="hidden" name="stage" value="send_verification">
+            <input type="hidden" name="plan" value="FREE">
+            <div class="form-group">
+                <label class="form-label" for="email">Email address</label>
+                <input class="form-control" type="email" name="email" id="email" autocomplete="email" required value="{{ email|default:'' }}" placeholder="you@example.com">
+            </div>
+            <div class="form-row-grid-2">
+                <div class="form-group">
+                    <label class="form-label" for="first-name">First name</label>
+                    <input class="form-control" type="text" name="first_name" id="first-name" autocomplete="given-name" maxlength="150" required value="{{ first_name|default:'' }}">
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="last-name">Last name</label>
+                    <input class="form-control" type="text" name="last_name" id="last-name" autocomplete="family-name" maxlength="150" required value="{{ last_name|default:'' }}">
+                </div>
+            </div>
+            {% if existing_account %}
+            <p class="signup-intro" style="font-size:.85rem; margin:.25rem 0 1rem;">This email is already registered. <a href="{% url 'password_reset' %}">Reset your password</a> or <a href="{% url 'login' %}">sign in</a>.</p>
+            {% endif %}
+            <button type="submit" class="btn btn-primary btn-block" style="min-height:46px; margin-top:.5rem;">
+                {% if verification_sent %}Send another verification link{% else %}Email me a verification link{% endif %}
             </button>
+            {% if verification_sent %}
+            <p class="signup-intro" style="font-size:.85rem; margin:.85rem 0 0;">
+                {% if verification_console %}Email delivery is not configured; the link is in the application server console.{% else %}Check your inbox and spam folder.{% endif %}
+                The link expires in 24 hours.
+            </p>
+            {% endif %}
+        </form>
+        {% endif %}
+
+        {% if google_login_enabled or apple_login_enabled %}
+        <div style="display:flex; align-items:center; gap:.75rem; margin:1.25rem 0; color:var(--text-muted); font-size:.75rem;">
+            <span style="height:1px; flex:1; background:var(--border-color);"></span><span>OR SIGN UP WITH</span><span style="height:1px; flex:1; background:var(--border-color);"></span>
         </div>
-        <p style="font-size: 0.72rem; color: var(--text-muted); margin-top: 1.25rem; margin-bottom: 0;">
-            © viARMS · Powered by viARMS | Scales Technologies
-        </p>
-    </div>
-</div>
-
-<div class="login-container register-page" style="padding: 2rem 1rem;">
-    <div class="register-layout">
-
-        <!-- Registration Form (Left) -->
-        <div class="login-card glass-panel register-card">
-
-            <!-- Language Switcher -->
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
-                <div class="login-logo" style="font-size: 1.2rem;">
-                    <i data-lucide="shopping-bag" style="vertical-align: middle; margin-right: 8px; color: var(--color-primary);"></i>viARMS
-                </div>
-                <select id="lang-select-login" class="form-control" style="width: auto; padding: 0.35rem 0.75rem; font-size: 0.8rem; border-radius: 8px; background: rgba(15,23,42,0.6);" aria-label="Select Language" onchange="viARMSi18n.setLang(this.value)">
-                <option value="en">English</option>
-                <option value="pidgin">Nigerian Pidgin</option>
-                <option value="yo">Yoruba</option>
-                <option value="ig">Igbo</option>
-                <option value="ha">Hausa</option>
-            </select>
-            </div>
-
-            <div style="margin-bottom: 1.5rem; text-align: left;">
-                <p data-i18n="register_title" style="color: var(--text-secondary); font-size: 0.95rem;">Create your store owner account</p>
-            </div>
-
-            <!-- Locked state shown before agreeing -->
-            <div id="register-locked" style="text-align: center; padding: 3rem 1rem; color: var(--text-muted);">
-                <i data-lucide="lock" style="width: 40px; height: 40px; margin-bottom: 1rem; opacity: 0.4;"></i>
-                <p style="font-size: 0.9rem;">Please read and accept the notice to continue.</p>
-                <button onclick="document.getElementById('notice-modal-overlay').style.display='flex'" class="btn btn-primary" style="margin-top: 1rem; padding: 0.6rem 1.5rem;">View Notice</button>
-            </div>
-
-            <!-- Form revealed after agree -->
-            <div id="register-form-wrap">
-                <form method="POST" action="{% url 'register' %}" id="register-form">
-                    {% csrf_token %}
-                    <input type="hidden" name="plan" id="selected-plan" value="FREE">
-
-                    <div class="form-row-grid-2">
-                        <div class="form-group">
-                            <label for="reg-username" class="form-label" data-i18n="label_username">Username</label>
-                            <input type="text" name="username" id="reg-username" class="form-control" placeholder="e.g. jsmith" required autofocus>
-                        </div>
-                        <div class="form-group">
-                            <label for="reg-email" class="form-label" data-i18n="label_email">Email Address</label>
-                            <input type="email" name="email" id="reg-email" class="form-control" placeholder="e.g. john@store.com" required>
-                        </div>
-                    </div>
-
-                    <div class="form-row-grid-2">
-                        <div class="form-group">
-                            <label for="reg-password" class="form-label" data-i18n="label_password">Password</label>
-                            <input type="password" name="password" id="reg-password" class="form-control" placeholder="Create password" required>
-                        </div>
-                        <div class="form-group">
-                            <label for="reg-confirm" class="form-label" data-i18n="label_confirm_password">Confirm Password</label>
-                            <input type="password" name="confirm_password" id="reg-confirm" class="form-control" placeholder="Verify password" required>
-                        </div>
-                    </div>
-
-                    <div style="border-top: 1px solid var(--border-color); margin: 1.25rem 0; padding-top: 1.25rem;">
-                        <h4 data-i18n="hdr_business_details" style="font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); margin-bottom: 1rem;">Business Setup</h4>
-
-                        <div class="form-row-grid-2">
-                            <div class="form-group">
-                                <label for="reg-biz-name" class="form-label" data-i18n="label_business_name">Business/Shop Name</label>
-                                <input type="text" name="business_name" id="reg-biz-name" class="form-control" placeholder="e.g. Scales Hub" required>
-                            </div>
-                            <div class="form-group">
-                                <label for="reg-biz-type" class="form-label" data-i18n="label_business_type">Business Type</label>
-                                <select name="business_type" id="reg-biz-type" class="form-control" required>
-                                    <option value="GENERAL" data-i18n="opt_general">General Retail / Provision</option>
-                                    <option value="PHARMACEUTICAL" data-i18n="opt_pharma">Pharmaceuticals / Pharmacy</option>
-                                    <option value="BOOK_ACCESSORIES" data-i18n="opt_book_accessories">Bookshop & Accessories</option>
-                                    <option value="UTENSILS" data-i18n="opt_utensils">Utensils & Housewares</option>
-                                    <option value="LAUNDRY" data-i18n="opt_laundry">Laundry & Dry Cleaning</option>
-                                </select>
-                            </div>
-                        </div>
-                        <div class="form-row-grid-2">
-                            <div class="form-group">
-                                <label for="kyc-document-type" class="form-label">Verification Document</label>
-                                <select name="kyc_document_type" id="kyc-document-type" class="form-control" required>
-                                    <option value="">Select document type</option>
-                                    <option value="Business registration">Business registration</option>
-                                    <option value="National ID">National ID</option>
-                                    <option value="International passport">International passport</option>
-                                    <option value="Driver's licence">Driver's licence</option>
-                                </select>
-                            </div>
-                            <div class="form-group">
-                                <label for="kyc-document-number" class="form-label">Document / Registration Number</label>
-                                <input type="text" name="kyc_document_number" id="kyc-document-number" class="form-control" maxlength="120" required placeholder="Enter your document reference">
-                            </div>
-                        </div>
-                        <p style="font-size: 0.75rem; color: var(--text-muted); margin-top: -0.25rem;">Your account will be reviewed by the viARMS team before activation.</p>
-                    </div>
-
-                    <div class="form-group" style="margin-top: 1rem; margin-bottom: 1.25rem;">
-                            <label style="display: flex; align-items: flex-start; gap: 0.6rem; cursor: pointer; font-size: 0.85rem; color: var(--text-secondary); line-height: 1.4;">
-                                <input type="checkbox" name="agree_terms" id="agree-terms-checkbox" required style="margin-top: 0.2rem; accent-color: var(--color-primary); width: 16px; height: 16px; cursor: pointer;">
-                                <span>I have read and agree to the <a href="{% url 'terms_and_agreement' %}" target="_blank" style="color: var(--color-primary); font-weight: 600; text-decoration: underline;">Terms and Agreement</a> &amp; Privacy Policy.</span>
-                            </label>
-                        </div>
-                        <button type="submit" id="register-submit-btn" class="btn btn-primary btn-block" style="padding: 0.85rem; display: flex; align-items: center; justify-content: center; gap: 0.6rem; font-size: 1rem; letter-spacing: 0.3px;">
-                        <i data-lucide="user-check" style="width: 18px; height: 18px;"></i>
-                        <span data-i18n="btn_register">Sign Up</span>
-                    </button>
-                </form>
-
-                <div style="margin-top: 1.5rem; text-align: center; font-size: 0.85rem; color: var(--text-muted);">
-                    <span data-i18n="login_prompt">Already have an account?</span>
-                    <a href="{% url 'login' %}" style="color: var(--color-primary); font-weight: 600; text-decoration: none; margin-left: 4px;" data-i18n="btn_login_link">Sign In</a>
-                </div>
-            </div>
-
-            <!-- Copyright -->
-            <div style="margin-top: 2rem; padding-top: 1rem; border-top: 1px solid rgba(255,255,255,0.06); text-align: center; font-size: 0.7rem; color: var(--text-muted); line-height: 1.6;">
-                &copy; {{ "now"|date:"Y" }} viARMS &nbsp;·&nbsp; <a href="{% url 'terms_and_agreement' %}" style="color: var(--text-muted); text-decoration: underline;">Terms &amp; Agreement</a> &nbsp;·&nbsp; Powered by <strong style="color: var(--color-primary);">viARMS</strong> | Scales Technologies
-            </div>
+        <div style="display:grid; gap:.65rem;">
+            {% if google_login_enabled %}
+            <form method="post" action="{% provider_login_url 'google' process='login' %}">{% csrf_token %}<button type="submit" class="btn btn-secondary btn-block" style="min-height:44px; background:var(--bg-surface); border:1px solid var(--border-color); color:var(--text-primary); display:flex; align-items:center; justify-content:center; gap:10px;"><svg aria-hidden="true" width="18" height="18" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg"><path fill="#4285F4" d="M43.6 24.5c0-1.4-.1-2.8-.4-4.1H24v7.8h11a9.4 9.4 0 0 1-4.1 6.2v5.1h6.6c3.9-3.6 6.1-8.8 6.1-15Z"/><path fill="#34A853" d="M24 44c5.5 0 10.1-1.8 13.5-4.8l-6.6-5.1c-1.8 1.2-4 2-6.9 2-5.3 0-9.8-3.6-11.4-8.4H5.8v5.3A20 20 0 0 0 24 44Z"/><path fill="#FBBC05" d="M12.6 27.7a12 12 0 0 1 0-7.4V15H5.8a20 20 0 0 0 0 17.9l6.8-5.2Z"/><path fill="#EA4335" d="M24 12.1c3 0 5.7 1 7.8 3.1l5.8-5.8C34.1 6.1 29.5 4 24 4A20 20 0 0 0 5.8 15l6.8 5.3c1.6-4.8 6.1-8.2 11.4-8.2Z"/></svg><span>Continue with Google</span></button></form>
+            {% endif %}
+            {% if apple_login_enabled %}
+            <form method="post" action="{% provider_login_url 'apple' process='login' %}">{% csrf_token %}<button type="submit" class="btn btn-secondary btn-block" style="min-height:44px; background:var(--bg-surface); border:1px solid var(--border-color); color:var(--text-primary);">Continue with Apple</button></form>
+            {% endif %}
         </div>
+        {% endif %}
 
-        <!-- Subscription Plans (Right Aside) -->
-        <aside class="glass-panel register-plan-panel">
-            <h4 data-i18n="hdr_pricing_plan" style="font-size: 1.25rem; font-weight: 700; margin-bottom: 0.5rem; color: var(--text-primary);">Choose Pricing Plan</h4>
-            <p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 0.5rem;">Select the plan that best fits your business. You can change this later.</p>
-
-            <div class="plan-card" data-plan="FREE" style="padding: 1.25rem; border: 2px solid var(--border-color); border-radius: 12px; cursor: pointer; backdrop-filter: blur(10px);">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
-                    <div style="font-weight: 700; font-size: 1.1rem; color: var(--text-primary);" data-i18n="plan_free_name">Free Plan</div>
-                    <div style="font-size: 1.1rem; font-weight: 700;">₦0</div>
-                </div>
-                <div style="font-size: 0.8rem; color: var(--text-secondary);" data-i18n="plan_free_desc">1 Shop Location, 1 Manager, 1 Cashier</div>
-            </div>
-
-            <div class="plan-card" data-plan="PREMIUM" style="padding: 1.25rem; border: 2px solid var(--border-color); border-radius: 12px; cursor: pointer; backdrop-filter: blur(10px);">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
-                    <div style="font-weight: 700; font-size: 1.1rem; color: var(--color-primary);" data-i18n="plan_premium_name">Premium Plan</div>
-                    <div style="font-size: 0.65rem; padding: 0.2rem 0.5rem; background: rgba(99,102,241,0.15); border: 1px solid rgba(99,102,241,0.3); color: var(--color-primary); border-radius: 12px; font-weight: 700; text-transform: uppercase;">PRO</div>
-                </div>
-                <div style="font-size: 0.8rem; color: var(--text-secondary);" data-i18n="plan_premium_desc">Unlimited Shops, Managers & Cashiers. Priority Support.</div>
-            </div>
-
-            <div class="plan-card" data-plan="GOLDEN_PREMIUM" style="padding: 1.25rem; border: 2px solid rgba(251,191,36,0.25); border-radius: 12px; cursor: pointer; background: linear-gradient(135deg, rgba(245,158,11,0.05), transparent); backdrop-filter: blur(10px);">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
-                    <div style="font-weight: 700; font-size: 1.1rem; color: #fbbf24;" data-i18n="plan_golden_name">Golden Premium</div>
-                    <div style="font-size: 0.65rem; padding: 0.2rem 0.5rem; background: linear-gradient(135deg,#f59e0b,#d97706); color: black; border-radius: 12px; font-weight: 700; text-transform: uppercase;">VIP</div>
-                </div>
-                <div style="font-size: 0.8rem; color: var(--text-secondary);" data-i18n="plan_golden_desc">Everything in Premium + Dedicated Business Advisor & Monthly Business Analysis.</div>
-            </div>
-        </aside>
-
-    </div>
-</div>
-
-<script>
-    document.addEventListener('DOMContentLoaded', () => {
-        const overlay = document.getElementById('notice-modal-overlay');
-        const agreeBtn = document.getElementById('agree-btn');
-        const formWrap = document.getElementById('register-form-wrap');
-        const lockedMsg = document.getElementById('register-locked');
-
-        // Show modal on load
-        overlay.style.display = 'flex';
-
-        agreeBtn.addEventListener('click', () => {
-            // Fade out the modal
-            overlay.style.transition = 'opacity 0.3s ease';
-            overlay.style.opacity = '0';
-            setTimeout(() => {
-                overlay.style.display = 'none';
-            }, 300);
-            // Reveal the form
-            lockedMsg.style.display = 'none';
-            formWrap.style.display = 'block';
-            lucide.createIcons();
-        });
-
-        // Plan selection logic
-        const urlParams = new URLSearchParams(window.location.search);
-        let selectedPlan = urlParams.get('plan') || 'FREE';
-        selectedPlan = selectedPlan.toUpperCase();
-        const validPlans = ['FREE', 'PREMIUM', 'GOLDEN_PREMIUM'];
-        if (!validPlans.includes(selectedPlan)) selectedPlan = 'FREE';
-
-        const hiddenInput = document.getElementById('selected-plan');
-        const planCards = document.querySelectorAll('.plan-card');
-
-        function updateSelection(plan) {
-            hiddenInput.value = plan;
-            planCards.forEach(card => {
-                if (card.dataset.plan === plan) {
-                    if (plan === 'GOLDEN_PREMIUM') {
-                        card.style.borderColor = '#fbbf24';
-                        card.style.background = 'linear-gradient(135deg, rgba(245,158,11,0.15), rgba(245,158,11,0.05))';
-                        card.style.boxShadow = '0 0 20px rgba(245,158,11,0.15)';
-                    } else {
-                        card.style.borderColor = 'var(--color-primary)';
-                        card.style.background = 'rgba(99,102,241,0.08)';
-                        card.style.boxShadow = '0 0 20px rgba(99,102,241,0.1)';
-                    }
-                } else {
-                    card.style.borderColor = card.dataset.plan === 'GOLDEN_PREMIUM' ? 'rgba(251,191,36,0.25)' : 'var(--border-color)';
-                    card.style.background = card.dataset.plan === 'GOLDEN_PREMIUM' ? 'linear-gradient(135deg, rgba(245,158,11,0.05), transparent)' : 'transparent';
-                    card.style.boxShadow = 'none';
-                }
-            });
-        }
-
-        planCards.forEach(card => {
-            card.addEventListener('click', () => updateSelection(card.dataset.plan));
-        });
-
-        updateSelection(selectedPlan);
-    });
-</script>
+        <div class="signup-foot">Already have an account? <a href="{% url 'login' %}">Sign in</a></div>
+    </section>
+</main>
 {% endblock %}

@@ -1,0 +1,62 @@
+{% extends 'base.html' %}
+
+{% block title %}Account Status - viARMS{% endblock %}
+
+{% block content %}
+<main style="max-width:640px; margin:2rem auto; padding:0 1rem;">
+    <section class="glass-panel" style="padding:clamp(1.25rem,4vw,2rem);">
+        <h1 style="font-size:1.6rem; margin:0 0 .5rem;">Check account status</h1>
+        <p style="color:var(--text-secondary); margin:0 0 1.25rem;">Enter your account email to check whether access is active, awaiting approval, or suspended.</p>
+        <form method="post">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="check">
+            <div class="form-group">
+                <label for="account-email" class="form-label">Account email</label>
+                <input class="form-control" type="email" id="account-email" name="email" required autocomplete="email" value="{{ email }}">
+            </div>
+            <button type="submit" class="btn btn-primary">Check status</button>
+        </form>
+
+        {% if account_status %}
+        <div class="glass-panel" style="padding:1rem; margin-top:1.5rem; border:1px solid var(--border-color);">
+            {% if account_status == 'active' %}
+            <h2 style="font-size:1.05rem; color:var(--color-success);">Account active</h2>
+            {% elif account_status == 'pending' %}
+            <h2 style="font-size:1.05rem; color:var(--color-warning);">Approval pending</h2>
+            {% elif account_status == 'suspended' %}
+            <h2 style="font-size:1.05rem; color:var(--color-danger);">Account suspended</h2>
+            {% else %}
+            <h2 style="font-size:1.05rem;">No account found</h2>
+            {% endif %}
+            <p style="color:var(--text-secondary); margin:.35rem 0 0;">{{ status_detail|default:'We could not find an account with that email.' }}</p>
+            {% if account_status == 'active' %}
+            <p style="margin:1rem 0 0;"><a href="{% url 'password_reset' %}" style="color:var(--color-primary); font-weight:600;">Reset your password</a></p>
+            {% elif account_status == 'pending' %}
+            <p style="margin:1rem 0 0;"><a href="mailto:support@viarms.com" style="color:var(--color-primary);">Contact support</a> if you have been waiting longer than expected.</p>
+            {% endif %}
+
+            {% if latest_appeal %}
+            <div style="margin-top:1rem; padding:.8rem; border-radius:8px; background:var(--bg-surface);">
+                <strong>Appeal status:</strong> {{ latest_appeal.get_status_display }}
+                {% if latest_appeal.admin_response %}<p style="margin:.4rem 0 0; color:var(--text-secondary);">{{ latest_appeal.admin_response }}</p>{% endif %}
+            </div>
+            {% endif %}
+
+            {% if appeal_allowed %}
+            <form method="post" style="margin-top:1rem;">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="submit_appeal">
+                <input type="hidden" name="email" value="{{ email }}">
+                <div class="form-group">
+                    <label for="appeal-reason" class="form-label">Appeal this suspension</label>
+                    <textarea class="form-control" id="appeal-reason" name="reason" rows="4" maxlength="2000" required placeholder="Explain why you believe the suspension should be reviewed."></textarea>
+                </div>
+                <button type="submit" class="btn btn-primary">Submit appeal</button>
+            </form>
+            {% endif %}
+        </div>
+        {% endif %}
+        <p style="margin:1.25rem 0 0; font-size:.85rem;"><a href="{% url 'login' %}" style="color:var(--color-primary);">Back to sign in</a></p>
+    </section>
+</main>
+{% endblock %}

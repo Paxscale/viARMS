@@ -7,7 +7,7 @@
 <div class="panel-header" style="flex-wrap: wrap; gap: 1rem;">
     <div>
         <h1 style="font-size: 1.75rem; font-weight: 700;">Sales Ledger Log</h1>
-        <p style="color: var(--text-secondary); font-size: 0.9rem;">View audit trail logs, filter past invoices, reprint receipts, and export CSV reports.</p>
+        <p style="color: var(--text-secondary); font-size: 0.9rem;">Review transactions, view item details, open receipts, and export filtered sales records.</p>
     </div>
     <div>
         <!-- Dynamically passes query string to export route -->
@@ -64,6 +64,13 @@
                 {% endfor %}
             </select>
         </div>
+
+        <div class="form-group" style="margin-bottom: 0;">
+            <label for="page_size" class="form-label">Rows per page</label>
+            <select name="page_size" id="page_size" class="form-control" onchange="this.form.submit()">
+                {% for size in page_sizes %}<option value="{{ size }}" {% if page_size == size %}selected{% endif %}>{{ size }}</option>{% endfor %}
+            </select>
+        </div>
         
         <div style="display: flex; gap: 0.5rem; justify-content: flex-end;">
             <a href="{% url 'sales_history' %}" class="btn btn-secondary flex-grow" style="padding: 0.65rem 0.85rem;">Clear</a>
@@ -118,8 +125,8 @@
                             <td style="font-weight: 600; color: var(--color-success);">₦{{ s.net_profit|floatformat:2 }}</td>
                             {% endif %}
                             <td style="text-align: right;">
-                                <button class="btn btn-secondary btn-sm" onclick="reprintReceipt('{{ s.id }}')">
-                                    <i data-lucide="printer" style="width: 12px; height: 12px; margin-right: 4px;"></i> Invoice
+                                <button type="button" class="btn btn-secondary btn-sm" onclick="showSaleDetails('{{ s.id }}')">
+                                    <i data-lucide="eye" style="width: 12px; height: 12px; margin-right: 4px;"></i> View sale
                                 </button>
                             </td>
                         </tr>
@@ -134,28 +141,45 @@
     </div>
 </div>
 
-<!-- MODAL: Invoice Reprint -->
+<div class="glass-panel" style="display:flex; align-items:center; justify-content:space-between; gap:.75rem; flex-wrap:wrap; padding:.85rem 1.25rem; margin-top:.75rem;">
+    <span style="color:var(--text-secondary); font-size:.85rem;">Showing {{ sales_page.start_index }}–{{ sales_page.end_index }} of {{ sales_page.paginator.count }} transactions</span>
+    <div style="display:flex; align-items:center; gap:.6rem;">
+        {% if sales_page.has_previous %}<a class="btn btn-secondary btn-sm" href="?{{ pagination_query }}{% if pagination_query %}&amp;{% endif %}page={{ sales_page.previous_page_number }}">Previous</a>{% else %}<button class="btn btn-secondary btn-sm" disabled>Previous</button>{% endif %}
+        <span style="font-size:.85rem; color:var(--text-secondary);">Page {{ sales_page.number }} of {{ sales_page.paginator.num_pages|default:1 }}</span>
+        {% if sales_page.has_next %}<a class="btn btn-secondary btn-sm" href="?{{ pagination_query }}{% if pagination_query %}&amp;{% endif %}page={{ sales_page.next_page_number }}">Next</a>{% else %}<button class="btn btn-secondary btn-sm" disabled>Next</button>{% endif %}
+    </div>
+</div>
+
+<!-- MODAL: Transaction details and receipt -->
 <div class="modal-backdrop" id="reprint-modal">
-    <div class="modal-window glass-panel" style="max-width: 400px; padding: 1.5rem;">
+    <div class="modal-window glass-panel" style="max-width: 560px; width:calc(100% - 2rem); max-height:90vh; overflow:auto; padding:1.5rem;">
         <div class="modal-header">
             <h3 class="panel-title" style="display: flex; align-items: center; gap: 8px;">
-                <i data-lucide="file-text" style="color: var(--color-primary)"></i>
-                Invoice Copy
+                <i data-lucide="receipt" style="color: var(--color-primary)"></i>
+                Sale details
             </h3>
-            <button class="modal-close" onclick="closeReprintModal()">&times;</button>
+            <button type="button" class="modal-close" onclick="closeReprintModal()" aria-label="Close sale details">&times;</button>
         </div>
-        
-        <div id="reprint-print-area" class="receipt-print">
+        <div id="sale-details-area" style="padding:.25rem 0 1rem;">
             <!-- Dynamically populated from JSON -->
             <div style="text-align: center; padding: 2rem;">
                 <i data-lucide="loader" class="animate-spin" style="width: 24px; height: 24px; animation: spin 1s linear infinite;"></i>
-                <p style="margin-top: 8px; font-size: 0.8rem; color: #666;">Loading invoice details...</p>
+                <p style="margin-top: 8px; font-size: 0.8rem; color: var(--text-muted);">Loading sale details...</p>
             </div>
         </div>
-        
-        <div style="display: flex; gap: 0.75rem; margin-top: 1.5rem;">
-            <button class="btn btn-secondary flex-grow" style="flex: 1;" onclick="closeReprintModal()">Close</button>
-            <button class="btn btn-success" style="flex: 1;" onclick="printReprintReceipt()"><i data-lucide="printer"></i> Print Copy</button>
+        <div id="sale-receipt-area" class="receipt-print" style="display:none;">
+            <div style="text-align:center; padding:2rem; color:var(--text-muted);">Receipt will appear here.</div>
+        </div>
+        <div style="display:flex; gap:.75rem; justify-content:flex-end; margin-top:1rem; flex-wrap:wrap;">
+            <div id="sale-detail-actions" style="display:flex; gap:.75rem;">
+                <button type="button" class="btn btn-primary" onclick="showSaleReceipt()"><i data-lucide="receipt"></i> View receipt</button>
+                <button type="button" class="btn btn-secondary" onclick="closeReprintModal()">Close</button>
+            </div>
+            <div id="sale-receipt-actions" style="display:none; gap:.75rem;">
+                <button type="button" class="btn btn-secondary" onclick="showSaleDetailsView()">Back to sale</button>
+                <button type="button" class="btn btn-success" onclick="printReprintReceipt()"><i data-lucide="printer"></i> Print receipt</button>
+                <button type="button" class="btn btn-secondary" onclick="closeReprintModal()">Close</button>
+            </div>
         </div>
     </div>
 </div>
@@ -163,39 +187,75 @@
 
 {% block scripts %}
 <script>
-    function reprintReceipt(saleId) {
+    function showSaleDetails(saleId) {
         document.getElementById('reprint-modal').classList.add('active');
-        document.getElementById('reprint-print-area').innerHTML = `
-            <div style="text-align: center; padding: 2rem;">
-                <i data-lucide="loader" class="animate-spin" style="width: 24px; height: 24px; margin: 0 auto 10px auto; animation: spin 1s linear infinite;"></i>
-                <p style="font-size: 0.8rem; color: #666;">Loading invoice details...</p>
-            </div>
-        `;
+        showSaleDetailsView();
+        document.getElementById('sale-details-area').innerHTML = `
+            <div style="text-align:center; padding:2rem;">
+                <i data-lucide="loader" class="animate-spin" style="width:24px; height:24px; margin:0 auto 10px; animation:spin 1s linear infinite;"></i>
+                <p style="font-size:.8rem; color:var(--text-muted);">Loading sale details...</p>
+            </div>`;
         lucide.createIcons();
-
         fetch(`/sales/${saleId}/json/`)
             .then(res => res.json())
             .then(data => {
                 if (data.success) {
+                    populateSaleDetails(data.receipt);
                     populateReprintMarkup(data.receipt);
                 } else {
-                    document.getElementById('reprint-print-area').innerHTML = `<p style="color: red; text-align: center; font-size: 0.85rem;">Failed to fetch receipt.</p>`;
+                    document.getElementById('sale-details-area').innerHTML = `<p role="alert" style="color:var(--color-danger); text-align:center; font-size:.85rem;">Failed to load sale details.</p>`;
                 }
             })
             .catch(err => {
                 console.error(err);
-                document.getElementById('reprint-print-area').innerHTML = `<p style="color: red; text-align: center; font-size: 0.85rem;">Connection error.</p>`;
+                document.getElementById('sale-details-area').innerHTML = `<p role="alert" style="color:var(--color-danger); text-align:center; font-size:.85rem;">Connection error while loading this sale.</p>`;
             });
     }
 
+    function escapeSaleHtml(value) {
+        return String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
+    }
+
+    function populateSaleDetails(receipt) {
+        const rows = (receipt.items || []).map(item => `<tr><td style="padding:.55rem .25rem;">${escapeSaleHtml(item.name)}</td><td style="padding:.55rem .25rem; text-align:center;">${Number(item.quantity) || 0}</td><td style="padding:.55rem .25rem; text-align:right;">₦${(Number(item.unit_price) || 0).toFixed(2)}</td><td style="padding:.55rem .25rem; text-align:right;">₦${(Number(item.subtotal) || 0).toFixed(2)}</td></tr>`).join('');
+        document.getElementById('sale-details-area').innerHTML = `
+            <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:.75rem; margin-bottom:1rem;">
+                <div><small style="color:var(--text-muted);">Receipt</small><div style="font-weight:700;">${escapeSaleHtml(receipt.receipt_number)}</div></div>
+                <div><small style="color:var(--text-muted);">Date &amp; time</small><div>${escapeSaleHtml(receipt.timestamp)}</div></div>
+                <div><small style="color:var(--text-muted);">Cashier</small><div>${escapeSaleHtml(receipt.cashier)}</div></div>
+                <div><small style="color:var(--text-muted);">Payment method</small><div>${escapeSaleHtml(receipt.payment_method)}</div></div>
+            </div>
+            <div class="table-responsive"><table class="custom-table" style="width:100%;"><thead><tr><th>Item</th><th style="text-align:center;">Qty</th><th style="text-align:right;">Unit price</th><th style="text-align:right;">Line total</th></tr></thead><tbody>${rows || '<tr><td colspan="4">No item details found.</td></tr>'}</tbody></table></div>
+            <div style="max-width:280px; margin:1rem 0 0 auto; display:grid; gap:.4rem;">
+                <div style="display:flex; justify-content:space-between;"><span>Subtotal</span><span>₦${(Number(receipt.subtotal) || 0).toFixed(2)}</span></div>
+                <div style="display:flex; justify-content:space-between;"><span>Discount</span><span>−₦${(Number(receipt.discount) || 0).toFixed(2)}</span></div>
+                <div style="display:flex; justify-content:space-between;"><span>Tax</span><span>₦${(Number(receipt.tax_amount) || 0).toFixed(2)}</span></div>
+                <div style="display:flex; justify-content:space-between; border-top:1px solid var(--border-color); padding-top:.55rem; font-weight:700;"><span>Total</span><span>₦${(Number(receipt.total_amount) || 0).toFixed(2)}</span></div>
+            </div>`;
+    }
+
+    function showSaleReceipt() {
+        document.getElementById('sale-details-area').style.display = 'none';
+        document.getElementById('sale-receipt-area').style.display = 'block';
+        document.getElementById('sale-detail-actions').style.display = 'none';
+        document.getElementById('sale-receipt-actions').style.display = 'flex';
+    }
+
+    function showSaleDetailsView() {
+        document.getElementById('sale-details-area').style.display = 'block';
+        document.getElementById('sale-receipt-area').style.display = 'none';
+        document.getElementById('sale-detail-actions').style.display = 'flex';
+        document.getElementById('sale-receipt-actions').style.display = 'none';
+    }
+
     function populateReprintMarkup(receipt) {
-        const area = document.getElementById('reprint-print-area');
+        const area = document.getElementById('sale-receipt-area');
         
         let itemsRows = '';
         receipt.items.forEach(item => {
             itemsRows += `
                 <div class="receipt-item-row">
-                    <span>${item.name} (x${item.quantity})</span>
+                    <span>${escapeSaleHtml(item.name)} (x${Number(item.quantity) || 0})</span>
                     <span>₦${parseFloat(item.subtotal).toFixed(2)}</span>
                 </div>
             `;
@@ -203,17 +263,17 @@
 
         area.innerHTML = `
             <div class="receipt-header">
-                <h4 style="margin: 0; font-size: 1.1rem; font-weight: bold; text-align: center;">${receipt.store_name || ''}</h4>
-                ${receipt.store_address ? `<div style="font-size: 0.75rem; color: #333; margin: 4px 0; text-align: center;">${receipt.store_address}</div>` : ''}
-                ${receipt.store_phone ? `<div style="font-size: 0.75rem; color: #333; text-align: center;">Tel: ${receipt.store_phone}</div>` : ''}
-                ${receipt.store_email ? `<div style="font-size: 0.75rem; color: #333; text-align: center;">Email: ${receipt.store_email}</div>` : ''}
+                <h4 style="margin: 0; font-size: 1.1rem; font-weight: bold; text-align: center;">${escapeSaleHtml(receipt.store_name)}</h4>
+                ${receipt.store_address ? `<div style="font-size: 0.75rem; color: #333; margin: 4px 0; text-align: center;">${escapeSaleHtml(receipt.store_address)}</div>` : ''}
+                ${receipt.store_phone ? `<div style="font-size: 0.75rem; color: #333; text-align: center;">Tel: ${escapeSaleHtml(receipt.store_phone)}</div>` : ''}
+                ${receipt.store_email ? `<div style="font-size: 0.75rem; color: #333; text-align: center;">Email: ${escapeSaleHtml(receipt.store_email)}</div>` : ''}
             </div>
             
             <div style="font-size: 0.75rem; margin-bottom: 0.5rem;">
-                <div style="font-weight: bold; text-align: center; margin-bottom: 5px;">*** INVOICE COPY ***</div>
-                <div>Receipt: ${receipt.receipt_number}</div>
-                <div>Date: ${receipt.timestamp}</div>
-                <div>Cashier: ${receipt.cashier}</div>
+                <div style="font-weight: bold; text-align: center; margin-bottom: 5px;">*** RECEIPT COPY ***</div>
+                <div>Receipt: ${escapeSaleHtml(receipt.receipt_number)}</div>
+                <div>Date: ${escapeSaleHtml(receipt.timestamp)}</div>
+                <div>Cashier: ${escapeSaleHtml(receipt.cashier)}</div>
             </div>
             
             <div class="receipt-divider"></div>
@@ -238,12 +298,12 @@
             </div>
             
             <div class="receipt-divider"></div>
-            <div style="font-size: 0.8rem;">Method: ${receipt.payment_method}</div>
+            <div style="font-size: 0.8rem;">Method: ${escapeSaleHtml(receipt.payment_method)}</div>
             <div class="receipt-divider"></div>
             
             ${receipt.receipt_footer ? `
             <div style="text-align: center; font-size: 0.75rem; margin-top: 1rem; font-style: italic;">
-                ${receipt.receipt_footer}
+                ${escapeSaleHtml(receipt.receipt_footer)}
             </div>
             ` : ''}
         `;
@@ -251,10 +311,11 @@
 
     function closeReprintModal() {
         document.getElementById('reprint-modal').classList.remove('active');
+        showSaleDetailsView();
     }
 
     function printReprintReceipt() {
-        const printContent = document.getElementById('reprint-print-area').innerHTML;
+        const printContent = document.getElementById('sale-receipt-area').innerHTML;
         
         const printWindow = window.open('', '', 'height=600,width=400');
         printWindow.document.write('<html><head><title>Print Invoice Copy</title>');

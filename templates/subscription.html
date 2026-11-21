@@ -44,7 +44,7 @@
         </div>
         <p style="font-size: 0.82rem; color: var(--text-secondary); margin-bottom: 1rem;">
             {% if profile.is_account_suspended %}
-                <span style="color: #ef4444; font-weight: 600;">Your store account is suspended. You have <strong style="color: #fff; background: rgba(239,68,68,0.5); padding: 1px 5px; border-radius: 3px;">{{ profile.days_until_deletion }} day{{ profile.days_until_deletion|pluralize }} remaining</strong> to redeem your subscription before permanent account deletion.</span>
+                <span style="color: #ef4444; font-weight: 600;">Your store account is suspended. Your account and business data are retained while you renew your subscription.</span>
             {% elif profile.plan == 'FREE' %}
                 <span>14-day free trial with all Premium features active. <strong>{{ profile.trial_days_remaining }} day{{ profile.trial_days_remaining|pluralize }} remaining</strong>.</span>
             {% else %}

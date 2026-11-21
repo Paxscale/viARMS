@@ -90,6 +90,7 @@
             <div style="min-width: 180px;">
                 <select id="prod-cat-filter" class="form-control" onchange="filterTable()">
                     <option value="all">All Categories</option>
+                    <option value="__uncategorized__">Uncategorized</option>
                     {% for cat in categories %}
                         <option value="{{ cat.name }}">{{ cat.name }}</option>
                     {% endfor %}
@@ -137,7 +138,7 @@
                 <tbody>
                     {% if products %}
                         {% for p in products %}
-                            <tr class="product-row" data-name="{{ p.name|lower }}" data-sku="{{ p.sku|lower }}" data-category="{% if p.category %}{{ p.category.name }}{% else %}Uncategorized{% endif %}">
+                            <tr class="product-row" data-name="{{ p.name|lower }}" data-sku="{{ p.sku|lower }}" data-category="{% if p.category %}{{ p.category.name }}{% else %}__uncategorized__{% endif %}">
                                 <td>
                                     {% if p.image and user.profile.allows_product_images %}
                                     <img src="{{ p.image.url }}" alt="{{ p.name }}" loading="lazy" style="width: 48px; height: 48px; object-fit: cover; border-radius: 6px; margin-bottom: 0.35rem;">
@@ -358,6 +359,7 @@
                     <label for="prod-name" class="form-label">Product Name</label>
                     <input type="text" name="name" id="prod-name" class="form-control" required placeholder="e.g. Basmati Rice 1kg">
                 </div>
+                {% if business_type != 'BOUTIQUE' %}
                 <div class="form-group">
                     <label for="prod-sku" class="form-label">SKU / Barcode</label>
                     <div style="display: flex; gap: 0.5rem; align-items: center;">
@@ -367,22 +369,25 @@
                         </button>
                     </div>
                 </div>
+                {% endif %}
             </div>
 
             <div class="form-row-grid-2">
                 <div class="form-group">
                     <label for="prod-cat" class="form-label">Category</label>
                     <select name="category_id" id="prod-cat" class="form-control">
-                        <option value="">Uncategorized</option>
+                        <option value="" selected>Select category (optional)</option>
                         {% for cat in categories %}
                             <option value="{{ cat.id }}">{{ cat.name }}</option>
                         {% endfor %}
                     </select>
                 </div>
+                {% if business_type != 'BOUTIQUE' %}
                 <div class="form-group" id="prod-expiry-group">
                     <label for="prod-expiry" class="form-label">Expiry Date</label>
                     <input type="date" name="expiry_date" id="prod-expiry" class="form-control">
                 </div>
+                {% endif %}
             </div>
 
             <div class="{% if is_admin %}form-row-grid-3{% else %}form-row-grid-2{% endif %}">
@@ -580,25 +585,29 @@
                             <label class="form-label" for="bulk-product-__index__-name">Product Name</label>
                             <input type="text" id="bulk-product-__index__-name" name="product-__index__-name" class="form-control" maxlength="200" required>
                         </div>
+                        {% if business_type != 'BOUTIQUE' %}
                         <div class="form-group">
                             <label class="form-label" for="bulk-product-__index__-sku">SKU / Barcode</label>
                             <input type="text" id="bulk-product-__index__-sku" name="product-__index__-sku" class="form-control" maxlength="50" required>
                         </div>
+                        {% endif %}
                     </div>
                     <div class="form-row-grid-2">
                         <div class="form-group">
                             <label class="form-label" for="bulk-product-__index__-category_id">Category</label>
                             <select id="bulk-product-__index__-category_id" name="product-__index__-category_id" class="form-control">
-                                <option value="">Uncategorized</option>
+                                <option value="" selected>Select category (optional)</option>
                                 {% for cat in categories %}
                                 <option value="{{ cat.id }}">{{ cat.name }}</option>
                                 {% endfor %}
                             </select>
                         </div>
+                        {% if business_type != 'BOUTIQUE' %}
                         <div class="form-group">
                             <label class="form-label" for="bulk-product-__index__-expiry_date">Expiry Date</label>
                             <input type="date" id="bulk-product-__index__-expiry_date" name="product-__index__-expiry_date" class="form-control">
                         </div>
+                        {% endif %}
                     </div>
                     <div class="form-row-grid-3">
                         <div class="form-group">
@@ -695,6 +704,7 @@
                     <label for="edit-prod-name" class="form-label">Product Name</label>
                     <input type="text" name="name" id="edit-prod-name" class="form-control" required>
                 </div>
+                {% if business_type != 'BOUTIQUE' %}
                 <div class="form-group">
                     <label for="edit-prod-sku" class="form-label">SKU / Barcode</label>
                     <div style="display: flex; gap: 0.5rem; align-items: center;">
@@ -704,6 +714,7 @@
                         </button>
                     </div>
                 </div>
+                {% endif %}
             </div>
 
             <div class="form-row-grid-2">
@@ -716,10 +727,12 @@
                         {% endfor %}
                     </select>
                 </div>
+                {% if business_type != 'BOUTIQUE' %}
                 <div class="form-group" id="edit-prod-expiry-group">
                     <label for="edit-prod-expiry" class="form-label">Expiry Date</label>
                     <input type="date" name="expiry_date" id="edit-prod-expiry" class="form-control">
                 </div>
+                {% endif %}
             </div>
 
             <div class="{% if is_admin %}form-row-grid-3{% else %}form-row-grid-2{% endif %}">
@@ -1006,7 +1019,8 @@
                              manufacturer, strength, batchNumber, nafdacRegNo, storageConditions, material, imageUrl) {
         document.getElementById('edit-prod-id').value = id;
         document.getElementById('edit-prod-name').value = name;
-        document.getElementById('edit-prod-sku').value = sku;
+        const skuField = document.getElementById('edit-prod-sku');
+        if (skuField) skuField.value = sku;
         document.getElementById('edit-prod-cat').value = categoryId !== 'None' ? categoryId : '';
         document.getElementById('edit-prod-cost').value = cost;
         document.getElementById('edit-prod-sell').value = sell;

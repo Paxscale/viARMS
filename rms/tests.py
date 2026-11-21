@@ -11,6 +11,7 @@ from tempfile import TemporaryDirectory
 from PIL import Image
 from rms.models import Category, Product, Sale, SaleItem, Shop, StoreSettings, AdminNotification
 import json
+from urllib.parse import urlsplit
 
 class RMSModelsAndAPITests(TestCase):
 
@@ -76,6 +77,28 @@ class RMSModelsAndAPITests(TestCase):
         profile.shop = shop
         profile.save()
         return owner, profile, shop
+
+    def verify_signup_email(self, email, first_name='Test', last_name='User'):
+        from django.core import mail
+
+        mail.outbox = []
+        with override_settings(EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend'):
+            response = self.client.post(reverse('register'), {
+                'stage': 'send_verification',
+                'email': email,
+                'first_name': first_name,
+                'last_name': last_name,
+            })
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(mail.outbox)
+        verification_line = next(
+            line for line in mail.outbox[-1].body.splitlines()
+            if line.startswith('Verify your email: ')
+        )
+        verification_url = verification_line.partition(': ')[2].strip()
+        verification_response = self.client.get(urlsplit(verification_url).path)
+        self.assertEqual(verification_response.status_code, 302)
+        return self.client.get(reverse('register'))
 
     def test_super_admin_can_suspend_and_reactivate_tenant_access(self):
         owner, profile, shop = self.create_tenant('managed_tenant')
@@ -176,7 +199,7 @@ class RMSModelsAndAPITests(TestCase):
         self.assertEqual(self.product_chips.profit_margin, Decimal('1.20'))
 
     def test_utensil_product_material_is_saved(self):
-        registration_response = self.client.get(reverse('register'))
+        registration_response = self.verify_signup_email('utensils-signup@test.com')
         self.assertContains(registration_response, 'value="UTENSILS"')
 
         utensil_admin = User.objects.create_user('utensil_admin', password='admin123')
@@ -430,11 +453,10 @@ class RMSModelsAndAPITests(TestCase):
                 self.client.logout()
 
     def test_bookshop_accessories_business_has_both_product_field_sets(self):
-        registration_response = self.client.get(reverse('register'))
+        registration_response = self.verify_signup_email('bookshop-signup@test.com')
         self.assertContains(registration_response, 'value="BOOK_ACCESSORIES"')
-        self.assertContains(registration_response, 'class="login-container register-page"')
-        self.assertContains(registration_response, 'class="register-layout"')
-        self.assertContains(registration_response, 'class="login-card glass-panel register-card"')
+        self.assertContains(registration_response, 'class="signup-shell"')
+        self.assertContains(registration_response, 'class="glass-panel signup-card"')
         self.assertContains(registration_response, '@media (max-width: 576px)')
 
         business_owner = User.objects.create_user('book_accessories_owner', password='admin123')
@@ -722,12 +744,15 @@ class RMSModelsAndAPITests(TestCase):
         self.assertContains(terms_res, "Merchant Agreement")
 
         # 2. Register without agree_terms fails
+        self.verify_signup_email('noterms@test.com', first_name='No', last_name='Terms')
         fail_reg = self.client.post(reverse('register'), {
+            'stage': 'complete',
             'username': 'notermsuser',
-            'email': 'noterms@test.com',
-            'password': 'password123',
-            'confirm_password': 'password123',
+            'password': 'N0terms!SecurePass',
+            'confirm_password': 'N0terms!SecurePass',
             'business_name': 'No Terms Shop',
+            'business_type': 'GENERAL',
+            'tenant_type': 'RETAIL',
             'kyc_document_type': 'National ID',
             'kyc_document_number': 'NIN-12345678',
         })
@@ -735,12 +760,15 @@ class RMSModelsAndAPITests(TestCase):
         self.assertFalse(User.objects.filter(username='notermsuser').exists())
 
         # 3. Register with agree_terms succeeds
+        self.verify_signup_email('terms@test.com', first_name='Terms', last_name='User')
         success_reg = self.client.post(reverse('register'), {
+            'stage': 'complete',
             'username': 'termsuser',
-            'email': 'terms@test.com',
-            'password': 'password123',
-            'confirm_password': 'password123',
+            'password': 'VioletQuartz#7Signal',
+            'confirm_password': 'VioletQuartz#7Signal',
             'business_name': 'Agreed Terms Shop',
+            'business_type': 'GENERAL',
+            'tenant_type': 'RETAIL',
             'kyc_document_type': 'National ID',
             'kyc_document_number': 'NIN-87654321',
             'agree_terms': 'on',
@@ -949,7 +977,7 @@ class RMSModelsAndAPITests(TestCase):
         self.assertEqual(res_submit.status_code, 302)
         payment = SubscriptionPayment.objects.get(reference='TRANS-123456-ABC')
         self.assertEqual(payment.status, 'PENDING')
-        self.assertEqual(payment.amount, Decimal('15000.00'))
+        self.assertEqual(payment.amount, Decimal('120000.00'))
         self.assertEqual(payment.tenant, owner)
         self.assertEqual(profile.plan, 'FREE')  # still free until confirmed
 
@@ -996,7 +1024,7 @@ class RMSModelsAndAPITests(TestCase):
         payment = SubscriptionPayment.objects.get(reference='RRR-TEST-999')
         self.assertEqual(payment.status, 'CONFIRMED')
         self.assertEqual(payment.payment_method, 'REMITA')
-        self.assertEqual(payment.amount, Decimal('350000.00'))
+        self.assertEqual(payment.amount, Decimal('250000.00'))
 
         profile.refresh_from_db()
         self.assertEqual(profile.plan, 'GOLDEN_PREMIUM')
@@ -1135,8 +1163,9 @@ class RMSModelsAndAPITests(TestCase):
         prod = Product.objects.get(sku='SKU-STD-001')
         self.assertFalse(bool(prod.image), "Product image must be stripped on the Standard Plan")
 
-    def test_14_day_trial_auto_suspension_with_notification_and_email(self):
+    def test_14_day_trial_auto_suspension_queues_persistent_email(self):
         from django.core import mail
+        from rms.models import NotificationEmail
         from rms.views import check_and_process_tenant_lifecycle
         mail.outbox = []
 
@@ -1157,16 +1186,19 @@ class RMSModelsAndAPITests(TestCase):
         profile.refresh_from_db()
         self.assertTrue(profile.is_suspended)
         self.assertTrue(profile.is_account_suspended)
-        self.assertEqual(profile.days_until_deletion, 30)
 
         # In-app notification created
         self.assertTrue(AdminNotification.objects.filter(target_tenant=owner, title__icontains='Suspended').exists())
 
-        # Email notice sent to tenant
-        self.assertTrue(len(mail.outbox) > 0)
-        self.assertIn('expire@tenant.com', mail.outbox[-1].to)
-        self.assertIn('Suspended', mail.outbox[-1].subject)
-        self.assertIn('30 days', mail.outbox[-1].body)
+        # Email notice is durably queued for the worker, not sent inline.
+        queued_email = NotificationEmail.objects.get(
+            notification__target_tenant=owner,
+            recipient='expire@tenant.com',
+        )
+        self.assertEqual(queued_email.status, 'PENDING')
+        self.assertIn('Suspended', queued_email.subject)
+        self.assertIn('not automatically deleted', queued_email.message)
+        self.assertFalse(mail.outbox)
 
         # POS checkout is blocked
         client = Client()
@@ -1179,10 +1211,18 @@ class RMSModelsAndAPITests(TestCase):
         self.assertEqual(checkout_res.status_code, 403)
         self.assertIn('suspended', checkout_res.json()['error'].lower())
 
-    def test_30_day_suspension_auto_deletion(self):
+    def test_suspended_tenant_and_business_data_are_retained_after_30_days(self):
         from rms.views import check_and_process_tenant_lifecycle
 
         owner, profile, shop = self.create_tenant('tobe_deleted')
+        product = Product.objects.create(
+            name='Retained product',
+            sku='RETAINED-001',
+            cost_price=Decimal('2.00'),
+            selling_price=Decimal('3.00'),
+            stock_quantity=7,
+            shop=shop,
+        )
         profile.plan = 'FREE'
         profile.trial_start_date = timezone.localdate() - timedelta(days=50)
         profile.is_suspended = True
@@ -1191,10 +1231,11 @@ class RMSModelsAndAPITests(TestCase):
 
         self.assertGreaterEqual(profile.days_suspended, 30)
 
-        # Run lifecycle check -> triggers permanent deletion
+        # Expired accounts stay suspended; lifecycle processing must preserve their records.
         deleted = check_and_process_tenant_lifecycle(owner)
-        self.assertTrue(deleted)
-        self.assertFalse(User.objects.filter(username='tobe_deleted').exists())
+        self.assertFalse(deleted)
+        self.assertTrue(User.objects.filter(username='tobe_deleted').exists())
+        self.assertTrue(Product.objects.filter(id=product.id).exists())
 
     def test_standard_plan_remita_upgrade_and_unsuspension(self):
         from rms.models import SubscriptionPayment

@@ -4,6 +4,12 @@
 {% block title %}Super Admin Panel - viARMS{% endblock %}
 
 {% block content %}
+<style>
+    .admin-tabs { display:flex; gap:.5rem; flex-wrap:wrap; padding:.45rem; margin:0 0 1.25rem; border:1px solid var(--border-color); border-radius:12px; background:var(--bg-surface); }
+    .admin-tab-button { border:0; border-radius:8px; padding:.65rem 1rem; color:var(--text-secondary); background:transparent; font:inherit; font-weight:600; cursor:pointer; }
+    .admin-tab-button[aria-selected="true"] { color:var(--text-primary); background:var(--color-primary); }
+    [data-admin-tab-panel][hidden] { display:none !important; }
+</style>
 <div class="panel-header">
     <div>
         <h1 style="font-size: 1.75rem; font-weight: 700;">Super Admin Panel</h1>
@@ -27,10 +33,21 @@
         <div class="metric-value">{{ suspended_tenant_count }}</div>
         <div class="metric-subtext">Access disabled; data retained</div>
     </div>
+    <div class="metric-card glass-panel">
+        <div class="metric-title">User Accounts</div>
+        <div class="metric-value">{{ total_auth_user_count }}</div>
+        <div class="metric-subtext">{{ business_auth_user_count }} business and staff accounts, plus system admins</div>
+    </div>
 </div>
 
+<nav class="admin-tabs" role="tablist" aria-label="Admin panel sections">
+    <button type="button" class="admin-tab-button" role="tab" data-admin-tab-button="accounts" aria-selected="true">Accounts &amp; appeals</button>
+    <button type="button" class="admin-tab-button" role="tab" data-admin-tab-button="billing" aria-selected="false">Billing</button>
+    <button type="button" class="admin-tab-button" role="tab" data-admin-tab-button="communications" aria-selected="false">Communications &amp; ads</button>
+</nav>
+
 <!-- Pending Approvals Section -->
-<div style="margin-bottom: 2rem;">
+<div data-admin-tab-panel="accounts" role="tabpanel" style="margin-bottom: 2rem;">
     <h2 style="font-size: 1.25rem; font-weight: 600; margin-bottom: 1rem; display: flex; align-items: center; gap: 8px;">
         <i data-lucide="user-check" style="color: var(--color-warning);"></i> Pending Registrations
     </h2>
@@ -83,7 +100,7 @@
 </div>
 
 <!-- KYC Review Queue -->
-<div style="margin-bottom: 2rem;">
+<div data-admin-tab-panel="accounts" role="tabpanel" style="margin-bottom: 2rem;">
     <div class="panel-header" style="margin-bottom: 1rem;">
         <div>
             <h2 style="font-size: 1.25rem; font-weight: 600; display: flex; align-items: center; gap: 8px;"><i data-lucide="shield-check" style="color: var(--color-primary);"></i> KYC Review Queue</h2>
@@ -121,8 +138,39 @@
     </div>
 </div>
 
+<div data-admin-tab-panel="accounts" role="tabpanel" style="margin-bottom:2rem;">
+    <div class="panel-header" style="margin-bottom:1rem;">
+        <div>
+            <h2 style="font-size:1.25rem; font-weight:600; display:flex; align-items:center; gap:8px;"><i data-lucide="message-square-warning" style="color:var(--color-warning);"></i> Account Appeals</h2>
+            <p style="font-size:.85rem; color:var(--text-muted); margin-top:.25rem;">Review requests from account holders who cannot access their business.</p>
+        </div>
+        <span class="badge badge-warning">{{ pending_account_appeals_count }} pending</span>
+    </div>
+    <div class="glass-panel" style="padding:1rem; overflow-x:auto;">
+        <table class="data-table" style="width:100%; border-collapse:collapse;">
+            <thead><tr><th>Account</th><th>Appeal</th><th>Submitted</th><th>Review</th></tr></thead>
+            <tbody>
+                {% for appeal in pending_account_appeals %}
+                <tr>
+                    <td><strong>{{ appeal.user.username }}</strong><div style="font-size:.78rem; color:var(--text-muted);">{{ appeal.user.email }}</div></td>
+                    <td style="max-width:420px; white-space:normal;">{{ appeal.reason|linebreaksbr }}</td>
+                    <td>{{ appeal.created_at|date:"M d, Y H:i" }}</td>
+                    <td style="min-width:220px;">
+                        <form method="post" style="display:grid; gap:.45rem;">
+                            {% csrf_token %}<input type="hidden" name="action" value="review_appeal"><input type="hidden" name="appeal_id" value="{{ appeal.id }}">
+                            <input class="form-control" name="admin_response" maxlength="2000" placeholder="Response for the user (optional)">
+                            <button type="submit" class="btn btn-primary btn-sm">Mark reviewed &amp; email response</button>
+                        </form>
+                    </td>
+                </tr>
+                {% empty %}<tr><td colspan="4" style="text-align:center; padding:2rem; color:var(--text-muted);">No pending account appeals.</td></tr>{% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
 <!-- Subscription & Upgrade Confirmations Queue -->
-<div style="margin-bottom: 2rem;">
+<div data-admin-tab-panel="billing" role="tabpanel" style="margin-bottom: 2rem;">
     <div class="panel-header" style="margin-bottom: 1rem;">
         <div>
             <h2 style="font-size: 1.25rem; font-weight: 600; display: flex; align-items: center; gap: 8px;">
@@ -213,10 +261,10 @@
 </div>
 
 <!-- Grid Layout for Tenants and Ads -->
-<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 1.5rem;">
+<div style="display: contents;">
 
     <!-- All Tenants Section -->
-    <div class="glass-panel" style="padding: 1.5rem;">
+    <div class="glass-panel" data-admin-tab-panel="accounts" role="tabpanel" style="padding: 1.5rem;">
         <h2 style="font-size: 1.25rem; font-weight: 600; margin-bottom: 1rem; display: flex; align-items: center; gap: 8px;">
             <i data-lucide="building-2" style="color: var(--color-primary);"></i> Registered Tenants
         </h2>
@@ -264,7 +312,7 @@
                                 {% if profile.is_account_suspended %}
                                     <div style="margin-top: 4px;">
                                         <span class="badge" style="background: rgba(239,68,68,0.2); color: #ef4444; font-size: 0.7rem; padding: 2px 6px; font-weight: 700;">
-                                            Suspended ({{ profile.days_until_deletion }}d to auto-deletion)
+                                            Suspended (data retained)
                                         </span>
                                     </div>
                                 {% elif profile.plan == 'FREE' and profile.trial_days_remaining is not None %}
@@ -325,12 +373,12 @@
     </div>
 
     <!-- Tenant Announcements, Updates & Push Notifications -->
-    <div class="glass-panel" style="padding: 1.5rem; margin-bottom: 2rem;">
+    <div class="glass-panel" data-admin-tab-panel="communications" role="tabpanel" style="padding: 1.5rem; margin-bottom: 2rem;">
         <h2 style="font-size: 1.25rem; font-weight: 600; margin-bottom: 1rem; display: flex; align-items: center; gap: 8px;">
             <i data-lucide="bell-ring" style="color: var(--color-primary);"></i> Broadcast &amp; Push Notifications to Tenants
         </h2>
         <p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 1.25rem;">
-            Send announcements, system alerts, maintenance schedules, or feature releases to all business accounts or specific tenants.
+            Save announcements in the in-app notification center and queue an email for each tenant owner with an email address.
         </p>
 
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1.5rem;">
@@ -376,7 +424,7 @@
                 </div>
 
                 <button type="submit" class="btn btn-primary btn-block" style="display: flex; align-items: center; justify-content: center; gap: 8px;">
-                    <i data-lucide="radio" style="width: 16px; height: 16px;"></i> Send Push Notification &amp; Announcement
+                    <i data-lucide="radio" style="width: 16px; height: 16px;"></i> Save Notification &amp; Queue Email
                 </button>
             </form>
 
@@ -404,13 +452,16 @@
                                     {% else %}
                                     <span class="badge badge-info" style="font-size: 0.65rem;">UPDATE</span>
                                     {% endif %}
-                                    <strong style="font-size: 0.85rem; color: var(--text-primary);">{{ n.title }}</strong>
+                                    <strong style="font-size: 0.85rem; color: var(--text-primary);">{% if n.title|lower == 'annuce' or n.title|lower == 'announcement' %}Updates{% else %}{{ n.title }}{% endif %}</strong>
                                 </div>
                                 <p style="font-size: 0.78rem; color: var(--text-secondary); margin: 0 0 4px 0; line-height: 1.4; word-break: break-word;">
                                     {{ n.message }}
                                 </p>
                                 <div style="font-size: 0.68rem; color: var(--text-muted);">
                                     Target: <strong>{% if n.target_tenant %}{{ n.target_tenant.username }}{% else %}All Tenants{% endif %}</strong> &nbsp;·&nbsp; {{ n.created_at|date:"M d, Y H:i" }}
+                                </div>
+                                <div style="font-size: 0.68rem; color: var(--text-muted); margin-top: 3px;">
+                                    Email: {{ n.email_sent_count }} sent · {{ n.email_pending_count }} pending · {{ n.email_failed_count }} failed
                                 </div>
                             </div>
                             <form method="POST" style="margin: 0; flex-shrink: 0;">
@@ -434,7 +485,7 @@
     </div>
 
     <!-- Advertisement Management -->
-    <div class="glass-panel" style="padding: 1.5rem;">
+    <div class="glass-panel" data-admin-tab-panel="communications" role="tabpanel" style="padding: 1.5rem;">
         <h2 style="font-size: 1.25rem; font-weight: 600; margin-bottom: 1rem; display: flex; align-items: center; gap: 8px;">
             <i data-lucide="monitor-speaker" style="color: var(--color-success);"></i> Customer Display Ads
         </h2>
@@ -479,7 +530,7 @@
     </div>
 
     <!-- Company Bank & Subscription Payment Settings -->
-    <div class="glass-panel" style="padding: 1.5rem; grid-column: 1 / -1;">
+    <div class="glass-panel" data-admin-tab-panel="billing" role="tabpanel" style="padding: 1.5rem;">
         <h2 style="font-size: 1.25rem; font-weight: 600; margin-bottom: 0.5rem; display: flex; align-items: center; gap: 8px;">
             <i data-lucide="landmark" style="color: var(--color-primary);"></i> Company Bank &amp; Payment Gateway Settings
         </h2>
@@ -575,10 +626,9 @@
 
 <script>
     let _pendingDeleteForm = null;
+    let _pendingDeleteAction = '';
 
     function confirmTenantDeletion(form, event) {
-        event.preventDefault();
-
         // Determine action from submitter button OR from hidden input field
         let action = '';
         if (event.submitter && event.submitter.value) {
@@ -590,12 +640,14 @@
 
         // Only intercept destructive actions
         if (action !== 'reject_user' && action !== 'delete_tenant') {
-            form.submit();
-            return false;
+            return true;
         }
+
+        event.preventDefault();
 
         const username = form.dataset.deleteUsername;
         _pendingDeleteForm = form;
+        _pendingDeleteAction = action;
 
         // Populate modal
         const descEl = document.getElementById('deleteModalDesc');
@@ -623,7 +675,8 @@
 
     function submitDeleteForm() {
         if (!_pendingDeleteForm) return;
-        const username = _pendingDeleteForm.dataset.deleteUsername;
+        const form = _pendingDeleteForm;
+        const username = form.dataset.deleteUsername;
         const input = document.getElementById('deleteConfirmInput').value.trim();
         const errorEl = document.getElementById('deleteConfirmError');
 
@@ -634,20 +687,48 @@
         }
 
         errorEl.style.display = 'none';
-        _pendingDeleteForm.elements.delete_confirmation.value = input;
+        form.elements.delete_confirmation.value = input;
+        let actionField = form.querySelector('input[name="action"]');
+        if (!actionField) {
+            actionField = document.createElement('input');
+            actionField.type = 'hidden';
+            actionField.name = 'action';
+            form.appendChild(actionField);
+        }
+        actionField.value = _pendingDeleteAction;
         closeDeleteModal();
-        _pendingDeleteForm.submit();
-        _pendingDeleteForm = null;
+        form.submit();
     }
 
     function closeDeleteModal() {
         document.getElementById('deleteConfirmModal').style.display = 'none';
         _pendingDeleteForm = null;
+        _pendingDeleteAction = '';
     }
 
     // Close modal on backdrop click
     document.getElementById('deleteConfirmModal').addEventListener('click', function(e) {
         if (e.target === this) closeDeleteModal();
     });
+
+    (function initAdminTabs() {
+        const buttons = Array.from(document.querySelectorAll('[data-admin-tab-button]'));
+        const panels = Array.from(document.querySelectorAll('[data-admin-tab-panel]'));
+        if (!buttons.length || !panels.length) return;
+        const activate = tab => {
+            buttons.forEach(button => {
+                const selected = button.dataset.adminTabButton === tab;
+                button.setAttribute('aria-selected', selected ? 'true' : 'false');
+                button.tabIndex = selected ? 0 : -1;
+            });
+            panels.forEach(panel => { panel.hidden = panel.dataset.adminTabPanel !== tab; });
+            try { localStorage.setItem('viarms-admin-panel-tab', tab); } catch (error) {}
+        };
+        buttons.forEach(button => button.addEventListener('click', () => activate(button.dataset.adminTabButton)));
+        let savedTab = 'accounts';
+        try { savedTab = localStorage.getItem('viarms-admin-panel-tab') || savedTab; } catch (error) {}
+        if (!buttons.some(button => button.dataset.adminTabButton === savedTab)) savedTab = 'accounts';
+        activate(savedTab);
+    })();
 </script>
 {% endblock %}

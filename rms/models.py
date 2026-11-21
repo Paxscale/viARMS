@@ -27,6 +27,7 @@ class UserProfile(models.Model):
     TENANT_TYPE_CHOICES = [
         ('RETAIL', 'Retail'),
         ('WHOLESALE', 'Wholesale'),
+        ('RETAIL_WHOLESALE', 'Retail and Wholesale'),
     ]
 
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='profile')
@@ -60,7 +61,7 @@ class UserProfile(models.Model):
         ('PHARMACEUTICAL', 'Pharmaceuticals'),
         ('BOOK_ACCESSORIES', 'Bookshop & Accessories'),
         ('UTENSILS', 'Utensils & Housewares'),
-        ('LAUNDRY', 'Laundry & Dry Cleaning')
+        ('BOUTIQUE', 'Boutique')
     ], default='GENERAL')
     # Trial & Subscription tracking
     trial_start_date = models.DateField(null=True, blank=True, help_text="Date the free trial began")
@@ -162,14 +163,6 @@ class UserProfile(models.Model):
             expired_date = target.trial_start_date + timedelta(days=14)
             return max(0, (timezone.localdate() - expired_date).days)
         return 0
-
-    @property
-    def days_until_deletion(self):
-        """Returns days remaining before 30-day automatic permanent deletion."""
-        target = self.tenant_owner.profile if (self.tenant_owner and self.tenant_owner != self.user and hasattr(self.tenant_owner, 'profile')) else self
-        if not target.is_account_suspended:
-            return 30
-        return max(0, 30 - target.days_suspended)
 
     @property
     def allows_product_images(self):
@@ -282,6 +275,17 @@ class Product(models.Model):
         # Same barcode (SKU) is allowed in same shop across different batches.
         # This supports stocking the same product with multiple batch expiry dates.
         unique_together = [('sku', 'shop', 'batch_number')]
+        constraints = [
+            models.CheckConstraint(
+                check=models.Q(cost_price__lte=models.F('selling_price')),
+                name='product_cost_lte_selling_price',
+            ),
+        ]
+
+    def clean(self):
+        super().clean()
+        if self.cost_price is not None and self.selling_price is not None and self.cost_price > self.selling_price:
+            raise ValidationError({'cost_price': 'Cost price cannot be greater than selling price.'})
 
     def save(self, *args, **kwargs):
         if not self.batch_number or not str(self.batch_number).strip():
@@ -364,7 +368,7 @@ class StoreSettings(models.Model):
     phone = models.CharField(max_length=50, blank=True, null=True, default="+234 810 026 2697")
     email = models.EmailField(max_length=100, blank=True, null=True, default="info@ourshop.com")
     tax_rate = models.DecimalField(max_digits=5, decimal_places=2, default=0.00, help_text="Default store tax rate in percentage")
-    receipt_footer = models.TextField(blank=True, null=True, default="Thank you for shopping with us! Please come again.")
+    receipt_footer = models.TextField(blank=True, null=True, default="Thank you for shopping with viARMS Record Management System. Powered by Scales Technologies.")
     # Company payment details for tenant subscription upgrades
     company_bank_name = models.CharField(max_length=100, default="Zenith Bank", blank=True)
     company_account_name = models.CharField(max_length=150, default="viARMS Technologies Limited", blank=True)
@@ -411,6 +415,7 @@ class AdminNotification(models.Model):
         ('WARNING', 'Important Notice'),
         ('URGENT', 'Critical Alert / Action Required'),
         ('FEATURE', 'New Feature Release'),
+        ('SUCCESS', 'Successful Action'),
     ]
 
     title = models.CharField(max_length=200)
@@ -451,6 +456,121 @@ class NotificationReadStatus(models.Model):
 
     def __str__(self):
         return f"{self.user.username} read {self.notification.id}"
+
+
+class NotificationEmail(models.Model):
+    """Durable email outbox entry for an in-app system notification."""
+    STATUS_CHOICES = [
+        ('PENDING', 'Pending'),
+        ('SENT', 'Sent'),
+        ('FAILED', 'Failed'),
+    ]
+
+    notification = models.ForeignKey(
+        AdminNotification, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='email_deliveries',
+    )
+    recipient = models.EmailField()
+    subject = models.CharField(max_length=255)
+    message = models.TextField()
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='PENDING', db_index=True)
+    attempts = models.PositiveSmallIntegerField(default=0)
+    next_attempt_at = models.DateTimeField(default=timezone.now, db_index=True)
+    last_error = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    sent_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['created_at']
+
+    def __str__(self):
+        return f"{self.recipient} ({self.status})"
+
+
+class StockInReport(models.Model):
+    """Durable queue item for emailing stock-in details and an inventory workbook."""
+    STATUS_CHOICES = [
+        ('PENDING', 'Pending'),
+        ('SENT', 'Sent'),
+        ('FAILED', 'Failed'),
+    ]
+
+    tenant_owner = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True,
+                                     related_name='stock_in_reports')
+    actor = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True,
+                              related_name='stock_in_reports_created')
+    recipient = models.EmailField(blank=True)
+    include_inventory_snapshot = models.BooleanField(default=False)
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='PENDING', db_index=True)
+    attempts = models.PositiveSmallIntegerField(default=0)
+    next_attempt_at = models.DateTimeField(default=timezone.now, db_index=True)
+    last_error = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    sent_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['created_at']
+
+    def __str__(self):
+        return f"Stock-in report #{self.pk} ({self.status})"
+
+
+class StockMovement(models.Model):
+    """Historical record of stock added, with values captured at that time."""
+    report = models.ForeignKey(StockInReport, on_delete=models.CASCADE, related_name='movements')
+    product = models.ForeignKey(Product, on_delete=models.SET_NULL, null=True, blank=True,
+                                related_name='stock_movements')
+    product_name = models.CharField(max_length=200)
+    sku = models.CharField(max_length=50)
+    category_name = models.CharField(max_length=200, blank=True)
+    shop_name = models.CharField(max_length=150, blank=True)
+    batch_number = models.CharField(max_length=100, blank=True)
+    quantity_before = models.PositiveIntegerField()
+    quantity_added = models.PositiveIntegerField()
+    quantity_after = models.PositiveIntegerField()
+    unit_cost = models.DecimalField(max_digits=10, decimal_places=2)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['created_at', 'product_name']
+
+    def __str__(self):
+        return f"{self.product_name}: +{self.quantity_added}"
+
+
+class ActivityLog(models.Model):
+    """Compact, tenant-scoped record of important business actions."""
+    tenant_owner = models.ForeignKey(User, on_delete=models.CASCADE, related_name='business_activity_logs')
+    actor = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='business_activity_actions')
+    action = models.CharField(max_length=60, db_index=True)
+    details = models.CharField(max_length=500, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [models.Index(fields=['tenant_owner', '-created_at'], name='rms_act_tenant_time_idx')]
+
+    def __str__(self):
+        return f"{self.action}: {self.details[:80]}"
+
+
+class AccountAppeal(models.Model):
+    STATUS_CHOICES = [
+        ('PENDING', 'Pending review'),
+        ('REVIEWED', 'Reviewed'),
+    ]
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='account_appeals')
+    reason = models.TextField(max_length=2000)
+    status = models.CharField(max_length=12, choices=STATUS_CHOICES, default='PENDING', db_index=True)
+    admin_response = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['status', '-created_at']
+
+    def __str__(self):
+        return f"Account appeal from {self.user.username} ({self.status})"
 
 class SubscriptionPayment(models.Model):
     PAYMENT_METHODS = [

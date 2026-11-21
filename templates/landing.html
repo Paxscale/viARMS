@@ -1,11 +1,18 @@
 {% load static %}
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>viARMS - Smart Retail Management Software</title>
-    <link rel="stylesheet" href="{% static 'css/styles.css' %}">
+    <link rel="stylesheet" href="{% static 'css/styles.css' %}?v=11">
+    <script>
+        (function () {
+            var saved = localStorage.getItem('viarms-theme');
+            var themes = ['light', 'glass', 'ocean', 'forest', 'crimson', 'solar'];
+            document.documentElement.setAttribute('data-theme', themes.includes(saved) ? saved : 'light');
+        })();
+    </script>
     <script src="https://unpkg.com/lucide@latest"></script>
     <style>
         .hero-section {
@@ -65,14 +72,14 @@
         }
         .pricing-section {
             padding: 4rem 2rem;
-            max-width: 1000px;
+            max-width: 1250px;
             margin: 0 auto;
             text-align: center;
         }
         .pricing-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-            gap: 2rem;
+            grid-template-columns: repeat(auto-fit, minmax(245px, 1fr));
+            gap: 1.25rem;
             margin-top: 3rem;
             text-align: left;
         }
@@ -241,7 +248,7 @@
         </div>
         <div style="display: flex; gap: 1rem;">
             <a href="{% url 'login' %}" class="btn" style="background: transparent; border: 1px solid var(--border-color);">Login</a>
-            <a href="{% url 'register' %}" class="btn btn-primary">Sign Up Free</a>
+            <a href="{% url 'register' %}?plan=FREE" class="btn btn-primary">Start 14-Day Trial</a>
         </div>
     </nav>
 
@@ -250,8 +257,8 @@
         <p class="hero-subtitle">viARMS is the all-in-one POS, inventory, and staff management platform tailored for Pharmacies, Supermarkets, Bookshops, and Gadget stores across Africa.</p>
 
         <div class="hero-actions">
-            <a href="{% url 'register' %}" class="btn btn-primary" style="padding: 1rem 2rem; font-size: 1.1rem; border-radius: 50px;">
-                Start for Free
+            <a href="{% url 'register' %}?plan=FREE" class="btn btn-primary" style="padding: 1rem 2rem; font-size: 1.1rem; border-radius: 50px;">
+                Start 14-Day Free Trial
             </a>
             <a href="#features" class="btn" style="padding: 1rem 2rem; font-size: 1.1rem; border-radius: 50px; background: rgba(255,255,255,0.05); border: 1px solid var(--border-color);">
                 See Features
@@ -283,56 +290,64 @@
     </div>
 
     <div class="pricing-section">
-        <h2 style="font-size: 2.5rem; margin-bottom: 1rem;">Simple, Transparent Pricing</h2>
-        <p style="color: var(--text-secondary); font-size: 1.1rem;">Start for free, upgrade when your business grows.</p>
+        <h2 style="font-size: 2.5rem; margin-bottom: 1rem;">Plans for Every Stage</h2>
+        <p style="color: var(--text-secondary); font-size: 1.1rem;">Start with a 14-day Free trial, then choose the plan that fits your business.</p>
 
         <div class="pricing-grid">
             <div class="pricing-card">
-                <h3 style="font-size: 1.5rem; margin-bottom: 0.5rem;">Free Plan</h3>
-                <div style="font-size: 2.5rem; font-weight: 700; margin-bottom: 2rem;">₦0<span style="font-size: 1rem; color: var(--text-muted); font-weight: 400;">/forever</span></div>
-
+                <h3 style="font-size: 1.5rem; margin-bottom: 0.5rem;">Free Trial</h3>
+                <div style="font-size: 2.1rem; font-weight: 700; margin-bottom: 1.5rem;">&#8358;0<span style="font-size: 1rem; color: var(--text-muted); font-weight: 400;"> / 14 days</span></div>
                 <ul style="list-style: none; display: flex; flex-direction: column; gap: 1rem; color: var(--text-secondary);">
-                    <li style="display: flex; gap: 0.5rem;"><i data-lucide="check" style="color: var(--color-success);"></i> 1 Shop Location</li>
-                    <li style="display: flex; gap: 0.5rem;"><i data-lucide="check" style="color: var(--color-success);"></i> 1 Manager Account</li>
-                    <li style="display: flex; gap: 0.5rem;"><i data-lucide="check" style="color: var(--color-success);"></i> 1 Cashier Account</li>
-                    <li style="display: flex; gap: 0.5rem;"><i data-lucide="check" style="color: var(--color-success);"></i> Core POS Features</li>
+                    <li style="display: flex; gap: 0.5rem;"><i data-lucide="check" style="color: var(--color-success);"></i> Premium features for 14 days</li>
+                    <li style="display: flex; gap: 0.5rem;"><i data-lucide="check" style="color: var(--color-success);"></i> 1 shop branch</li>
+                    <li style="display: flex; gap: 0.5rem;"><i data-lucide="check" style="color: var(--color-success);"></i> 1 manager and 1 cashier</li>
+                    <li style="display: flex; gap: 0.5rem;"><i data-lucide="check" style="color: var(--color-success);"></i> Upgrade any time</li>
                 </ul>
+                <a href="{% url 'register' %}?plan=FREE" class="btn" style="width: 100%; margin-top: 2rem; padding: 1rem; text-align: center; display: block; border: 1px solid var(--border-color); border-radius: 8px;">Start Free Trial</a>
+            </div>
 
-                <a href="{% url 'register' %}?plan=FREE" class="btn" style="width: 100%; margin-top: 2rem; padding: 1rem; text-align: center; display: block; border: 1px solid var(--border-color); border-radius: 8px;">Get Started Free</a>
+            <div class="pricing-card">
+                <h3 style="font-size: 1.5rem; margin-bottom: 0.5rem;">Standard</h3>
+                <div style="font-size: 2.1rem; font-weight: 700; margin-bottom: 0.4rem;">&#8358;80,000<span style="font-size: 1rem; color: var(--text-muted); font-weight: 400;"> / year</span></div>
+                <p style="font-size: 0.8rem; color: var(--text-muted); margin: 0 0 1.25rem;">Annual billing only</p>
+                <ul style="list-style: none; display: flex; flex-direction: column; gap: 1rem; color: var(--text-secondary);">
+                    <li style="display: flex; gap: 0.5rem;"><i data-lucide="check" style="color: var(--color-success);"></i> 1 shop branch</li>
+                    <li style="display: flex; gap: 0.5rem;"><i data-lucide="check" style="color: var(--color-success);"></i> 1 manager and up to 3 cashiers</li>
+                    <li style="display: flex; gap: 0.5rem;"><i data-lucide="check" style="color: var(--color-success);"></i> POS, receipts, batch and expiry tracking</li>
+                    <li style="display: flex; gap: 0.5rem;"><i data-lucide="minus" style="color: var(--text-muted);"></i> Text-only product catalog</li>
+                </ul>
+                <a href="{% url 'subscription_upgrade' %}?plan=STANDARD" class="btn" style="width: 100%; margin-top: 2rem; padding: 1rem; text-align: center; display: block; border: 1px solid var(--border-color); border-radius: 8px;">Choose Standard</a>
             </div>
 
             <div class="pricing-card premium">
                 <div class="premium-badge">Most Popular</div>
                 <h3 style="font-size: 1.5rem; margin-bottom: 0.5rem; color: var(--color-primary);">Premium</h3>
-                <div style="font-size: 2.5rem; font-weight: 700; margin-bottom: 2rem;">Contact<span style="font-size: 1rem; color: var(--text-muted); font-weight: 400;">/sales</span></div>
-
+                <div style="font-size: 2.1rem; font-weight: 700; margin-bottom: 0.4rem;">&#8358;120,000<span style="font-size: 1rem; color: var(--text-muted); font-weight: 400;"> / year</span></div>
+                <p style="font-size: 0.8rem; color: var(--text-muted); margin: 0 0 1.25rem;">or &#8358;35,000 quarterly</p>
                 <ul style="list-style: none; display: flex; flex-direction: column; gap: 1rem; color: var(--text-secondary);">
-                    <li style="display: flex; gap: 0.5rem;"><i data-lucide="check" style="color: var(--color-primary);"></i> Unlimited Shops</li>
-                    <li style="display: flex; gap: 0.5rem;"><i data-lucide="check" style="color: var(--color-primary);"></i> Unlimited Managers</li>
-                    <li style="display: flex; gap: 0.5rem;"><i data-lucide="check" style="color: var(--color-primary);"></i> Unlimited Cashiers</li>
-                    <li style="display: flex; gap: 0.5rem;"><i data-lucide="check" style="color: var(--color-primary);"></i> Priority Support</li>
+                    <li style="display: flex; gap: 0.5rem;"><i data-lucide="check" style="color: var(--color-primary);"></i> Up to 5 shop branches</li>
+                    <li style="display: flex; gap: 0.5rem;"><i data-lucide="check" style="color: var(--color-primary);"></i> Up to 5 managers and unlimited cashiers</li>
+                    <li style="display: flex; gap: 0.5rem;"><i data-lucide="check" style="color: var(--color-primary);"></i> Product photos, exports and branded receipts</li>
+                    <li style="display: flex; gap: 0.5rem;"><i data-lucide="check" style="color: var(--color-primary);"></i> Batch and expiry management</li>
                 </ul>
-
-                <a href="{% url 'register' %}?plan=PREMIUM" class="btn btn-primary" style="width: 100%; margin-top: 2rem; padding: 1rem; text-align: center; display: block; border-radius: 8px;">Upgrade Now</a>
+                <a href="{% url 'subscription_upgrade' %}?plan=PREMIUM" class="btn btn-primary" style="width: 100%; margin-top: 2rem; padding: 1rem; text-align: center; display: block; border-radius: 8px;">Choose Premium</a>
             </div>
 
             <div class="pricing-card" style="border: 1px solid #fbbf24; background: linear-gradient(180deg, rgba(251,191,36,0.05) 0%, var(--bg-surface) 100%); position: relative;">
-                <div class="premium-badge" style="background: linear-gradient(135deg, #f59e0b, #d97706); top: -12px; right: 24px;">VIP Access</div>
+                <div class="premium-badge" style="background: linear-gradient(135deg, #f59e0b, #d97706); top: -12px; right: 24px;">Golden Plan</div>
                 <h3 style="font-size: 1.5rem; margin-bottom: 0.5rem; color: #fbbf24;">Golden Premium</h3>
-                <div style="font-size: 2.5rem; font-weight: 700; margin-bottom: 2rem;">Contact<span style="font-size: 1rem; color: var(--text-muted); font-weight: 400;">/sales</span></div>
-
+                <div style="font-size: 2.1rem; font-weight: 700; margin-bottom: 0.4rem;">&#8358;250,000<span style="font-size: 1rem; color: var(--text-muted); font-weight: 400;"> / year</span></div>
+                <p style="font-size: 0.8rem; color: var(--text-muted); margin: 0 0 1.25rem;">or &#8358;70,000 quarterly</p>
                 <ul style="list-style: none; display: flex; flex-direction: column; gap: 1rem; color: var(--text-secondary);">
                     <li style="display: flex; gap: 0.5rem;"><i data-lucide="check" style="color: #fbbf24;"></i> Everything in Premium</li>
-                    <li style="display: flex; gap: 0.5rem;"><i data-lucide="check" style="color: #fbbf24;"></i> Dedicated Business Advisor</li>
-                    <li style="display: flex; gap: 0.5rem;"><i data-lucide="check" style="color: #fbbf24;"></i> Monthly Business Analysis</li>
-                    <li style="display: flex; gap: 0.5rem;"><i data-lucide="check" style="color: #fbbf24;"></i> 24/7 Concierge Support</li>
+                    <li style="display: flex; gap: 0.5rem;"><i data-lucide="check" style="color: #fbbf24;"></i> Unlimited branches and staff</li>
+                    <li style="display: flex; gap: 0.5rem;"><i data-lucide="check" style="color: #fbbf24;"></i> Multi-branch stock transfers</li>
+                    <li style="display: flex; gap: 0.5rem;"><i data-lucide="check" style="color: #fbbf24;"></i> Priority support</li>
                 </ul>
-
-                <a href="{% url 'register' %}?plan=GOLDEN_PREMIUM" class="btn" style="width: 100%; margin-top: 2rem; padding: 1rem; text-align: center; display: block; border-radius: 8px; background: linear-gradient(135deg, #f59e0b, #d97706); border: none; color: white;">Get Golden Access</a>
+                <a href="{% url 'subscription_upgrade' %}?plan=GOLDEN_PREMIUM" class="btn" style="width: 100%; margin-top: 2rem; padding: 1rem; text-align: center; display: block; border-radius: 8px; background: linear-gradient(135deg, #f59e0b, #d97706); border: none; color: white;">Choose Golden Premium</a>
             </div>
         </div>
     </div>
-
     <!-- Copyright Footer -->
     <footer style="text-align: center; padding: 2.5rem 1rem 1.5rem; font-size: 0.78rem; color: var(--text-muted); border-top: 1px solid var(--border-color); margin-top: 3rem; line-height: 1.8;">
         &copy; viARMS &nbsp;·&nbsp; <a href="{% url 'terms_and_agreement' %}" style="color: var(--text-muted); text-decoration: underline;">Terms &amp; Agreement</a> &nbsp;·&nbsp; Powered by <strong style="color: var(--color-primary);">viARMS</strong> | Scales Technologies
