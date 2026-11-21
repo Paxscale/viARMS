@@ -2584,6 +2584,9 @@ def settings_view(request):
 def staff_management_view(request):
     if request.user.is_superuser:
         return redirect('admin_panel')
+
+    if request.method == 'POST':
+        action = request.POST.get('action')
     user_profile = request.user.profile
     is_user_admin = is_admin(request.user)
     user_shop = user_profile.shop
@@ -2608,6 +2611,15 @@ def staff_management_view(request):
             shops = Shop.objects.filter(id=user_shop.id) if user_shop else Shop.objects.none()
         # Manager can only add Cashier
         roles_choices = [('CASHIER', 'Cashier')]
+
+    context = {
+        'staff_profiles': staff_profiles,
+        'shops': shops,
+        'roles_choices': roles_choices,
+        'is_admin': is_user_admin,
+        'is_manager': is_manager(request.user),
+    }
+    if request.method == 'POST':
 
     # Create/Edit/Delete Cashier/Manager accounts
         if action == 'add_staff':
@@ -2749,13 +2761,6 @@ def staff_management_view(request):
 
         return redirect('staff_management')
 
-    context = {
-        'staff_profiles': staff_profiles,
-        'shops': shops,
-        'roles_choices': roles_choices,
-        'is_admin': is_user_admin,
-        'is_manager': is_manager(request.user),
-    }
     return render(request, 'staff.html', context)
 
 @login_required

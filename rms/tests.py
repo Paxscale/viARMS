@@ -1271,3 +1271,37 @@ class RMSModelsAndAPITests(TestCase):
         self.assertFalse(profile.is_suspended)
         self.assertFalse(profile.is_account_suspended)
         self.assertFalse(profile.allows_product_images)
+
+    def test_staff_page_loads_for_admin_and_manager_and_manager_adds_scoped_cashier(self):
+        owner, owner_profile, shop = self.create_tenant('staff_view_owner')
+        manager = User.objects.create_user('staff_view_manager', password='manager123')
+        manager_profile = manager.profile
+        manager_profile.role = 'MANAGER'
+        manager_profile.tenant_owner = owner
+        manager_profile.shop = shop
+        manager_profile.is_approved = True
+        manager_profile.save()
+        other_shop = Shop.objects.create(name='Other Staff Shop', tenant_owner=owner)
+
+        admin_client = Client()
+        self.assertTrue(admin_client.login(username='staff_view_owner', password='tenant123'))
+        self.assertEqual(admin_client.get(reverse('staff_management')).status_code, 200)
+
+        manager_client = Client()
+        self.assertTrue(manager_client.login(username='staff_view_manager', password='manager123'))
+        self.assertEqual(manager_client.get(reverse('staff_management')).status_code, 200)
+
+        response = manager_client.post(reverse('staff_management'), {
+            'action': 'add_staff',
+            'username': 'staff_view_cashier',
+            'email': 'cashier@gmail.com',
+            'password': 'cashier123',
+            'role': 'MANAGER',
+            'shop_id': other_shop.id,
+        })
+        self.assertEqual(response.status_code, 302)
+
+        cashier = User.objects.get(username='staff_view_cashier')
+        self.assertEqual(cashier.profile.role, 'CASHIER')
+        self.assertEqual(cashier.profile.shop, shop)
+        self.assertEqual(cashier.profile.tenant_owner, owner)
