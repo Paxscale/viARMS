@@ -17,4 +17,12 @@ class TenantAccountStatusMiddleware:
                 messages.error(request, "This business account has been suspended. Contact support for assistance.")
                 return redirect('login')
 
+            # Process trial and suspension lifecycle (14-day auto-suspend, 30-day auto-delete)
+            from .views import check_and_process_tenant_lifecycle
+            deleted = check_and_process_tenant_lifecycle(owner)
+            if deleted:
+                logout(request)
+                messages.error(request, "This store account has been permanently deleted after 30 days of trial suspension without redemption.")
+                return redirect('login')
+
         return self.get_response(request)

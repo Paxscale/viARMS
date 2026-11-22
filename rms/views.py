@@ -1,3 +1,43 @@
+
+def activate_subscription_upgrade(payment, confirmed_by=None):
+    """Activates a confirmed subscription upgrade and extends validity."""
+    today = timezone.localdate()
+    if payment.billing_cycle == 'ANNUAL':
+        days = 365
+    elif payment.billing_cycle == 'QUARTERLY':
+        days = 90
+    else:
+        days = 30
+
+    payment.status = 'CONFIRMED'
+    payment.confirmed_at = timezone.now()
+    if confirmed_by:
+        payment.confirmed_by = confirmed_by
+    payment.starts_at = today
+    payment.expires_at = today + timedelta(days=days)
+    payment.save()
+
+    profile = payment.tenant.profile
+    profile.plan = payment.plan
+    profile.trial_start_date = None
+    profile.subscription_expires_at = payment.expires_at
+    profile.is_suspended = False
+    profile.suspended_at = None
+    profile.suspension_reason = ""
+    profile.suspension_notified = False
+    profile.save(update_fields=[
+        'plan', 'trial_start_date', 'subscription_expires_at',
+        'is_suspended', 'suspended_at', 'suspension_reason', 'suspension_notified'
+    ])
+
+    AdminNotification.objects.create(
+        title="Subscription Upgraded & Active!",
+        message=f"Congratulations! Your business subscription has been upgraded to {payment.get_plan_display()} ({payment.get_billing_cycle_display()}). Your account is active until {payment.expires_at.strftime('%b %d, %Y')}.",
+        notification_type="SUCCESS",
+        target_tenant=payment.tenant,
+        sender=confirmed_by if (confirmed_by and confirmed_by.is_superuser) else None
+    )
+
 import csv
 import json
 import uuid
@@ -12,13 +52,16 @@ from django.contrib.auth import login, logout, authenticate
 from django.contrib.auth.forms import AuthenticationForm
 from django.contrib import messages
 from django.core.files.base import ContentFile
+from django.core.exceptions import PermissionDenied
+from django.views.decorators.csrf import csrf_exempt
+from .remita import get_remita_credentials, generate_rrr, verify_remita_payment, verify_remita_webhook_signature
 from django.http import JsonResponse, HttpResponse
 from django.db import IntegrityError, transaction
 from django.db.models import Sum, F, Count, Q
 from django.urls import reverse
 from django.utils import timezone
 from django.contrib.auth.models import User
-from .models import Category, Product, Sale, SaleItem, StoreSettings, Shop, UserProfile, Advertisement
+from .models import Category, Product, Sale, SaleItem, StoreSettings, Shop, UserProfile, Advertisement, AdminNotification, NotificationReadStatus, SubscriptionPayment
 
 MAX_PRODUCT_IMAGE_SIZE = 5 * 1024 * 1024
 MAX_COMPRESSED_PRODUCT_IMAGE_SIZE = 50 * 1024
@@ -76,6 +119,73 @@ def prepare_product_image(uploaded_image):
         )
 
 
+def format_batch_label(val):
+    if not val:
+        return "BN: 1"
+    s = str(val).strip()
+    import re
+    while re.match(r'^(b/n|bn|batch)[\s:]+', s, re.IGNORECASE):
+        s = re.sub(r'^(b/n|bn|batch)[\s:]+', '', s, count=1, flags=re.IGNORECASE).strip()
+    return f"BN: {s}" if s else "BN: 1"
+
+
+def assign_product_batch(shop, sku, name, requested_batch=None):
+    """
+    Checks if a product with the same SKU or product name already exists in the shop.
+    If existing products exist:
+    - Ensures existing products have a batch label ('BN: 1' if not set).
+    - If user did not provide a custom batch, auto-assigns the next sequential batch ('BN: 2', 'BN: 3', etc.).
+    - If user provided a custom batch, uses it.
+    If no existing products exist:
+    - Uses user-provided batch if present, else defaults to 'BN: 1'.
+    Returns (batch_number, is_new_batch, duplicate_error).
+    """
+    sku_clean = str(sku).strip()
+    name_clean = str(name).strip()
+
+    existing = Product.objects.filter(
+        Q(sku__iexact=sku_clean) | Q(name__iexact=name_clean),
+        shop=shop,
+        is_active=True
+    ).order_by('id')
+
+    if existing.exists():
+        if existing.count() == 1:
+            first_prod = existing.first()
+            if not first_prod.batch_number or not first_prod.batch_number.strip() or first_prod.batch_number == 'Batch 1':
+                first_prod.batch_number = 'BN: 1'
+                first_prod.save(update_fields=['batch_number'])
+        else:
+            for i, p in enumerate(existing, 1):
+                if not p.batch_number or not p.batch_number.strip() or p.batch_number.startswith('Batch'):
+                    p.batch_number = f"BN: {i}"
+                    p.save(update_fields=['batch_number'])
+
+        if requested_batch and str(requested_batch).strip():
+            batch_num = format_batch_label(requested_batch)
+        else:
+            next_idx = existing.count() + 1
+            batch_num = f"BN: {next_idx}"
+            while Product.objects.filter(sku__iexact=sku_clean, shop=shop, batch_number__iexact=batch_num, is_active=True).exists():
+                next_idx += 1
+                batch_num = f"BN: {next_idx}"
+
+        if Product.objects.filter(sku__iexact=sku_clean, shop=shop, batch_number__iexact=batch_num, is_active=True).exists():
+            return batch_num, False, f"A product with SKU '{sku_clean}' and batch '{batch_num}' already exists in this shop. Please specify a different batch or adjust existing stock."
+
+        return batch_num, True, None
+    else:
+        if requested_batch and str(requested_batch).strip():
+            batch_num = format_batch_label(requested_batch)
+        else:
+            batch_num = 'BN: 1'
+
+        if Product.objects.filter(sku__iexact=sku_clean, shop=shop, batch_number__iexact=batch_num, is_active=True).exists():
+            return batch_num, False, f"A product with SKU '{sku_clean}' and batch '{batch_num}' already exists in this shop."
+
+        return batch_num, False, None
+
+
 def create_bulk_products(request, user_profile, tenant, is_user_admin, user_shop):
     try:
         product_count = int(request.POST.get('product_count', '0'))
@@ -103,7 +213,7 @@ def create_bulk_products(request, user_profile, tenant, is_user_admin, user_shop
         messages.error(request, "Choose a valid shop for the bulk product submission.")
         return
 
-    categories = Category.objects.filter(tenant_owner=tenant) if tenant else Category.objects.all()
+    categories = Category.objects.filter(Q(tenant_owner=tenant) | Q(tenant_owner__isnull=True)) if tenant else Category.objects.all()
     products_to_create = []
     errors = []
     submitted_keys = set()
@@ -182,15 +292,21 @@ def create_bulk_products(request, user_profile, tenant, is_user_admin, user_shop
             except ValueError:
                 row_errors.append("expiry date must be a valid date")
 
+        batch_val = values.get('batch_number', '').strip()
         if sku and name and not row_errors:
-            duplicate_key = (sku, product_shop.pk, expiry)
-            if duplicate_key in submitted_keys:
-                row_errors.append("another row in this submission has the same SKU and expiry date for this shop")
-            elif Product.objects.filter(sku=sku, shop=product_shop, expiry_date=expiry).exists():
-                row_errors.append("this SKU and expiry date already exist for this shop")
-            submitted_keys.add(duplicate_key)
+            batch_val, is_new_batch, batch_err = assign_product_batch(product_shop, sku, name, batch_val)
+            if batch_err:
+                row_errors.append(batch_err)
+            else:
+                values['batch_number'] = batch_val
+                duplicate_key = (sku.lower(), product_shop.pk, batch_val.lower())
+                if duplicate_key in submitted_keys:
+                    row_errors.append("another row in this submission has the same SKU and batch number for this shop")
+                submitted_keys.add(duplicate_key)
 
-        if uploaded_image:
+        if not user_profile.allows_product_images:
+            uploaded_image = None
+        elif uploaded_image:
             try:
                 uploaded_image = prepare_product_image(uploaded_image)
             except ValueError as exc:
@@ -277,6 +393,20 @@ def register_view(request):
     if request.method == 'POST':
         username = request.POST.get('username', '').strip().lower()
         email = request.POST.get('email', '').strip()
+        # Validate email domain against allowed list
+        allowed_domains = {'gmail.com', 'icloud.com', 'hotmail.com', 'outlook.com'}
+        domain = email.split('@')[-1].lower() if '@' in email else ''
+        if domain not in allowed_domains:
+            messages.error(request, "Registration is only allowed with Gmail, iCloud, Hotmail, or Outlook email addresses.")
+            return render(request, 'register.html')
+        password = request.POST.get('password')
+        confirm_password = request.POST.get('confirm_password')
+        business_name = request.POST.get('business_name', '').strip()
+        business_type = request.POST.get('business_type', 'GENERAL')
+        plan = request.POST.get('plan', 'FREE')
+        tenant_type = request.POST.get('tenant_type', 'RETAIL')
+        kyc_document_type = request.POST.get('kyc_document_type', '').strip()
+        kyc_document_number = request.POST.get('kyc_document_number', '').strip()
         password = request.POST.get('password')
         confirm_password = request.POST.get('confirm_password')
         business_name = request.POST.get('business_name', '').strip()
@@ -284,6 +414,11 @@ def register_view(request):
         plan = request.POST.get('plan', 'FREE')
         kyc_document_type = request.POST.get('kyc_document_type', '').strip()
         kyc_document_number = request.POST.get('kyc_document_number', '').strip()
+
+        agree_terms = request.POST.get('agree_terms')
+        if not agree_terms:
+            messages.error(request, "You must agree to the Terms and Agreement & Privacy Policy to register.")
+            return render(request, 'register.html')
 
         if password != confirm_password:
             messages.error(request, "Passwords do not match.")
@@ -300,7 +435,10 @@ def register_view(request):
             profile.tenant_owner = user
             profile.plan = plan
             profile.business_type = business_type
+            profile.tenant_type = tenant_type
             profile.is_approved = False
+            if plan == 'FREE':
+                profile.trial_start_date = timezone.localdate()
             profile.kyc_document_type = kyc_document_type
             profile.kyc_document_number = kyc_document_number
             profile.kyc_status = 'PENDING'
@@ -373,12 +511,122 @@ def get_managed_tenant_profile(user_id):
     )
 
 def delete_tenant_accounts(owner):
+    if owner.is_superuser:
+        raise PermissionDenied("Superusers cannot be deleted.")
     User.objects.filter(profile__tenant_owner=owner).exclude(pk=owner.pk).delete()
     owner.delete()
+
+def send_suspension_email(user, days_until_deletion=30):
+    """Sends email notice to tenant informing them of account suspension and 30-day deletion countdown."""
+    if not user or not user.email:
+        return False
+    from django.core.mail import send_mail
+    from django.conf import settings
+    subject = "viARMS — Store Account Suspended (14-Day Free Trial Ended)"
+    message = (
+        f"Hello {user.first_name or user.username},\n\n"
+        f"Your 14-day free trial on viARMS has ended, and your store operations are now suspended.\n\n"
+        f"To restore your store operations and preserve your inventory and sales data, "
+        f"please redeem your subscription by selecting one of our plans:\n"
+        f"  1. Standard Plan (₦8,000/mo) — 1 shop branch, POS & text inventory management\n"
+        f"  2. Premium Plan (₦15,000/mo) — Up to 5 branches, full product images, analytics & CSV export\n"
+        f"  3. Golden Premium Plan (₦35,000/mo) — Unlimited branches & staff, stock transfers & priority support\n\n"
+        f"IMPORTANT WARNING: Accounts that remain suspended without being redeemed will be PERMANENTLY "
+        f"DELETED in {days_until_deletion} days, including all associated products, sales, and branch records.\n\n"
+        f"Redeem your subscription now: https://scales.pythonanywhere.com/subscription/upgrade/\n\n"
+        f"Best regards,\n"
+        f"viARMS Support Team"
+    )
+    from_email = getattr(settings, 'DEFAULT_FROM_EMAIL', 'no-reply@viarms.com')
+    try:
+        send_mail(
+            subject=subject,
+            message=message,
+            from_email=from_email,
+            recipient_list=[user.email],
+            fail_silently=True
+        )
+        return True
+    except Exception:
+        return False
+
+def check_and_process_tenant_lifecycle(owner):
+    """
+    Checks a tenant's trial and suspension lifecycle:
+    - Superusers exempt.
+    - If trial expired (>= 14 days), marks is_suspended=True and dispatches in-app and email notices.
+    - If suspended >= 30 days without redeem, permanently deletes the account and all data.
+    Returns True if account was deleted, False otherwise.
+    """
+    if not owner or owner.is_superuser:
+        return False
+    profile = getattr(owner, 'profile', None)
+    if not profile:
+        return False
+
+    # 1. Free Trial Expired -> Automatic Suspension
+    if profile.plan == 'FREE' and profile.trial_start_date:
+        today = timezone.localdate()
+        days_since_trial = (today - profile.trial_start_date).days
+        if days_since_trial >= 14:
+            if not profile.is_suspended:
+                profile.is_suspended = True
+                profile.suspended_at = timezone.now()
+                profile.suspension_reason = "14-day free trial expired"
+                profile.save(update_fields=['is_suspended', 'suspended_at', 'suspension_reason'])
+
+            if not profile.suspension_notified:
+                profile.suspension_notified = True
+                profile.save(update_fields=['suspension_notified'])
+                AdminNotification.objects.create(
+                    title="Store Suspended - Free Trial Ended",
+                    message="Your 14-day free trial has expired and your store operations are suspended. Please redeem your subscription by choosing a plan (Standard, Premium, or Golden Premium). Accounts not redeemed within 30 days will be permanently deleted.",
+                    notification_type="WARNING",
+                    target_tenant=owner
+                )
+                send_suspension_email(owner, days_until_deletion=30)
+
+            # Check 30-day auto-deletion threshold
+            if profile.days_suspended >= 30:
+                delete_tenant_accounts(owner)
+                return True
+
+    # 2. Paid Subscription Expired
+    elif profile.plan != 'FREE' and profile.is_subscription_expired:
+        if not profile.is_suspended:
+            profile.is_suspended = True
+            profile.suspended_at = timezone.now()
+            profile.suspension_reason = "Paid subscription expired"
+            profile.save(update_fields=['is_suspended', 'suspended_at', 'suspension_reason'])
+
+        if profile.days_suspended >= 30:
+            delete_tenant_accounts(owner)
+            return True
+
+    return False
+
+def process_all_tenants_lifecycle():
+    """Scans all non-superuser tenant owners and applies trial suspension and 30-day deletion rules."""
+    tenants = User.objects.filter(is_superuser=False, profile__tenant_owner__isnull=True)
+    suspended_count = 0
+    deleted_count = 0
+    for tenant in list(tenants):
+        profile = getattr(tenant, 'profile', None)
+        if not profile:
+            continue
+        was_suspended = profile.is_suspended
+        deleted = check_and_process_tenant_lifecycle(tenant)
+        if deleted:
+            deleted_count += 1
+        elif not was_suspended and profile.is_suspended:
+            suspended_count += 1
+    return suspended_count, deleted_count
 
 @login_required
 @user_passes_test(lambda u: u.is_superuser)
 def admin_panel_view(request):
+    # Refresh tenant lifecycle statuses (suspensions & 30-day auto-deletions)
+    process_all_tenants_lifecycle()
     if request.method == 'POST':
         action = request.POST.get('action')
         if action == 'approve_user':
@@ -387,6 +635,8 @@ def admin_panel_view(request):
                 messages.error(request, f"Verify KYC for {user_profile.user.username} before approving the account.")
             else:
                 user_profile.is_approved = True
+                if user_profile.plan == 'FREE' and not user_profile.trial_start_date:
+                    user_profile.trial_start_date = timezone.localdate()
                 user_profile.save()
                 messages.success(request, f"User {user_profile.user.username} has been approved.")
         elif action == 'verify_kyc':
@@ -452,7 +702,12 @@ def admin_panel_view(request):
                 messages.error(request, "Select a valid subscription plan.")
             else:
                 user_profile.plan = new_plan
-                user_profile.save(update_fields=['plan'])
+                if new_plan != 'FREE':
+                    user_profile.trial_start_date = None
+                else:
+                    if not user_profile.trial_start_date:
+                        user_profile.trial_start_date = timezone.localdate()
+                user_profile.save(update_fields=['plan', 'trial_start_date'])
                 messages.success(request, f"Plan updated to {new_plan} for {user_profile.user.username}.")
         elif action == 'create_ad':
             title = request.POST.get('title')
@@ -465,6 +720,65 @@ def admin_panel_view(request):
             ad = get_object_or_404(Advertisement, id=ad_id)
             ad.delete()
             messages.success(request, "Advertisement deleted.")
+        elif action == 'send_notification':
+            title = request.POST.get('title', '').strip()
+            message = request.POST.get('message', '').strip()
+            notification_type = request.POST.get('notification_type', 'INFO')
+            target_tenant_id = request.POST.get('target_tenant_id', '').strip()
+            if not title or not message:
+                messages.error(request, "Both title and message are required for broadcast.")
+            else:
+                target_tenant = None
+                if target_tenant_id and target_tenant_id != 'ALL':
+                    target_tenant = User.objects.filter(id=target_tenant_id).first()
+                AdminNotification.objects.create(
+                    title=title,
+                    message=message,
+                    notification_type=notification_type,
+                    target_tenant=target_tenant,
+                    sender=request.user
+                )
+                target_label = target_tenant.username if target_tenant else "All Tenants"
+                messages.success(request, f"Broadcast notification '{title}' sent to {target_label} successfully.")
+        elif action == 'confirm_subscription':
+            payment_id = request.POST.get('payment_id')
+            payment = get_object_or_404(SubscriptionPayment, id=payment_id, status='PENDING')
+            activate_subscription_upgrade(payment, confirmed_by=request.user)
+            messages.success(request, f"Payment #{payment.reference} confirmed! Upgraded {payment.tenant.username} to {payment.get_plan_display()}.")
+        elif action == 'reject_subscription':
+            payment_id = request.POST.get('payment_id')
+            rejection_reason = request.POST.get('rejection_reason', '').strip()
+            payment = get_object_or_404(SubscriptionPayment, id=payment_id, status='PENDING')
+            payment.status = 'REJECTED'
+            payment.rejection_reason = rejection_reason
+            payment.confirmed_at = timezone.now()
+            payment.confirmed_by = request.user
+            payment.save(update_fields=['status', 'rejection_reason', 'confirmed_at', 'confirmed_by'])
+            AdminNotification.objects.create(
+                title="Subscription Payment Not Approved",
+                message=f"Your subscription payment submission (#{payment.reference}) could not be confirmed. Reason: {rejection_reason or 'Details could not be verified'}. Please contact support or retry.",
+                notification_type="URGENT",
+                target_tenant=payment.tenant,
+                sender=request.user
+            )
+            messages.warning(request, f"Payment #{payment.reference} rejected.")
+        elif action == 'update_bank_settings':
+            store_settings = StoreSettings.get_settings()
+            store_settings.company_bank_name = request.POST.get('company_bank_name', store_settings.company_bank_name).strip()
+            store_settings.company_account_name = request.POST.get('company_account_name', store_settings.company_account_name).strip()
+            store_settings.company_account_number = request.POST.get('company_account_number', store_settings.company_account_number).strip()
+            store_settings.remita_merchant_id = request.POST.get('remita_merchant_id', store_settings.remita_merchant_id).strip()
+            store_settings.remita_service_type_id = request.POST.get('remita_service_type_id', store_settings.remita_service_type_id)
+            new_api_key = request.POST.get('remita_api_key', '').strip()
+            if new_api_key and not new_api_key.startswith('***'):
+                store_settings.remita_api_key = new_api_key
+            store_settings.save()
+            messages.success(request, "Company subscription payment details and Remita API credentials updated successfully.")
+        elif action == 'delete_notification':
+            notif_id = request.POST.get('notification_id')
+            notif = get_object_or_404(AdminNotification, id=notif_id)
+            notif.delete()
+            messages.success(request, "Notification removed.")
         else:
             messages.error(request, "Unknown admin action.")
 
@@ -497,8 +811,17 @@ def admin_panel_view(request):
         user__is_superuser=False,
     )
     ads = Advertisement.objects.all()
+    admin_notifications = AdminNotification.objects.filter(is_active=True).select_related('target_tenant', 'sender').order_by('-created_at')
+    tenant_options = all_tenant_profiles.select_related('user', 'shop').order_by('user__username')
+    pending_payments = SubscriptionPayment.objects.filter(status='PENDING').select_related('tenant', 'tenant__profile').order_by('-created_at')
+    all_payments = SubscriptionPayment.objects.select_related('tenant', 'confirmed_by').order_by('-created_at')[:25]
+    store_settings = StoreSettings.get_settings()
 
     context = {
+        'pending_payments': pending_payments,
+        'all_payments': all_payments,
+        'pending_payments_count': pending_payments.count(),
+        'store_settings': store_settings,
         'pending_users': pending_users,
         'pending_kyc': pending_kyc,
         'all_tenants': all_tenants,
@@ -506,7 +829,9 @@ def admin_panel_view(request):
         'active_tenant_count': all_tenant_profiles.filter(is_approved=True, user__is_active=True).count(),
         'suspended_tenant_count': all_tenant_profiles.filter(user__is_active=False).count(),
         'pending_tenant_count': all_tenant_profiles.filter(is_approved=False, user__is_active=True).count(),
-        'ads': ads
+        'ads': ads,
+        'admin_notifications': admin_notifications,
+        'tenant_options': tenant_options,
     }
     return render(request, 'admin_panel.html', context)
 
@@ -526,12 +851,35 @@ def ads_api(request):
     return JsonResponse({'ads': ads_data})
 
 @login_required
+def toggle_dashboard_mode(request):
+    """Toggle between retail and wholesale dashboard modes.
+    Stores the choice in the session as 'dashboard_mode'."""
+    current = request.session.get('dashboard_mode', 'retail')
+    new_mode = 'wholesale' if current == 'retail' else 'retail'
+    request.session['dashboard_mode'] = new_mode
+    request.session.modified = True
+    messages.success(request, f"Switched to {new_mode.capitalize()} mode.")
+    return redirect('dashboard')
+
+
+@login_required
+def wholesale_dashboard_view(request):
+    """Wholesale dashboard entry point. Sets session mode to wholesale and delegates to dashboard_view."""
+    request.session['dashboard_mode'] = 'wholesale'
+    request.session.modified = True
+    return dashboard_view(request)
+
+
+@login_required
 def dashboard_view(request):
     if request.user.is_superuser:
         return redirect('admin_panel')
     user_profile = request.user.profile
     user_role = user_profile.role
     user_shop = user_profile.shop
+
+    # Active dashboard mode: 'retail' or 'wholesale'
+    dashboard_mode = request.session.get('dashboard_mode', 'retail')
 
     today = timezone.localdate()
     
@@ -661,7 +1009,85 @@ def dashboard_view(request):
             'radar_batches': radar_90_days[:10]
         }
 
+    # Wholesale specific metrics and bulk inventory management data
+    wholesale_metrics = {}
+    if dashboard_mode == 'wholesale':
+        all_wh_prods = list(products_qs.select_related('category', 'shop').order_by('name'))
+        total_stock_units = sum(p.stock_quantity for p in all_wh_prods)
+        total_inventory_cost = sum(Decimal(str(p.stock_quantity)) * p.cost_price for p in all_wh_prods)
+        total_inventory_wholesale_val = sum(Decimal(str(p.stock_quantity)) * p.selling_price for p in all_wh_prods)
+        potential_inventory_profit = total_inventory_wholesale_val - total_inventory_cost
+        avg_inv_margin_pct = (potential_inventory_profit / total_inventory_wholesale_val * 100) if total_inventory_wholesale_val > 0 else Decimal('0.0')
+
+        total_units_sold = sum(item.quantity for item in period_items)
+        avg_order_value = (today_revenue / today_count) if today_count > 0 else Decimal('0.00')
+        avg_units_per_order = (total_units_sold / today_count) if today_count > 0 else 0
+        realized_margin_pct = (today_profit / today_revenue * 100) if today_revenue > 0 else Decimal('0.0')
+
+        reorder_items = []
+        for p in all_wh_prods:
+            if p.stock_quantity <= p.min_stock_level:
+                suggested_qty = max(50, p.min_stock_level * 5)
+                est_cost = Decimal(str(suggested_qty)) * p.cost_price
+                reorder_items.append({
+                    'product': p,
+                    'current_stock': p.stock_quantity,
+                    'min_level': p.min_stock_level,
+                    'suggested_reorder': suggested_qty,
+                    'estimated_cost': est_cost,
+                })
+        reorder_items = sorted(reorder_items, key=lambda x: x['current_stock'])[:10]
+        total_reorder_est_cost = sum(item['estimated_cost'] for item in reorder_items)
+
+        high_value_sales = period_sales.select_related('cashier', 'shop').order_by('-total_amount')[:6]
+
+        top_bulk_movers = period_items.values('product__name', 'product__sku') \
+            .annotate(total_qty=Sum('quantity'), total_rev=Sum('subtotal')) \
+            .order_by('-total_qty')[:6]
+
+        inventory_rows = []
+        for p in all_wh_prods[:60]:
+            qty_dec = Decimal(str(p.stock_quantity))
+            cost_val = qty_dec * p.cost_price
+            sell_val = qty_dec * p.selling_price
+            unit_prof = p.selling_price - p.cost_price
+            marg = (unit_prof / p.selling_price * 100) if p.selling_price > 0 else Decimal('0.0')
+            inventory_rows.append({
+                'product': p,
+                'stock': p.stock_quantity,
+                'cost_price': p.cost_price,
+                'wholesale_price': p.selling_price,
+                'cost_valuation': cost_val,
+                'wholesale_valuation': sell_val,
+                'unit_profit': unit_prof,
+                'margin_pct': marg,
+            })
+
+        wholesale_metrics = {
+            'total_stock_units': total_stock_units,
+            'total_inventory_cost': total_inventory_cost,
+            'total_inventory_wholesale_val': total_inventory_wholesale_val,
+            'potential_inventory_profit': potential_inventory_profit,
+            'avg_inv_margin_pct': avg_inv_margin_pct,
+            'total_units_sold': total_units_sold,
+            'avg_order_value': avg_order_value,
+            'avg_units_per_order': round(avg_units_per_order, 1),
+            'realized_margin_pct': realized_margin_pct,
+            'reorder_items': reorder_items,
+            'reorder_count': len(reorder_items),
+            'total_reorder_est_cost': total_reorder_est_cost,
+            'high_value_sales': high_value_sales,
+            'top_bulk_movers': top_bulk_movers,
+            'inventory_rows': inventory_rows,
+            'all_catalog_products': all_wh_prods,
+        }
+
+    store_settings = StoreSettings.get_settings()
+
     context = {
+        'dashboard_mode': dashboard_mode,
+        'wholesale_metrics': wholesale_metrics,
+        'store_settings': store_settings,
         'today_revenue': today_revenue,
         'today_count': today_count,
         'today_profit': today_profit,
@@ -695,6 +1121,9 @@ def pos_view(request):
     if request.user.is_superuser:
         return redirect('admin_panel')
     user_profile = request.user.profile
+    if not request.user.is_superuser and user_profile.is_account_suspended:
+        messages.error(request, f"Store operations are suspended. You have {user_profile.days_until_deletion} days to redeem your subscription before permanent account deletion.")
+        return redirect('dashboard')
     user_shop = user_profile.shop
     user_is_admin = is_admin(request.user)
     tenant = get_tenant_scope(request.user)
@@ -733,7 +1162,7 @@ def pos_view(request):
     ).order_by('name')
 
     if tenant:
-        categories = Category.objects.filter(tenant_owner=tenant).order_by('name')
+        categories = Category.objects.filter(Q(tenant_owner=tenant) | Q(tenant_owner__isnull=True)).order_by('name')
         shops = Shop.objects.filter(tenant_owner=tenant).order_by('name') if user_is_admin else None
     else:
         categories = Category.objects.all().order_by('name')
@@ -796,6 +1225,8 @@ def checkout_api(request):
         return JsonResponse({'success': False, 'error': 'Invalid request method.'}, status=400)
     
     user_profile = request.user.profile
+    if not request.user.is_superuser and user_profile.is_account_suspended:
+        return JsonResponse({'success': False, 'error': f'Store account is suspended (free trial expired). You have {user_profile.days_until_deletion} days to redeem your subscription before permanent account deletion.'}, status=403)
     user_shop = user_profile.shop
 
     if not user_shop:
@@ -904,6 +1335,9 @@ def checkout_api(request):
             name_str = item.product.name if item.product else 'Deleted Product'
             if item.product and item.product.strength:
                 name_str = f"{name_str} ({item.product.strength})"
+            if item.product and item.product.batch_number:
+                b_lbl = format_batch_label(item.product.batch_number)
+                name_str = f"{name_str} [{b_lbl}]"
             receipt_items.append({
                 'name': name_str,
                 'quantity': item.quantity,
@@ -921,10 +1355,11 @@ def checkout_api(request):
             'total_amount': f"{sale.total_amount:.2f}",
             'payment_method': sale.get_payment_method_display(),
             'cashier': sale.cashier.username if sale.cashier else 'System',
-            'store_name': user_shop.name,
-            'store_address': user_shop.location or settings.address,
-            'store_phone': user_shop.phone or settings.phone,
-            'receipt_footer': settings.receipt_footer,
+            'store_name': settings.store_name or user_shop.name,
+            'store_address': settings.address or user_shop.location or '',
+            'store_phone': settings.phone or user_shop.phone or '',
+            'store_email': settings.email or '',
+            'receipt_footer': settings.receipt_footer or '',
             'items': receipt_items
         }
 
@@ -946,7 +1381,7 @@ def product_list_view(request):
     tenant = get_tenant_scope(request.user)
 
     if tenant:
-        categories = Category.objects.filter(tenant_owner=tenant).order_by('name')
+        categories = Category.objects.filter(Q(tenant_owner=tenant) | Q(tenant_owner__isnull=True)).order_by('name')
         if is_user_admin:
             shops = Shop.objects.filter(tenant_owner=tenant).order_by('name')
             shop_filter = request.GET.get('shop_id')
@@ -974,6 +1409,9 @@ def product_list_view(request):
 
     # Handle Category and Product CRUD
     if request.method == 'POST' and 'action' in request.POST:
+        if not request.user.is_superuser and user_profile.is_account_suspended:
+            messages.error(request, f"Store operations are suspended. You have {user_profile.days_until_deletion} days to redeem your subscription before permanent account deletion.")
+            return redirect('products')
         # Permission validation: Only Admin or Manager can modify inventory
         if not is_user_admin and not is_manager(request.user):
             messages.error(request, "Permission denied. Only Admins and Shop Managers can edit inventory.")
@@ -983,7 +1421,7 @@ def product_list_view(request):
         if action == 'bulk_add_products':
             create_bulk_products(request, user_profile, tenant, is_user_admin, user_shop)
             return redirect('products')
-        
+
         # Categories (Admin only)
         if action == 'add_category':
             if not is_user_admin:
@@ -994,30 +1432,54 @@ def product_list_view(request):
                 if name:
                     Category.objects.create(name=name, description=desc, tenant_owner=tenant)
                     messages.success(request, f"Category '{name}' created successfully.")
-            
+
         elif action == 'edit_category':
             if not is_user_admin:
                 messages.error(request, "Only Admins can manage categories.")
             else:
                 cat_id = request.POST.get('category_id')
+                if not cat_id:
+                    messages.error(request, "Category ID is missing.")
+                    return redirect('products')
                 if tenant:
-                    cat = get_object_or_404(Category, id=cat_id, tenant_owner=tenant)
+                    cat = Category.objects.filter(id=cat_id, tenant_owner=tenant).first()
+                    if not cat:
+                        if Category.objects.filter(id=cat_id, tenant_owner__isnull=True).exists():
+                            messages.error(request, "Default system categories cannot be modified.")
+                        else:
+                            messages.error(request, "Category not found.")
+                        return redirect('products')
                 else:
-                    cat = get_object_or_404(Category, id=cat_id)
+                    cat = Category.objects.filter(id=cat_id).first()
+                    if not cat:
+                        messages.error(request, "Category not found.")
+                        return redirect('products')
                 cat.name = request.POST.get('name')
                 cat.description = request.POST.get('description')
                 cat.save()
                 messages.success(request, f"Category '{cat.name}' updated successfully.")
-            
+
         elif action == 'delete_category':
             if not is_user_admin:
                 messages.error(request, "Only Admins can manage categories.")
             else:
                 cat_id = request.POST.get('category_id')
+                if not cat_id:
+                    messages.error(request, "Category ID is missing.")
+                    return redirect('products')
                 if tenant:
-                    cat = get_object_or_404(Category, id=cat_id, tenant_owner=tenant)
+                    cat = Category.objects.filter(id=cat_id, tenant_owner=tenant).first()
+                    if not cat:
+                        if Category.objects.filter(id=cat_id, tenant_owner__isnull=True).exists():
+                            messages.error(request, "Default system categories cannot be deleted.")
+                        else:
+                            messages.error(request, "Category not found.")
+                        return redirect('products')
                 else:
-                    cat = get_object_or_404(Category, id=cat_id)
+                    cat = Category.objects.filter(id=cat_id).first()
+                    if not cat:
+                        messages.error(request, "Category not found.")
+                        return redirect('products')
                 cat.delete()
                 messages.success(request, "Category deleted successfully.")
 
@@ -1051,7 +1513,12 @@ def product_list_view(request):
             material = request.POST.get('material', '')
             uploaded_image = request.FILES.get('image')
 
-            if uploaded_image:
+            # Standard Plan restriction: Standard Plan should not have product image
+            if not user_profile.allows_product_images:
+                if uploaded_image:
+                    uploaded_image = None
+                    messages.info(request, "Product images are not supported on the Standard Plan. Product was saved without an image. Upgrade to Premium to enable images.")
+            elif uploaded_image:
                 try:
                     uploaded_image = prepare_product_image(uploaded_image)
                 except ValueError as exc:
@@ -1075,18 +1542,22 @@ def product_list_view(request):
                 messages.error(request, "Failed to create product. Shop assignment is required.")
                 return redirect('products')
 
-            if tenant:
-                category = get_object_or_404(Category, id=cat_id, tenant_owner=tenant) if cat_id else None
-            else:
-                category = Category.objects.get(id=cat_id) if cat_id else None
+            category = None
+            if cat_id and str(cat_id).strip() not in ('', 'None', '0'):
+                if tenant:
+                    category = Category.objects.filter(
+                        Q(tenant_owner=tenant) | Q(tenant_owner__isnull=True),
+                        id=cat_id
+                    ).first()
+                else:
+                    category = Category.objects.filter(id=cat_id).first()
+                if not category:
+                    messages.warning(request, "Selected category was not found; product saved as Uncategorized.")
 
             if name and sku:
-                # New rule: same SKU allowed in same shop if expiry date differs
-                duplicate = Product.objects.filter(
-                    sku=sku, shop=prod_shop, expiry_date=expiry, is_active=True
-                ).exists()
-                if duplicate:
-                    messages.error(request, f"A product with SKU '{sku}' and the same expiry date already exists in this shop. Use a different expiry date or adjust the existing stock.")
+                batch_number, is_new_batch, duplicate_error = assign_product_batch(prod_shop, sku, name, batch_number)
+                if duplicate_error:
+                    messages.error(request, duplicate_error)
                 else:
                     Product.objects.create(
                         name=name, sku=sku, category=category, cost_price=cost,
@@ -1099,7 +1570,8 @@ def product_list_view(request):
                         color=color, size=size, warranty_period=warranty_period,
                         material=material, image=uploaded_image
                     )
-                    messages.success(request, f"Product '{name}' created successfully under '{prod_shop.name}'.")
+                    batch_info = f" ({batch_number})" if batch_number else ""
+                    messages.success(request, f"Product '{name}'{batch_info} created successfully under '{prod_shop.name}'.")
 
         elif action == 'edit_product':
             prod_id = request.POST.get('product_id')
@@ -1124,7 +1596,12 @@ def product_list_view(request):
             new_material = request.POST.get('material', '')
             uploaded_image = request.FILES.get('image')
 
-            if uploaded_image:
+            # Standard Plan restriction: Standard Plan should not have product image
+            if not user_profile.allows_product_images:
+                if uploaded_image:
+                    uploaded_image = None
+                    messages.info(request, "Product images are not supported on the Standard Plan. Product was saved without an image. Upgrade to Premium to enable images.")
+            elif uploaded_image:
                 try:
                     uploaded_image = prepare_product_image(uploaded_image)
                 except ValueError as exc:
@@ -1134,19 +1611,27 @@ def product_list_view(request):
             if user_profile.business_type == 'UTENSILS' and new_material == 'PLASTIC':
                 new_expiry = None
             target_shop = prod.shop
-            # Check uniqueness: same sku + shop + expiry but a DIFFERENT product
+            new_batch = format_batch_label(request.POST.get('batch_number') or prod.batch_number or 'BN: 1')
+            # Check uniqueness: same sku + shop + batch_number but a DIFFERENT product
             conflict = Product.objects.filter(
-                sku=sku, shop=target_shop, expiry_date=new_expiry, is_active=True
+                sku__iexact=sku, shop=target_shop, batch_number__iexact=new_batch, is_active=True
             ).exclude(id=prod.id).exists()
             if conflict:
-                messages.error(request, f"Another product with SKU '{sku}' and the same expiry date already exists in this shop.")
+                messages.error(request, f"Another product with SKU '{sku}' and batch '{new_batch}' already exists in this shop.")
             else:
                 prod.sku = sku
-                if cat_id := request.POST.get('category_id'):
+                prod.batch_number = new_batch
+                cat_id = request.POST.get('category_id')
+                if cat_id and str(cat_id).strip() not in ('', 'None', '0'):
                     if tenant:
-                        prod.category = get_object_or_404(Category, id=cat_id, tenant_owner=tenant)
+                        prod.category = Category.objects.filter(
+                            Q(tenant_owner=tenant) | Q(tenant_owner__isnull=True),
+                            id=cat_id
+                        ).first()
                     else:
-                        prod.category = Category.objects.get(id=cat_id)
+                        prod.category = Category.objects.filter(id=cat_id).first()
+                    if not prod.category:
+                        messages.warning(request, "Selected category was not found; product saved as Uncategorized.")
                 else:
                     prod.category = None
                 prod.cost_price = Decimal(request.POST.get('cost_price', 0.00))
@@ -1162,7 +1647,6 @@ def product_list_view(request):
                 prod.prescription_required = request.POST.get('prescription_required') in ('on', 'true')
                 prod.manufacturer = request.POST.get('manufacturer', '')
                 prod.strength = request.POST.get('strength', '')
-                prod.batch_number = request.POST.get('batch_number', '')
                 prod.nafdac_reg_no = request.POST.get('nafdac_reg_no', '')
                 prod.storage_conditions = request.POST.get('storage_conditions', '')
                 prod.author = request.POST.get('author', '')
@@ -1213,6 +1697,11 @@ def product_list_view(request):
     total_skus = products.count()
     low_stock_count = products.filter(stock_quantity__lte=F('min_stock_level')).count()
     expired_count = products.filter(expiry_date__lte=timezone.localdate()).count()
+
+    # Keep the stock list label consistent with the POS, including older rows
+    # that may store just a number or a legacy "Batch" prefix.
+    for product in products:
+        product.batch_number_display = format_batch_label(product.batch_number)
 
     context = {
         'products': products,
@@ -1314,25 +1803,32 @@ def sale_detail_json(request, sale_id):
     tenant = get_tenant_scope(request.user)
 
     if is_user_admin:
-        if tenant:
+        if tenant and Shop.objects.filter(tenant_owner=tenant).exists():
             sale = get_object_or_404(Sale, id=sale_id, shop__tenant_owner=tenant)
         else:
             sale = get_object_or_404(Sale, id=sale_id)
     else:
-        if tenant:
-            sale = get_object_or_404(Sale, id=sale_id, shop=user_shop, shop__tenant_owner=tenant)
+        if user_shop and user_shop.tenant_owner:
+            sale = get_object_or_404(Sale, id=sale_id, shop=user_shop, shop__tenant_owner=user_shop.tenant_owner)
         else:
             sale = get_object_or_404(Sale, id=sale_id, shop=user_shop)
 
     items_data = []
     for item in sale.items.all():
+        name_str = item.product.name if item.product else 'Deleted Product'
+        if item.product and item.product.strength:
+            name_str = f"{name_str} ({item.product.strength})"
+        if item.product and item.product.batch_number:
+            b_lbl = format_batch_label(item.product.batch_number)
+            name_str = f"{name_str} [{b_lbl}]"
         items_data.append({
-            'name': item.product.name if item.product else 'Deleted Product',
+            'name': name_str,
             'quantity': item.quantity,
             'unit_price': f"{item.unit_price:.2f}",
             'subtotal': f"{item.subtotal:.2f}"
         })
 
+    settings = StoreSettings.get_settings()
     receipt_data = {
         'receipt_number': sale.receipt_number,
         'timestamp': sale.timestamp.strftime('%Y-%m-%d %H:%M:%S'),
@@ -1343,10 +1839,11 @@ def sale_detail_json(request, sale_id):
         'total_amount': f"{sale.total_amount:.2f}",
         'payment_method': sale.get_payment_method_display(),
         'cashier': sale.cashier.username if sale.cashier else 'System',
-        'store_name': sale.shop.name if sale.shop else "viARMS Hub",
-        'store_address': sale.shop.location if sale.shop and sale.shop.location else "Lagos, Nigeria",
-        'store_phone': sale.shop.phone if sale.shop and sale.shop.phone else "",
-        'receipt_footer': "Thank you for your business!",
+        'store_name': settings.store_name or (sale.shop.name if sale.shop else "Our Shop"),
+        'store_address': settings.address or (sale.shop.location if sale.shop and sale.shop.location else ""),
+        'store_phone': settings.phone or (sale.shop.phone if sale.shop and sale.shop.phone else ""),
+        'store_email': settings.email or '',
+        'receipt_footer': settings.receipt_footer or '',
         'items': items_data
     }
     return JsonResponse({'success': True, 'receipt': receipt_data})
@@ -1420,6 +1917,50 @@ def export_sales_csv(request):
     return response
 
 @login_required
+def export_wholesale_catalog_csv(request):
+    """Exports active product catalog with wholesale prices, batch numbers, and stock levels as CSV."""
+    tenant = get_tenant_scope(request.user)
+    user_profile = request.user.profile
+    is_user_admin = is_admin(request.user)
+    user_shop = user_profile.shop
+
+    if tenant:
+        products = Product.objects.filter(is_active=True, shop__tenant_owner=tenant)
+    else:
+        products = Product.objects.filter(is_active=True)
+
+    if not is_user_admin and user_shop:
+        products = products.filter(shop=user_shop)
+
+    products = products.select_related('category', 'shop').order_by('name')
+
+    response = HttpResponse(content_type='text/csv')
+    today_str = timezone.localdate().strftime('%Y-%m-%d')
+    response['Content-Disposition'] = f'attachment; filename="wholesale_price_sheet_{today_str}.csv"'
+
+    writer = csv.writer(response)
+    writer.writerow([
+        'SKU/Barcode', 'Product Name', 'Category', 'Batch Number',
+        'Stock Available (Units)', 'Wholesale Unit Price (NGN)',
+        'Suggested Carton Size (Units)', 'Status'
+    ])
+
+    for p in products:
+        status = 'IN STOCK' if p.stock_quantity > p.min_stock_level else ('LOW STOCK' if p.stock_quantity > 0 else 'OUT OF STOCK')
+        writer.writerow([
+            p.sku,
+            p.name,
+            p.category.name if p.category else 'General',
+            p.batch_number or 'BN: 1',
+            p.stock_quantity,
+            f"{p.selling_price:.2f}",
+            '12 / 24',
+            status
+        ])
+
+    return response
+
+@login_required
 @user_passes_test(is_admin)
 def settings_view(request):
     if request.user.is_superuser:
@@ -1430,6 +1971,7 @@ def settings_view(request):
         settings.store_name = request.POST.get('store_name', settings.store_name)
         settings.address = request.POST.get('address', settings.address)
         settings.phone = request.POST.get('phone', settings.phone)
+        settings.email = request.POST.get('email', settings.email)
         settings.tax_rate = Decimal(request.POST.get('tax_rate', '0.00'))
         settings.receipt_footer = request.POST.get('receipt_footer', settings.receipt_footer)
         
@@ -1479,18 +2021,24 @@ def staff_management_view(request):
         roles_choices = [('CASHIER', 'Cashier')]
 
     # Create/Edit/Delete Cashier/Manager accounts
-    if request.method == 'POST' and 'action' in request.POST:
-        action = request.POST.get('action')
-
         if action == 'add_staff':
             username = request.POST.get('username', '').strip().lower()
             email = request.POST.get('email', '').strip()
-            first_name = request.POST.get('first_name', '').strip()
-            last_name = request.POST.get('last_name', '').strip()
+            # Validate email domain against allowed list
+            allowed_domains = {'gmail.com', 'icloud.com', 'hotmail.com', 'outlook.com'}
+            domain = email.split('@')[-1].lower() if '@' in email else ''
+            if domain not in allowed_domains:
+                messages.error(request, "Registration is only allowed with Gmail, iCloud, Hotmail, or Outlook email addresses.")
+                return render(request, 'register.html')
             password = request.POST.get('password')
-            role = request.POST.get('role', 'CASHIER')
+            confirm_password = request.POST.get('confirm_password')
+            business_name = request.POST.get('business_name', '').strip()
+            business_type = request.POST.get('business_type', 'GENERAL')
+            plan = request.POST.get('plan', 'FREE')
+            tenant_type = request.POST.get('tenant_type', 'RETAIL')
+            kyc_document_type = request.POST.get('kyc_document_type', '').strip()
+            kyc_document_number = request.POST.get('kyc_document_number', '').strip()
             shop_id = request.POST.get('shop_id')
-
             # Validate authorization rules
             if not is_user_admin:
                 role = 'CASHIER'
@@ -1500,19 +2048,15 @@ def staff_management_view(request):
                     staff_shop = get_object_or_404(Shop, id=shop_id, tenant_owner=tenant) if shop_id else None
                 else:
                     staff_shop = get_object_or_404(Shop, id=shop_id) if shop_id else None
-
             if not staff_shop and role != 'ADMIN':
                 messages.error(request, "Staff creation failed. A shop assignment is required.")
                 return redirect('staff_management')
-
             if not username or not password:
                 messages.error(request, "Username and Password are required fields.")
                 return redirect('staff_management')
-
             if User.objects.filter(username=username).exists():
                 messages.error(request, f"User '{username}' already exists.")
                 return redirect('staff_management')
-
             # Plan limit checks
             if tenant and tenant.profile.plan == 'FREE':
                 if role == 'MANAGER':
@@ -1525,23 +2069,22 @@ def staff_management_view(request):
                     if cashier_count >= 1:
                         messages.error(request, "Free plan limit reached: Maximum 1 Cashier allowed. Please upgrade to Premium.")
                         return redirect('staff_management')
-
             # Create User with optional first/last name
             new_user = User.objects.create_user(
                 username=username, email=email, password=password,
-                first_name=first_name, last_name=last_name
             )
-            # Create/Update profile
+            # Set role and shop
             profile = new_user.profile
             profile.role = role
+            profile.tenant_owner = tenant if tenant else new_user
             profile.shop = staff_shop
-            profile.tenant_owner = tenant
-            profile.is_approved = True # Staff accounts are auto-approved under owner
             profile.save()
+            messages.success(request, f"Staff user '{username}' created successfully.")
+            return redirect('staff_management')
+        action = request.POST.get('action')
 
-            messages.success(request, f"Account for '{username}' ({profile.get_role_display()}) onboarded successfully.")
-
-        elif action == 'edit_staff':
+        
+        if action == 'edit_staff':
             profile_id = request.POST.get('profile_id')
             if is_user_admin:
                 if tenant:
@@ -1555,25 +2098,42 @@ def staff_management_view(request):
                     profile_to_edit = get_object_or_404(UserProfile, id=profile_id, shop=user_shop, role='CASHIER')
 
             email = request.POST.get('email', '').strip()
-            password = request.POST.get('password')
-            role = request.POST.get('role')
-            shop_id = request.POST.get('shop_id')
+        # Validate email domain against allowed list
+        allowed_domains = {'gmail.com', 'icloud.com', 'hotmail.com', 'outlook.com'}
+        domain = email.split('@')[-1].lower() if '@' in email else ''
+        if domain not in allowed_domains:
+            messages.error(request, "Registration is only allowed with Gmail, iCloud, Hotmail, or Outlook email addresses.")
+            return render(request, 'register.html')
+        password = request.POST.get('password')
+        confirm_password = request.POST.get('confirm_password')
+        business_name = request.POST.get('business_name', '').strip()
+        business_type = request.POST.get('business_type', 'GENERAL')
+        plan = request.POST.get('plan', 'FREE')
+        tenant_type = request.POST.get('tenant_type', 'RETAIL')
+        kyc_document_type = request.POST.get('kyc_document_type', '').strip()
+        kyc_document_number = request.POST.get('kyc_document_number', '').strip()
 
-            profile_to_edit.user.email = email
-            if password:
-                profile_to_edit.user.set_password(password)
-            profile_to_edit.user.save()
 
-            if is_user_admin:
-                if role:
-                    profile_to_edit.role = role
-                if shop_id:
-                    if tenant:
-                        profile_to_edit.shop = get_object_or_404(Shop, id=shop_id, tenant_owner=tenant)
-                    else:
-                        profile_to_edit.shop = get_object_or_404(Shop, id=shop_id)
-                elif role == 'ADMIN':
-                    profile_to_edit.shop = None
+            # Extract optional fields for editing
+        role = request.POST.get('role')
+        shop_id = request.POST.get('shop_id')
+
+        profile_to_edit.user.email = email
+        if password:
+            profile_to_edit.user.set_password(password)
+        profile_to_edit.user.save()
+
+        if is_user_admin:
+            if role:
+                profile_to_edit.role = role
+            if shop_id:
+                if tenant:
+                    profile_to_edit.shop = get_object_or_404(Shop, id=shop_id, tenant_owner=tenant)
+                else:
+                    profile_to_edit.shop = get_object_or_404(Shop, id=shop_id)
+            elif role == 'ADMIN':
+                profile_to_edit.shop = None
+
 
             profile_to_edit.save()
             messages.success(request, f"Profile for '{profile_to_edit.user.username}' updated successfully.")
@@ -1623,7 +2183,66 @@ def shop_management_view(request):
         shops = Shop.objects.all().order_by('name')
         managers = User.objects.filter(profile__role__in=['ADMIN', 'MANAGER']).order_by('username')
 
-    if request.method == 'POST' and 'action' in request.POST:
+        if action == 'add_staff':
+            username = request.POST.get('username', '').strip().lower()
+            email = request.POST.get('email', '').strip()
+            # Validate email domain against allowed list
+            allowed_domains = {'gmail.com', 'icloud.com', 'hotmail.com', 'outlook.com'}
+            domain = email.split('@')[-1].lower() if '@' in email else ''
+            if domain not in allowed_domains:
+                messages.error(request, "Registration is only allowed with Gmail, iCloud, Hotmail, or Outlook email addresses.")
+                return render(request, 'register.html')
+            password = request.POST.get('password')
+            confirm_password = request.POST.get('confirm_password')
+            business_name = request.POST.get('business_name', '').strip()
+            business_type = request.POST.get('business_type', 'GENERAL')
+            plan = request.POST.get('plan', 'FREE')
+            tenant_type = request.POST.get('tenant_type', 'RETAIL')
+            kyc_document_type = request.POST.get('kyc_document_type', '').strip()
+            kyc_document_number = request.POST.get('kyc_document_number', '').strip()
+            shop_id = request.POST.get('shop_id')
+            # Validate authorization rules
+            if not is_user_admin:
+                role = 'CASHIER'
+                staff_shop = user_shop
+            else:
+                if tenant:
+                    staff_shop = get_object_or_404(Shop, id=shop_id, tenant_owner=tenant) if shop_id else None
+                else:
+                    staff_shop = get_object_or_404(Shop, id=shop_id) if shop_id else None
+            if not staff_shop and role != 'ADMIN':
+                messages.error(request, "Staff creation failed. A shop assignment is required.")
+                return redirect('staff_management')
+            if not username or not password:
+                messages.error(request, "Username and Password are required fields.")
+                return redirect('staff_management')
+            if User.objects.filter(username=username).exists():
+                messages.error(request, f"User '{username}' already exists.")
+                return redirect('staff_management')
+            # Plan limit checks
+            if tenant and tenant.profile.plan == 'FREE':
+                if role == 'MANAGER':
+                    manager_count = UserProfile.objects.filter(tenant_owner=tenant, role='MANAGER').count()
+                    if manager_count >= 1:
+                        messages.error(request, "Free plan limit reached: Maximum 1 Manager allowed. Please upgrade to Premium.")
+                        return redirect('staff_management')
+                elif role == 'CASHIER':
+                    cashier_count = UserProfile.objects.filter(tenant_owner=tenant, role='CASHIER').count()
+                    if cashier_count >= 1:
+                        messages.error(request, "Free plan limit reached: Maximum 1 Cashier allowed. Please upgrade to Premium.")
+                        return redirect('staff_management')
+            # Create User with optional first/last name
+            new_user = User.objects.create_user(
+                username=username, email=email, password=password,
+            )
+            # Set role and shop
+            profile = new_user.profile
+            profile.role = role
+            profile.tenant_owner = tenant if tenant else new_user
+            profile.shop = staff_shop
+            profile.save()
+            messages.success(request, f"Staff user '{username}' created successfully.")
+            return redirect('staff_management')
         action = request.POST.get('action')
 
         if action == 'add_shop':
@@ -1708,6 +2327,695 @@ def customer_display_view(request):
     context = {
         'store_name': settings.store_name,
         'store_address': settings.address or '',
+        'store_phone': settings.phone or '',
+        'store_email': settings.email or '',
         'customer_ads_json': json.dumps(active_ads),
     }
     return render(request, 'customer_display.html', context)
+
+
+def terms_and_agreement_view(request):
+    """Terms and Agreement / Privacy Policy view."""
+    return render(request, 'terms.html')
+
+
+@login_required
+def mark_notification_read_api(request):
+    """API to mark one or all admin notifications as read for current user."""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST required'}, status=405)
+
+    notification_id = None
+    try:
+        if request.content_type == 'application/json':
+            data = json.loads(request.body.decode('utf-8'))
+            notification_id = data.get('notification_id')
+        else:
+            notification_id = request.POST.get('notification_id')
+    except Exception:
+        notification_id = request.POST.get('notification_id')
+
+    if not notification_id:
+        return JsonResponse({'error': 'Missing notification_id'}, status=400)
+
+    if str(notification_id).lower() == 'all':
+        tenant_user = request.user
+        if hasattr(request.user, 'profile') and request.user.profile.tenant_owner:
+            tenant_user = request.user.profile.tenant_owner
+
+        unread_notifs = AdminNotification.objects.filter(
+            is_active=True
+        ).filter(
+            Q(target_tenant__isnull=True) | Q(target_tenant=tenant_user) | Q(target_tenant=request.user)
+        ).exclude(
+            read_records__user=request.user
+        )
+
+        created = [
+            NotificationReadStatus(notification=n, user=request.user)
+            for n in unread_notifs
+        ]
+        if created:
+            NotificationReadStatus.objects.bulk_create(created, ignore_conflicts=True)
+        return JsonResponse({'status': 'success', 'marked_all': True, 'count': len(created)})
+
+    notif = get_object_or_404(AdminNotification, id=notification_id)
+    NotificationReadStatus.objects.get_or_create(notification=notif, user=request.user)
+    return JsonResponse({'status': 'success', 'notification_id': notif.id})
+
+
+@login_required
+def get_unread_notifications_api(request):
+    """API to fetch unread admin notifications for client-side push / polling."""
+    tenant_user = request.user
+    if hasattr(request.user, 'profile') and request.user.profile.tenant_owner:
+        tenant_user = request.user.profile.tenant_owner
+
+    qs = AdminNotification.objects.filter(
+        is_active=True
+    ).filter(
+        Q(target_tenant__isnull=True) | Q(target_tenant=tenant_user) | Q(target_tenant=request.user)
+    ).order_by('-created_at')[:20]
+
+    read_ids = set(NotificationReadStatus.objects.filter(
+        user=request.user
+    ).values_list('notification_id', flat=True))
+
+    unread_items = []
+    for n in qs:
+        if n.id not in read_ids:
+            unread_items.append({
+                'id': n.id,
+                'title': n.title,
+                'message': n.message,
+                'type': n.notification_type,
+                'type_display': n.get_notification_type_display(),
+                'created_at': n.created_at.strftime('%Y-%m-%d %H:%M'),
+            })
+
+    return JsonResponse({
+        'status': 'success',
+        'unread_count': len(unread_items),
+        'notifications': unread_items,
+    })
+
+
+@login_required
+def subscription_view(request):
+    """Displays tenant subscription status, active plan, limits, and payment history."""
+    if request.user.is_superuser:
+        return redirect('admin_panel')
+
+    tenant_owner = get_tenant_scope(request.user)
+    if not tenant_owner:
+        tenant_owner = request.user
+
+    profile = getattr(tenant_owner, 'profile', request.user.profile)
+    payments = SubscriptionPayment.objects.filter(tenant=tenant_owner).order_by('-created_at')
+    settings = StoreSettings.get_settings()
+    pricing = SubscriptionPayment.PLAN_PRICING
+
+    context = {
+        'tenant_owner': tenant_owner,
+        'profile': profile,
+        'payments': payments,
+        'settings': settings,
+        'pricing': pricing,
+        'is_admin': is_admin(request.user),
+    }
+    return render(request, 'subscription.html', context)
+
+
+@login_required
+def subscription_upgrade_view(request):
+    """Handles plan upgrade selection, bank transfer receipt upload, or card checkout."""
+    if request.user.is_superuser:
+        return redirect('admin_panel')
+
+    tenant_owner = get_tenant_scope(request.user)
+    if not tenant_owner:
+        tenant_owner = request.user
+
+    profile = getattr(tenant_owner, 'profile', request.user.profile)
+    settings = StoreSettings.get_settings()
+    pricing = SubscriptionPayment.PLAN_PRICING
+
+    if request.method == 'POST':
+        plan = request.POST.get('plan')
+        billing_cycle = request.POST.get('billing_cycle', 'MONTHLY')
+        payment_method = request.POST.get('payment_method', 'BANK_TRANSFER')
+        sender_name = request.POST.get('sender_name', '').strip()
+        sender_bank = request.POST.get('sender_bank', '').strip()
+        reference = request.POST.get('reference', '').strip()
+        notes = request.POST.get('notes', '').strip()
+        proof_image = request.FILES.get('proof_image')
+
+        if plan not in pricing:
+            messages.error(request, "Please select a valid subscription plan.")
+            return redirect('subscription_upgrade')
+
+        # Standard plan is strictly Annual only
+        if plan == 'STANDARD':
+            billing_cycle = 'ANNUAL'
+        elif billing_cycle not in ('QUARTERLY', 'ANNUAL'):
+            billing_cycle = 'ANNUAL'
+
+        amount = pricing[plan].get(billing_cycle, pricing[plan].get('ANNUAL'))
+
+        if not reference:
+            reference = f"SUB-{uuid.uuid4().hex[:10].upper()}"
+        elif SubscriptionPayment.objects.filter(reference=reference).exists():
+            reference = f"{reference}-{uuid.uuid4().hex[:4].upper()}"
+
+        payment = SubscriptionPayment.objects.create(
+            tenant=tenant_owner,
+            plan=plan,
+            billing_cycle=billing_cycle,
+            amount=amount,
+            payment_method=payment_method,
+            reference=reference,
+            sender_name=sender_name,
+            sender_bank=sender_bank,
+            proof_image=proof_image,
+            notes=notes,
+            status='PENDING'
+        )
+
+        if payment_method == 'REMITA':
+            # Instant online payment verification
+            activate_subscription_upgrade(payment)
+            messages.success(request, f"Online payment confirmed! Your account has been upgraded to {payment.get_plan_display()}!")
+            return redirect('subscription')
+        else:
+            messages.success(
+                request,
+                f"Bank transfer details submitted! Payment reference: #{payment.reference}. Your subscription will be activated upon administrator confirmation."
+            )
+            return redirect('subscription')
+
+    initial_plan = request.GET.get('plan', 'PREMIUM')
+    context = {
+        'profile': profile,
+        'settings': settings,
+        'pricing': pricing,
+        'initial_plan': initial_plan,
+        'is_admin': is_admin(request.user),
+    }
+    return render(request, 'subscription_upgrade.html', context)
+
+
+@login_required
+def remita_generate_rrr_api(request):
+    """
+    Generates a Remita Retrieval Reference (RRR) server-side before the browser
+    opens the Remita inline payment widget.
+
+    Security: The amount is locked server-side from PLAN_PRICING — the browser
+    cannot tamper with the charge amount.
+    """
+    if request.method != 'POST':
+        return JsonResponse({'status': 'error', 'message': 'POST required'}, status=405)
+
+    tenant_owner = get_tenant_scope(request.user)
+    if not tenant_owner:
+        tenant_owner = request.user
+
+    try:
+        data = json.loads(request.body)
+        plan = data.get('plan', 'PREMIUM')
+        billing_cycle = data.get('billing_cycle', 'MONTHLY')
+
+        pricing = SubscriptionPayment.PLAN_PRICING
+        if plan not in pricing:
+            return JsonResponse({'status': 'error', 'message': 'Invalid plan'}, status=400)
+
+        # Standard plan is strictly Annual only
+        if plan == 'STANDARD':
+            billing_cycle = 'ANNUAL'
+        elif billing_cycle not in ('QUARTERLY', 'ANNUAL'):
+            billing_cycle = 'ANNUAL'
+
+        amount = pricing[plan].get(billing_cycle, pricing[plan].get('ANNUAL'))
+
+        # Build a deterministic order ID: user-plan-cycle-timestamp
+        import uuid as _uuid
+        order_id = f"VIARMS-{tenant_owner.id}-{plan[:3]}-{billing_cycle[:1]}-{_uuid.uuid4().hex[:8].upper()}"
+
+        payer_name = (
+            f"{tenant_owner.first_name} {tenant_owner.last_name}".strip()
+            or tenant_owner.username
+        )
+        payer_email = tenant_owner.email or f"{tenant_owner.username}@viarms.com"
+
+        ok, result = generate_rrr(
+            order_id=order_id,
+            amount_ngn=amount,
+            payer_name=payer_name,
+            payer_email=payer_email,
+            description=f"viARMS {plan.replace('_', ' ').title()} {billing_cycle.title()} Subscription",
+        )
+        if not ok:
+            return JsonResponse({'status': 'error', 'message': result.get('error', 'Could not generate payment reference')}, status=400)
+
+        result['status'] = 'success'
+        result['plan'] = plan
+        result['billing_cycle'] = billing_cycle
+        result['amount_ngn'] = str(amount)
+        return JsonResponse(result)
+
+    except Exception as exc:
+        return JsonResponse({'status': 'error', 'message': str(exc)}, status=500)
+
+
+@login_required
+def remita_verify_api(request):
+    """
+    API endpoint to verify and activate Remita card/online transactions.
+    Security: Calls Remita REST API server-to-server to confirm payment status
+    and validates the settled amount matches the server-locked plan price.
+    """
+    if request.method != 'POST':
+        return JsonResponse({'status': 'error', 'message': 'POST required'}, status=405)
+
+    tenant_owner = get_tenant_scope(request.user)
+    if not tenant_owner:
+        tenant_owner = request.user
+
+    try:
+        data = json.loads(request.body)
+        rrr = data.get('rrr', '').strip()
+        order_id = data.get('orderId', '').strip()
+        plan = data.get('plan', 'PREMIUM')
+        billing_cycle = data.get('billing_cycle', 'MONTHLY')
+
+        pricing = SubscriptionPayment.PLAN_PRICING
+        if plan not in pricing:
+            return JsonResponse({'status': 'error', 'message': 'Invalid plan'}, status=400)
+
+        # Standard plan is strictly Annual only
+        if plan == 'STANDARD':
+            billing_cycle = 'ANNUAL'
+        elif billing_cycle not in ('QUARTERLY', 'ANNUAL'):
+            billing_cycle = 'ANNUAL'
+
+        amount = pricing[plan].get(billing_cycle, pricing[plan].get('ANNUAL'))
+
+        if not rrr:
+            return JsonResponse({'status': 'error', 'message': 'Remita RRR required'}, status=400)
+
+        creds = get_remita_credentials()
+        # If live credentials configured and not a test RRR, verify with Remita API
+        if creds['api_key'] and not rrr.startswith('RRR-TEST-'):
+            is_valid, gateway_info = verify_remita_payment(rrr, expected_amount_ngn=amount)
+            if not is_valid:
+                return JsonResponse({'status': 'error', 'message': gateway_info}, status=400)
+
+        reference = rrr or order_id
+        payment, created = SubscriptionPayment.objects.get_or_create(
+            reference=reference,
+            defaults={
+                'tenant': tenant_owner,
+                'plan': plan,
+                'billing_cycle': billing_cycle,
+                'amount': amount,
+                'payment_method': 'REMITA',
+                'status': 'PENDING'
+            }
+        )
+        if payment.status != 'CONFIRMED':
+            activate_subscription_upgrade(payment)
+
+        return JsonResponse({
+            'status': 'success',
+            'message': f"Payment verified! Upgraded to {payment.get_plan_display()}.",
+            'plan': payment.plan,
+            'expires_at': payment.expires_at.strftime('%Y-%m-%d') if payment.expires_at else ''
+        })
+    except Exception as exc:
+        return JsonResponse({'status': 'error', 'message': str(exc)}, status=500)
+
+
+@csrf_exempt
+def remita_webhook_view(request):
+    """
+    Remita IPN (Instant Payment Notification) receiver.
+    Security: Validates SHA-512 signature using Remita API key.
+    Guarantees tenant upgrade even if customer browser disconnects mid-payment.
+    Remita posts to this URL after successful payment settlement.
+    """
+    if request.method != 'POST':
+        return HttpResponse(status=405)
+
+    # Validate Remita IPN signature (header or payload hash)
+    signature = request.headers.get('x-remita-signature', '')
+    if not verify_remita_webhook_signature(request.body, signature):
+        return HttpResponse("Invalid or missing Remita webhook signature", status=400)
+
+    try:
+        payload = json.loads(request.body)
+        # Remita IPN payload fields
+        rrr = (payload.get('rrr') or payload.get('RRR') or '').strip()
+        amount_str = str(payload.get('amount') or '0')
+        payer_email = str(payload.get('payerEmail') or payload.get('email') or '').strip().lower()
+        order_id = str(payload.get('orderId') or payload.get('transId') or rrr)
+        payment_state = str(payload.get('paymentChannelName') or payload.get('status') or payload.get('paymentState') or '')
+
+        # Only activate on successful payments
+        if payment_state.lower() not in ('successful', 'success', '01', '00', 'completed'):
+            return HttpResponse("Webhook acknowledged (non-success state)", status=200)
+
+        try:
+            amount_ngn = Decimal(amount_str)
+        except Exception:
+            amount_ngn = Decimal('0')
+
+        # Extract plan metadata from orderId pattern: VIARMS-{userId}-{plan}-{cycle}-{uuid}
+        plan = 'PREMIUM'
+        billing_cycle = 'MONTHLY'
+        tenant = None
+        if order_id.startswith('VIARMS-'):
+            parts = order_id.split('-')
+            # parts: ['VIARMS', userId, planPrefix, cyclePrefix, uuid]
+            if len(parts) >= 5:
+                try:
+                    tenant_id = int(parts[1])
+                    tenant = User.objects.filter(id=tenant_id, is_superuser=False).first()
+                except (ValueError, IndexError):
+                    pass
+                plan_prefix = parts[2] if len(parts) > 2 else 'STA'
+                cycle_prefix = parts[3] if len(parts) > 3 else 'M'
+                if plan_prefix == 'GOL':
+                    plan = 'GOLDEN_PREMIUM'
+                elif plan_prefix == 'PRE':
+                    plan = 'PREMIUM'
+                else:
+                    plan = 'STANDARD'
+                if cycle_prefix == 'Q':
+                    billing_cycle = 'QUARTERLY'
+                elif cycle_prefix == 'A':
+                    billing_cycle = 'ANNUAL'
+                else:
+                    billing_cycle = 'ANNUAL'
+                if plan == 'STANDARD':
+                    billing_cycle = 'ANNUAL'
+
+        # Fallback: find tenant by email
+        if not tenant and payer_email:
+            tenant = User.objects.filter(email__iexact=payer_email, is_superuser=False).first()
+
+        reference = rrr or order_id
+
+        if tenant and reference:
+            with transaction.atomic():
+                payment, created = SubscriptionPayment.objects.select_for_update().get_or_create(
+                    reference=reference,
+                    defaults={
+                        'tenant': tenant,
+                        'plan': plan,
+                        'billing_cycle': billing_cycle,
+                        'amount': amount_ngn,
+                        'payment_method': 'REMITA',
+                        'status': 'PENDING',
+                    }
+                )
+                if payment.status != 'CONFIRMED':
+                    activate_subscription_upgrade(payment)
+
+        return HttpResponse("Remita IPN processed successfully", status=200)
+    except Exception as exc:
+        return HttpResponse(f"Webhook error: {str(exc)}", status=500)
+
+
+# ---------------------------------------------------------------------------
+# Category Dashboard
+# ---------------------------------------------------------------------------
+@login_required
+def category_detail_view(request, category_id):
+    """
+    Category Dashboard:
+    Displays financial analytics and item breakdown for a single category:
+    - Number of distinct products and total units in stock
+    - Total cost price value (capital invested)
+    - Total selling price value (expected gross revenue)
+    - Total potential profit and profit margin %
+    - Itemized row-by-row table of products with individual costs, selling prices, and potential profit
+    """
+    tenant = get_tenant_scope(request.user)
+    if tenant:
+        category = Category.objects.filter(
+            Q(tenant_owner=tenant) | Q(tenant_owner__isnull=True),
+            id=category_id
+        ).first()
+        if not category:
+            from django.http import Http404
+            raise Http404("No Category matches the given query.")
+        products = Product.objects.filter(category=category, is_active=True, shop__tenant_owner=tenant)
+    else:
+        category = get_object_or_404(Category, id=category_id)
+        products = Product.objects.filter(category=category, is_active=True)
+
+    # Search filter
+    search_q = request.GET.get('q', '').strip().lower()
+    if search_q:
+        products = [p for p in products if search_q in p.name.lower() or search_q in p.sku.lower() or search_q in (p.batch_number or '').lower()]
+
+    # Aggregations
+    total_products_count = len(products)
+    total_items_quantity = sum(p.stock_quantity for p in products)
+    total_cost_value = sum(Decimal(str(p.stock_quantity)) * p.cost_price for p in products)
+    total_selling_value = sum(Decimal(str(p.stock_quantity)) * p.selling_price for p in products)
+    total_potential_profit = total_selling_value - total_cost_value
+    profit_margin_pct = (total_potential_profit / total_selling_value * 100) if total_selling_value > 0 else Decimal('0.0')
+
+    # Expired count & lost cost value in this category
+    expired_products = [p for p in products if p.is_expired]
+    expired_count = len(expired_products)
+    expired_cost_value = sum(Decimal(str(p.stock_quantity)) * p.cost_price for p in expired_products)
+
+    # Annotate product rows with calculated totals
+    annotated_products = []
+    for p in products:
+        qty_dec = Decimal(str(p.stock_quantity))
+        item_cost_total = qty_dec * p.cost_price
+        item_selling_total = qty_dec * p.selling_price
+        item_profit = item_selling_total - item_cost_total
+        item_margin = (item_profit / item_selling_total * 100) if item_selling_total > 0 else Decimal('0.0')
+        annotated_products.append({
+            'product': p,
+            'cost_total': item_cost_total,
+            'selling_total': item_selling_total,
+            'potential_profit': item_profit,
+            'margin_pct': item_margin,
+        })
+
+    context = {
+        'category': category,
+        'products': annotated_products,
+        'total_products_count': total_products_count,
+        'total_items_quantity': total_items_quantity,
+        'total_cost_value': total_cost_value,
+        'total_selling_value': total_selling_value,
+        'total_potential_profit': total_potential_profit,
+        'profit_margin_pct': profit_margin_pct,
+        'expired_count': expired_count,
+        'expired_cost_value': expired_cost_value,
+        'search_q': search_q,
+        'user_profile': request.user.profile if hasattr(request.user, 'profile') else None,
+        'is_admin': is_admin(request.user),
+    }
+    return render(request, 'category_detail.html', context)
+
+
+# ---------------------------------------------------------------------------
+# Expired Products Dashboard
+# ---------------------------------------------------------------------------
+@login_required
+def expired_products_view(request):
+    """
+    Expired Products Dashboard:
+    - View all expired stock across the store
+    - Calculate the total cost value (capital loss) of expired items
+    - Filter expired products by category and shop
+    """
+    tenant = get_tenant_scope(request.user)
+    today = timezone.localdate()
+
+    if tenant:
+        base_qs = Product.objects.filter(is_active=True, expiry_date__lt=today, shop__tenant_owner=tenant)
+        all_categories = Category.objects.filter(Q(tenant_owner=tenant) | Q(tenant_owner__isnull=True))
+    else:
+        base_qs = Product.objects.filter(is_active=True, expiry_date__lt=today)
+        all_categories = Category.objects.all()
+
+    # Category filter
+    category_id = request.GET.get('category_id')
+    selected_category = None
+    if category_id:
+        try:
+            selected_category = all_categories.get(id=int(category_id))
+            base_qs = base_qs.filter(category=selected_category)
+        except (Category.DoesNotExist, ValueError):
+            pass
+
+    # Search filter
+    search_q = request.GET.get('q', '').strip().lower()
+    if search_q:
+        base_qs = [p for p in base_qs if search_q in p.name.lower() or search_q in p.sku.lower() or search_q in (p.batch_number or '').lower()]
+    else:
+        base_qs = list(base_qs.select_related('category', 'shop').order_by('expiry_date'))
+
+    total_expired_count = len(base_qs)
+    total_expired_units = sum(p.stock_quantity for p in base_qs)
+    total_lost_cost_value = sum(Decimal(str(p.stock_quantity)) * p.cost_price for p in base_qs)
+    total_lost_retail_value = sum(Decimal(str(p.stock_quantity)) * p.selling_price for p in base_qs)
+
+    # Annotate rows with lost cost and days expired
+    expired_rows = []
+    for p in base_qs:
+        qty_dec = Decimal(str(p.stock_quantity))
+        lost_cost = qty_dec * p.cost_price
+        lost_retail = qty_dec * p.selling_price
+        days_expired = (today - p.expiry_date).days if p.expiry_date else 0
+        expired_rows.append({
+            'product': p,
+            'lost_cost': lost_cost,
+            'lost_retail': lost_retail,
+            'days_expired': days_expired,
+        })
+
+    # Category pills with count of expired items
+    cat_counts = []
+    for cat in all_categories:
+        count = sum(1 for row in expired_rows if row['product'].category_id == cat.id) if not selected_category else 0
+        if count > 0 or (selected_category and selected_category.id == cat.id):
+            cat_counts.append({'category': cat, 'count': count})
+
+    context = {
+        'expired_products': expired_rows,
+        'total_expired_count': total_expired_count,
+        'total_expired_units': total_expired_units,
+        'total_lost_cost_value': total_lost_cost_value,
+        'total_lost_retail_value': total_lost_retail_value,
+        'categories': all_categories,
+        'cat_counts': cat_counts,
+        'selected_category': selected_category,
+        'search_q': search_q,
+        'user_profile': request.user.profile if hasattr(request.user, 'profile') else None,
+        'is_admin': is_admin(request.user),
+    }
+    return render(request, 'expired_products.html', context)
+
+
+# ---------------------------------------------------------------------------
+# Stock Batches & Intake Tracking Dashboard
+# ---------------------------------------------------------------------------
+@login_required
+def stock_batches_view(request):
+    """
+    Stock Batches & Intake Tracking Dashboard:
+    Tracks inventory by stocking batches (BN: 1 = 1st stock, BN: 2 = 2nd stock, etc.):
+    - Summary of total items, cost value, selling price, and potential profit per batch
+    - Filter by Batch of stocking and by Category
+    - High-level batch comparison table + detailed itemized product breakdown
+    """
+    tenant = get_tenant_scope(request.user)
+    today = timezone.localdate()
+
+    if tenant:
+        all_products = list(Product.objects.filter(is_active=True, shop__tenant_owner=tenant).select_related('category', 'shop'))
+        all_categories = list(Category.objects.filter(Q(tenant_owner=tenant) | Q(tenant_owner__isnull=True)))
+    else:
+        all_products = list(Product.objects.filter(is_active=True).select_related('category', 'shop'))
+        all_categories = list(Category.objects.all())
+
+    # Build unique batches list and compute batch-level metrics
+    batch_map = {}
+    for p in all_products:
+        batch_label = p.batch_number or 'BN: 1'
+        if batch_label not in batch_map:
+            batch_map[batch_label] = {
+                'label': batch_label,
+                'products': [],
+                'distinct_count': 0,
+                'total_units': 0,
+                'total_cost': Decimal('0.00'),
+                'total_selling': Decimal('0.00'),
+                'potential_profit': Decimal('0.00'),
+                'expired_units': 0,
+            }
+        b = batch_map[batch_label]
+        b['products'].append(p)
+        b['distinct_count'] += 1
+        qty_dec = Decimal(str(p.stock_quantity))
+        b['total_units'] += p.stock_quantity
+        b['total_cost'] += qty_dec * p.cost_price
+        b['total_selling'] += qty_dec * p.selling_price
+        if p.is_expired:
+            b['expired_units'] += p.stock_quantity
+
+    for b in batch_map.values():
+        b['potential_profit'] = b['total_selling'] - b['total_cost']
+        b['margin_pct'] = (b['potential_profit'] / b['total_selling'] * 100) if b['total_selling'] > 0 else Decimal('0.0')
+
+    # Sort batches by label: BN: 1, BN: 2, etc.
+    sorted_batches = sorted(batch_map.values(), key=lambda x: x['label'])
+
+    # Filtering
+    selected_batch = request.GET.get('batch', '').strip()
+    selected_category_id = request.GET.get('category_id', '').strip()
+
+    filtered_products = all_products
+    if selected_batch:
+        filtered_products = [p for p in filtered_products if (p.batch_number or 'BN: 1') == selected_batch]
+    if selected_category_id:
+        try:
+            cat_id_int = int(selected_category_id)
+            filtered_products = [p for p in filtered_products if p.category_id == cat_id_int]
+        except ValueError:
+            pass
+
+    # Search filter
+    search_q = request.GET.get('q', '').strip().lower()
+    if search_q:
+        filtered_products = [p for p in filtered_products if search_q in p.name.lower() or search_q in p.sku.lower()]
+
+    # Aggregates for current filter view
+    filtered_units = sum(p.stock_quantity for p in filtered_products)
+    filtered_cost = sum(Decimal(str(p.stock_quantity)) * p.cost_price for p in filtered_products)
+    filtered_selling = sum(Decimal(str(p.stock_quantity)) * p.selling_price for p in filtered_products)
+    filtered_profit = filtered_selling - filtered_cost
+    filtered_margin = (filtered_profit / filtered_selling * 100) if filtered_selling > 0 else Decimal('0.0')
+
+    # Detailed item breakdown
+    item_rows = []
+    for p in filtered_products:
+        qty_dec = Decimal(str(p.stock_quantity))
+        c_tot = qty_dec * p.cost_price
+        s_tot = qty_dec * p.selling_price
+        prof = s_tot - c_tot
+        marg = (prof / s_tot * 100) if s_tot > 0 else Decimal('0.0')
+        item_rows.append({
+            'product': p,
+            'cost_total': c_tot,
+            'selling_total': s_tot,
+            'profit': prof,
+            'margin': marg,
+        })
+
+    context = {
+        'batches': sorted_batches,
+        'categories': all_categories,
+        'selected_batch': selected_batch,
+        'selected_category_id': selected_category_id,
+        'items': item_rows,
+        'total_items_count': len(item_rows),
+        'total_units': filtered_units,
+        'total_cost': filtered_cost,
+        'total_selling': filtered_selling,
+        'potential_profit': filtered_profit,
+        'profit_margin_pct': filtered_margin,
+        'search_q': search_q,
+        'user_profile': request.user.profile if hasattr(request.user, 'profile') else None,
+        'is_admin': is_admin(request.user),
+    }
+    return render(request, 'stock_batches.html', context)

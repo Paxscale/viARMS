@@ -1,0 +1,261 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Stock Batches - viARMS{% endblock %}
+
+{% block content %}
+<div style="padding: 0 0 2rem;">
+
+  <!-- Page Header -->
+  <div class="panel-header" style="margin-bottom: 1.5rem; flex-wrap: wrap; gap: 1rem; align-items: flex-start;">
+    <div>
+      <div style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.4rem;">
+        <a href="{% url 'products' %}" class="btn btn-secondary btn-sm" style="padding: 0.3rem 0.7rem; font-size: 0.8rem;">
+          <i data-lucide="arrow-left" style="width: 14px; height: 14px;"></i> Products
+        </a>
+        <span style="color: var(--text-muted); font-size: 0.85rem;">/ Stock Batches</span>
+      </div>
+      <h1 style="font-size: 1.75rem; font-weight: 700; display: flex; align-items: center; gap: 0.6rem;">
+        <i data-lucide="package" style="width: 28px; height: 28px; color: #818cf8;"></i>
+        Stock Intake Batches
+      </h1>
+      <p style="color: var(--text-secondary); font-size: 0.9rem; margin-top: 0.3rem;">Track each batch of stock received — compare intake value, potential returns, and product status.</p>
+    </div>
+  </div>
+
+  <!-- Filters -->
+  <div class="glass-panel" style="padding: 1rem 1.25rem; margin-bottom: 1.5rem;">
+    <form method="GET" style="display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: center;">
+      <div>
+        <select name="batch" class="form-control" style="font-size: 0.85rem; min-width: 160px;">
+          <option value="">All Batches</option>
+          {% for b in batches %}
+          <option value="{{ b.label }}" {% if selected_batch == b.label %}selected{% endif %}>{{ b.label }} ({{ b.distinct_count }} SKUs)</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <select name="category_id" class="form-control" style="font-size: 0.85rem; min-width: 180px;">
+          <option value="">All Categories</option>
+          {% for cat in categories %}
+          <option value="{{ cat.id }}" {% if selected_category_id == cat.id|stringformat:"i" %}selected{% endif %}>{{ cat.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div style="flex: 1; min-width: 200px;">
+        <input type="search" name="q" value="{{ search_q }}" class="form-control" placeholder="Search products…" style="font-size: 0.85rem;">
+      </div>
+      <button type="submit" class="btn btn-primary btn-sm" style="padding: 0.5rem 1rem;">
+        <i data-lucide="filter" style="width: 14px; height: 14px;"></i> Filter
+      </button>
+      {% if selected_batch or selected_category_id or search_q %}
+      <a href="{% url 'stock_batches' %}" class="btn btn-secondary btn-sm" style="padding: 0.5rem 1rem; color: #ef4444;">
+        <i data-lucide="x" style="width: 14px; height: 14px;"></i> Clear
+      </a>
+      {% endif %}
+    </form>
+  </div>
+
+  {% if not selected_batch and not selected_category_id and not search_q %}
+  <!-- === BATCH OVERVIEW CARDS (shown when no filters active) === -->
+  <div style="margin-bottom: 1.75rem;">
+    <h2 style="font-size: 1rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 1rem; display: flex; align-items: center; gap: 0.5rem;">
+      <i data-lucide="layers" style="width: 16px; height: 16px; color: #818cf8;"></i> Batch Overview — Click a batch to drill down
+    </h2>
+    {% if batches %}
+    <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 1rem;">
+      {% for b in batches %}
+      <a href="{% url 'stock_batches' %}?batch={{ b.label|urlencode }}" style="text-decoration: none;">
+        <div class="glass-panel" style="padding: 1.25rem; cursor: pointer; border-color: rgba(129,140,248,0.3); transition: border-color 0.2s, transform 0.15s;" onmouseover="this.style.borderColor='rgba(129,140,248,0.7)';this.style.transform='translateY(-2px)';" onmouseout="this.style.borderColor='rgba(129,140,248,0.3)';this.style.transform='translateY(0)';">
+          <!-- Batch Header -->
+          <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 1rem;">
+            <div>
+              <div style="font-size: 1rem; font-weight: 700; color: #818cf8;">{{ b.label }}</div>
+              <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 2px;">{{ b.distinct_count }} distinct SKU{{ b.distinct_count|pluralize }}</div>
+            </div>
+            {% if b.expired_units > 0 %}
+            <span style="font-size: 0.7rem; background: rgba(239,68,68,0.15); color: #ef4444; padding: 2px 8px; border-radius: 10px; font-weight: 600;">
+              {{ b.expired_units }} expired
+            </span>
+            {% else %}
+            <span style="font-size: 0.7rem; background: rgba(52,211,153,0.15); color: #34d399; padding: 2px 8px; border-radius: 10px; font-weight: 600;">
+              All Active
+            </span>
+            {% endif %}
+          </div>
+          <!-- Batch Metrics -->
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem;">
+            <div>
+              <div style="font-size: 0.65rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em;">Total Units</div>
+              <div style="font-weight: 700; color: var(--text-primary);">{{ b.total_units }}</div>
+            </div>
+            <div>
+              <div style="font-size: 0.65rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em;">Margin</div>
+              <div style="font-weight: 700; color: {% if b.margin_pct >= 20 %}#34d399{% elif b.margin_pct >= 10 %}#fbbf24{% else %}#ef4444{% endif %};">{{ b.margin_pct|floatformat:1 }}%</div>
+            </div>
+            <div>
+              <div style="font-size: 0.65rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em;">Cost Value</div>
+              <div style="font-weight: 600; color: #60a5fa; font-size: 0.85rem;">₦{{ b.total_cost|floatformat:0 }}</div>
+            </div>
+            <div>
+              <div style="font-size: 0.65rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em;">Selling Value</div>
+              <div style="font-weight: 600; color: #34d399; font-size: 0.85rem;">₦{{ b.total_selling|floatformat:0 }}</div>
+            </div>
+          </div>
+          <!-- Profit Bar -->
+          <div style="margin-top: 1rem; padding-top: 0.75rem; border-top: 1px solid var(--border-color);">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.4rem;">
+              <span style="font-size: 0.72rem; color: var(--text-muted);">Potential Profit</span>
+              <span style="font-weight: 700; color: #a78bfa; font-size: 0.85rem;">₦{{ b.potential_profit|floatformat:0 }}</span>
+            </div>
+            {% if b.total_selling > 0 %}
+            <div style="background: rgba(255,255,255,0.08); border-radius: 4px; height: 4px; overflow: hidden;">
+              <div style="background: linear-gradient(90deg, #818cf8, #a78bfa); height: 100%; width: {{ b.margin_pct|floatformat:0 }}%; border-radius: 4px;"></div>
+            </div>
+            {% endif %}
+          </div>
+        </div>
+      </a>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div style="text-align: center; padding: 2rem; color: var(--text-muted);">
+      <i data-lucide="package" style="width: 36px; height: 36px; margin-bottom: 0.75rem; opacity: 0.3;"></i>
+      <p>No stock batches found. Add products from the <a href="{% url 'products' %}" style="color: var(--color-primary);">Products page</a>.</p>
+    </div>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  {% if selected_batch or selected_category_id or search_q %}
+  <!-- === FILTER ACTIVE: Show Aggregated Stats + Detail Table === -->
+  <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0.85rem; margin-bottom: 1.5rem;">
+    <div class="glass-panel" style="padding: 1rem 1.1rem; border-color: rgba(129,140,248,0.3);">
+      <div style="font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 0.3rem;">SKUs</div>
+      <div style="font-size: 1.8rem; font-weight: 700; color: #818cf8;">{{ total_items_count }}</div>
+    </div>
+    <div class="glass-panel" style="padding: 1rem 1.1rem; border-color: rgba(129,140,248,0.3);">
+      <div style="font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 0.3rem;">Total Units</div>
+      <div style="font-size: 1.8rem; font-weight: 700; color: var(--text-primary);">{{ total_units }}</div>
+    </div>
+    <div class="glass-panel" style="padding: 1rem 1.1rem; border-color: rgba(129,140,248,0.3);">
+      <div style="font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 0.3rem;">Cost Value</div>
+      <div style="font-size: 1.3rem; font-weight: 700; color: #60a5fa;">₦{{ total_cost|floatformat:2 }}</div>
+    </div>
+    <div class="glass-panel" style="padding: 1rem 1.1rem; border-color: rgba(129,140,248,0.3);">
+      <div style="font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 0.3rem;">Selling Value</div>
+      <div style="font-size: 1.3rem; font-weight: 700; color: #34d399;">₦{{ total_selling|floatformat:2 }}</div>
+    </div>
+    <div class="glass-panel" style="padding: 1rem 1.1rem; border-color: rgba(129,140,248,0.3);">
+      <div style="font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 0.3rem;">Potential Profit</div>
+      <div style="font-size: 1.3rem; font-weight: 700; color: #a78bfa;">₦{{ potential_profit|floatformat:2 }}</div>
+    </div>
+    <div class="glass-panel" style="padding: 1rem 1.1rem; border-color: rgba(129,140,248,0.3);">
+      <div style="font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 0.3rem;">Margin</div>
+      <div style="font-size: 1.8rem; font-weight: 700; color: {% if profit_margin_pct >= 20 %}#34d399{% elif profit_margin_pct >= 10 %}#fbbf24{% else %}#ef4444{% endif %};">{{ profit_margin_pct|floatformat:1 }}%</div>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- Detailed Items Table (always shown when filter active, or when browsing shows all items) -->
+  {% if selected_batch or selected_category_id or search_q %}
+  <div class="glass-panel" style="padding: 1.5rem;">
+    <div class="panel-header" style="margin-bottom: 1rem;">
+      <h2 class="panel-title" style="font-size: 1rem; display: flex; align-items: center; gap: 0.5rem;">
+        <i data-lucide="list" style="width: 16px; height: 16px; color: #818cf8;"></i>
+        Product Breakdown
+        {% if selected_batch %}<span style="font-size: 0.8rem; background: rgba(129,140,248,0.15); color: #818cf8; padding: 2px 10px; border-radius: 10px; font-weight: 600; margin-left: 4px;">{{ selected_batch }}</span>{% endif %}
+        {% if search_q %}<span style="font-size: 0.75rem; color: var(--text-muted); font-weight: 400;">&nbsp;— "{{ search_q }}"</span>{% endif %}
+      </h2>
+    </div>
+
+    {% if items %}
+    <div style="overflow-x: auto;">
+      <table class="data-table" style="width: 100%; font-size: 0.82rem;">
+        <thead>
+          <tr>
+            <th>Product</th>
+            <th>SKU</th>
+            <th>Batch</th>
+            <th>Category</th>
+            <th>Shop</th>
+            <th style="text-align: right;">Qty</th>
+            <th style="text-align: right;">Unit Cost</th>
+            <th style="text-align: right;">Unit Sell</th>
+            <th style="text-align: right;">Total Cost</th>
+            <th style="text-align: right;">Total Sell</th>
+            <th style="text-align: right;">Profit</th>
+            <th style="text-align: right;">Margin</th>
+            <th>Expiry</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in items %}
+          {% with p=row.product %}
+          <tr {% if p.is_expired %}style="background: rgba(239,68,68,0.05); border-left: 2px solid rgba(239,68,68,0.5);"{% elif p.stock_quantity <= p.min_stock_level %}style="background: rgba(251,191,36,0.04); border-left: 2px solid rgba(251,191,36,0.4);"{% endif %}>
+            <td>
+              <div style="font-weight: 600; {% if p.is_expired %}text-decoration: line-through; color: var(--text-muted);{% endif %}">{{ p.name }}</div>
+            </td>
+            <td style="font-family: monospace; font-size: 0.8rem; font-weight: 600;">{{ p.sku }}</td>
+            <td>
+              <a href="{% url 'stock_batches' %}?batch={{ p.batch_number|default:'BN: 1'|urlencode }}" style="font-size: 0.75rem; background: rgba(99,102,241,0.12); color: var(--color-primary); padding: 2px 7px; border-radius: 4px; font-weight: 600; text-decoration: none;">
+                {{ p.batch_number|default:"BN: 1" }}
+              </a>
+            </td>
+            <td>
+              {% if p.category %}
+              <a href="{% url 'category_detail' p.category.id %}" style="color: var(--color-primary); text-decoration: none; font-size: 0.8rem;">{{ p.category.name }}</a>
+              {% else %}—{% endif %}
+            </td>
+            <td style="font-size: 0.8rem; color: var(--text-secondary);">{{ p.shop.name|default:"—" }}</td>
+            <td style="text-align: right; font-weight: 600;">{{ p.stock_quantity }}</td>
+            <td style="text-align: right;">₦{{ p.cost_price|floatformat:2 }}</td>
+            <td style="text-align: right;">₦{{ p.selling_price|floatformat:2 }}</td>
+            <td style="text-align: right; color: #60a5fa;">₦{{ row.cost_total|floatformat:2 }}</td>
+            <td style="text-align: right; color: #34d399;">₦{{ row.selling_total|floatformat:2 }}</td>
+            <td style="text-align: right; font-weight: 600; color: {% if row.profit >= 0 %}#a78bfa{% else %}#ef4444{% endif %};">₦{{ row.profit|floatformat:2 }}</td>
+            <td style="text-align: right; font-weight: 600; color: {% if row.margin >= 20 %}#34d399{% elif row.margin >= 10 %}#fbbf24{% else %}#ef4444{% endif %};">{{ row.margin|floatformat:1 }}%</td>
+            <td style="font-size: 0.8rem;">
+              {% if p.expiry_date %}
+              <span {% if p.is_expired %}style="color: #ef4444; font-weight: 600;"{% endif %}>{{ p.expiry_date|date:"M d, Y" }}</span>
+              {% else %}—{% endif %}
+            </td>
+            <td>
+              {% if p.is_expired %}
+              <span style="font-size: 0.72rem; background: rgba(239,68,68,0.15); color: #ef4444; padding: 2px 8px; border-radius: 10px; font-weight: 600;">Expired</span>
+              {% elif p.stock_quantity <= p.min_stock_level %}
+              <span style="font-size: 0.72rem; background: rgba(251,191,36,0.15); color: #fbbf24; padding: 2px 8px; border-radius: 10px; font-weight: 600;">Low Stock</span>
+              {% else %}
+              <span style="font-size: 0.72rem; background: rgba(52,211,153,0.15); color: #34d399; padding: 2px 8px; border-radius: 10px; font-weight: 600;">Active</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% endwith %}
+          {% endfor %}
+        </tbody>
+        <tfoot>
+          <tr style="border-top: 2px solid var(--border-color); background: rgba(129,140,248,0.05);">
+            <td colspan="5" style="font-weight: 700; padding: 0.75rem 1rem; font-size: 0.85rem;">TOTALS</td>
+            <td style="text-align: right; font-weight: 700;">{{ total_units }}</td>
+            <td colspan="2"></td>
+            <td style="text-align: right; font-weight: 700; color: #60a5fa;">₦{{ total_cost|floatformat:2 }}</td>
+            <td style="text-align: right; font-weight: 700; color: #34d399;">₦{{ total_selling|floatformat:2 }}</td>
+            <td style="text-align: right; font-weight: 700; color: #a78bfa;">₦{{ potential_profit|floatformat:2 }}</td>
+            <td style="text-align: right; font-weight: 700; color: {% if profit_margin_pct >= 20 %}#34d399{% elif profit_margin_pct >= 10 %}#fbbf24{% else %}#ef4444{% endif %};">{{ profit_margin_pct|floatformat:1 }}%</td>
+            <td colspan="2"></td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+    {% else %}
+    <div style="text-align: center; padding: 3rem 1rem; color: var(--text-muted);">
+      <i data-lucide="package" style="width: 48px; height: 48px; margin-bottom: 1rem; opacity: 0.3;"></i>
+      <p style="font-size: 1rem; font-weight: 500;">No products found{% if search_q %} matching "{{ search_q }}"{% endif %}.</p>
+    </div>
+    {% endif %}
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}

@@ -1,4 +1,4 @@
-﻿{% load static %}
+{% load static %}
 <!DOCTYPE html>
 <html lang="en" data-theme="ocean">
 
@@ -30,6 +30,78 @@
             document.documentElement.setAttribute('data-theme', t);
         })();
     </script>
+    <!-- Push Notification & Announcement Drawer Styles -->
+    <style>
+        .notif-bell-btn {
+            position: relative;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 0.4rem 0.6rem;
+            color: var(--text-primary);
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s ease;
+        }
+        .notif-bell-btn:hover {
+            background: rgba(99, 102, 241, 0.15);
+            border-color: rgba(99, 102, 241, 0.4);
+        }
+        .notif-badge-pill {
+            position: absolute;
+            top: -5px;
+            right: -5px;
+            background: #ef4444;
+            color: white;
+            font-size: 0.65rem;
+            font-weight: 700;
+            min-width: 17px;
+            height: 17px;
+            border-radius: 9px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0 4px;
+            border: 2px solid var(--bg-surface, #0f172a);
+            animation: pulseBadge 2s infinite;
+        }
+        @keyframes pulseBadge {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.1); }
+        }
+        .notif-drawer-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.6);
+            backdrop-filter: blur(4px);
+            z-index: 10000;
+            display: none;
+            justify-content: flex-end;
+            opacity: 0;
+            transition: opacity 0.25s ease;
+        }
+        .notif-drawer-overlay.active {
+            display: flex;
+            opacity: 1;
+        }
+        .notif-drawer {
+            width: 100%;
+            max-width: 440px;
+            height: 100%;
+            background: var(--bg-surface, #0f172a);
+            border-left: 1px solid var(--border-color);
+            box-shadow: -10px 0 35px rgba(0,0,0,0.5);
+            display: flex;
+            flex-direction: column;
+            transform: translateX(100%);
+            transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        .notif-drawer-overlay.active .notif-drawer {
+            transform: translateX(0);
+        }
+    </style>
 </head>
 
 <body>
@@ -52,6 +124,20 @@
                 <option value="ig">Igbo</option>
                 <option value="ha">Hausa</option>
             </select>
+            <!-- Wholesale / Retail Mode Switch (Mobile) -->
+            <a href="{% url 'toggle_dashboard' %}" class="notif-bell-btn" title="Switch to {% if request.session.dashboard_mode == 'wholesale' %}Retail{% else %}Wholesale{% endif %} mode" style="text-decoration: none; font-size: 0.72rem; padding: 0.35rem 0.55rem; gap: 4px;">
+                <i data-lucide="shuffle" style="width: 13px; height: 13px; {% if request.session.dashboard_mode == 'wholesale' %}color: #10b981;{% else %}color: #6366f1;{% endif %}"></i>
+                <span style="font-weight: 700; {% if request.session.dashboard_mode == 'wholesale' %}color: #10b981;{% else %}color: #6366f1;{% endif %}">
+                    {% if request.session.dashboard_mode == 'wholesale' %}Wholesale{% else %}Retail{% endif %}
+                </span>
+            </a>
+            <!-- Notification Bell (Mobile) -->
+            <button type="button" class="notif-bell-btn" onclick="toggleNotificationDrawer()" aria-label="Notifications" title="System Announcements">
+                <i data-lucide="bell" style="width: 18px; height: 18px;"></i>
+                {% if unread_notifications_count > 0 %}
+                <span class="notif-badge-pill" id="mobile-notif-count">{{ unread_notifications_count }}</span>
+                {% endif %}
+            </button>
             <div class="mobile-user-avatar">
                 {{ user.username|make_list|first|upper }}
             </div>
@@ -148,6 +234,13 @@
                     </a>
                 </li>
                 <li>
+                    <a href="{% url 'subscription' %}" data-tour-key="subscription"
+                        class="sidebar-link {% if request.resolver_match.url_name in 'subscription,subscription_upgrade' %}active{% endif %}">
+                        <i data-lucide="credit-card"></i>
+                        <span>Subscription &amp; Billing</span>
+                    </a>
+                </li>
+                <li>
                     <a href="{% url 'settings' %}" data-tour-key="settings"
                         class="sidebar-link {% if request.resolver_match.url_name == 'settings' %}active{% endif %}">
                         <i data-lucide="settings"></i>
@@ -200,6 +293,10 @@
                 </a>
             </div>
 
+            <!-- Sidebar Links & Copyright -->
+            <div style="padding: 0.35rem 0.5rem; text-align: center; font-size: 0.72rem;">
+                <a href="{% url 'terms_and_agreement' %}" style="color: var(--text-muted); text-decoration: underline;">Terms &amp; Agreement</a>
+            </div>
             <!-- Sidebar Copyright -->
             <div style="padding: 0.75rem 0.5rem 0.25rem; text-align: center; font-size: 0.62rem; color: var(--text-muted); line-height: 1.6; margin-top: 0.5rem;">
                 &copy; viARMS<br>
@@ -212,6 +309,49 @@
         <!-- Main Body Content -->
         {% if user.is_authenticated %}
         <main class="main-content" data-onboarding-complete="{{ user.profile.onboarding_completed|yesno:'true,false' }}">
+            <!-- Desktop Top Action Bar with Mode Switch & Notification Bell -->
+            <div class="main-top-bar" style="display: flex; justify-content: flex-end; align-items: center; gap: 0.75rem; margin-bottom: 0.75rem;">
+                <!-- Wholesale / Retail Mode Switch Button -->
+                <a href="{% url 'toggle_dashboard' %}"
+                   class="notif-bell-btn mode-switch-pill"
+                   id="dashboard-mode-switch-btn"
+                   title="Click to switch to {% if request.session.dashboard_mode == 'wholesale' %}Retail{% else %}Wholesale{% endif %} mode"
+                   style="text-decoration: none; padding: 0.4rem 0.85rem; font-size: 0.82rem; gap: 8px;">
+                    <i data-lucide="shuffle" style="width: 15px; height: 15px; {% if request.session.dashboard_mode == 'wholesale' %}color: #10b981;{% else %}color: #6366f1;{% endif %}"></i>
+                    <span style="font-size: 0.75rem; color: var(--text-muted); font-weight: 500;">Mode:</span>
+                    {% if request.session.dashboard_mode == 'wholesale' %}
+                        <strong style="color: #10b981;">Wholesale</strong>
+                        <span style="background: rgba(16, 185, 129, 0.15); color: #10b981; font-size: 0.68rem; padding: 2px 6px; border-radius: 4px; font-weight: 600;">Switch to Retail &rarr;</span>
+                    {% else %}
+                        <strong style="color: #6366f1;">Retail</strong>
+                        <span style="background: rgba(99, 102, 241, 0.15); color: #818cf8; font-size: 0.68rem; padding: 2px 6px; border-radius: 4px; font-weight: 600;">Switch to Wholesale &rarr;</span>
+                    {% endif %}
+                </a>
+
+                <button type="button" class="notif-bell-btn" onclick="toggleNotificationDrawer()" aria-label="Notifications" title="Announcements & System Updates" style="padding: 0.4rem 0.8rem; font-size: 0.82rem; gap: 6px;">
+                    <i data-lucide="bell" style="width: 16px; height: 16px;"></i>
+                    <span style="font-weight: 500;">Updates</span>
+                    {% if unread_notifications_count > 0 %}
+                    <span class="notif-badge-pill" id="desktop-notif-count">{{ unread_notifications_count }}</span>
+                    {% endif %}
+                </button>
+            </div>
+
+            {% if has_urgent_notification and urgent_notification %}
+            <div id="urgent-broadcast-banner" style="background: linear-gradient(90deg, rgba(239, 68, 68, 0.2), rgba(239, 68, 68, 0.08)); border-left: 4px solid #ef4444; border-radius: 8px; padding: 0.75rem 1.25rem; margin-bottom: 1.25rem; display: flex; align-items: center; justify-content: space-between; gap: 12px; border: 1px solid rgba(239,68,68,0.3);">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <i data-lucide="alert-octagon" style="color: #ef4444; width: 20px; height: 20px; flex-shrink: 0;"></i>
+                    <div>
+                        <strong style="color: #fca5a5; font-size: 0.88rem;">[URGENT] {{ urgent_notification.title }}:</strong>
+                        <span style="color: var(--text-secondary); font-size: 0.84rem; margin-left: 4px;">{{ urgent_notification.message }}</span>
+                    </div>
+                </div>
+                <button class="btn btn-sm btn-secondary" onclick="markNotificationRead({{ urgent_notification.id }}, document.getElementById('urgent-broadcast-banner'))" style="font-size: 0.75rem; padding: 0.25rem 0.6rem; white-space: nowrap;">
+                    Dismiss
+                </button>
+            </div>
+            {% endif %}
+            {% if not user.is_superuser %}
             {% if user.profile.tenant_owner == user %}
             <!-- Plan/Approval Status Banner -->
             {% if not user.profile.is_approved %}
@@ -219,13 +359,32 @@
                 <i data-lucide="clock" style="width: 14px; height: 14px; flex-shrink: 0;"></i>
                 <span><strong>Account Pending Approval.</strong> Your account is under review. You'll have full access once approved.</span>
             </div>
-            {% elif user.profile.plan == 'FREE' %}
-            <div class="status-banner status-banner-upgrade" style="background: linear-gradient(90deg, rgba(139,92,246,0.12), rgba(139,92,246,0.04)); border-left: 3px solid #8b5cf6; padding: 0.6rem 1.25rem; font-size: 0.82rem; color: #c4b5fd; display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 1rem; border-radius: 0 6px 6px 0;">
-                <div style="display: flex; align-items: center; gap: 8px;">
-                    <i data-lucide="zap" style="width: 14px; height: 14px; flex-shrink: 0;"></i>
-                    <span><strong>Free Plan</strong> &mdash; You're ready to sell with 1 shop, 1 manager, and 1 cashier. Growing your business? Upgrade anytime to add more branches and team members.</span>
+            {% elif user.profile.is_account_suspended %}
+            <div class="status-banner" style="background: linear-gradient(90deg, rgba(239,68,68,0.25), rgba(239,68,68,0.08)); border-left: 4px solid #ef4444; padding: 0.85rem 1.25rem; font-size: 0.85rem; color: #fca5a5; display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 1rem; border-radius: 0 8px 8px 0; box-shadow: 0 4px 15px rgba(239,68,68,0.15);">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <i data-lucide="shield-alert" style="width: 20px; height: 20px; flex-shrink: 0; color: #ef4444;"></i>
+                    <span>
+                        <strong>Store Account Suspended &mdash; 14-Day Free Trial Ended.</strong>
+                        Operations are restricted. You have <strong style="color: #fff; background: rgba(239,68,68,0.4); padding: 2px 7px; border-radius: 4px; font-weight: 800;">{{ user.profile.days_until_deletion }} day{{ user.profile.days_until_deletion|pluralize }} remaining</strong> to redeem your subscription before your account and store data are permanently deleted.
+                    </span>
                 </div>
-                <a href="#" style="white-space: nowrap; font-size: 0.78rem; color: #a78bfa; font-weight: 700; text-decoration: none; border: 1px solid rgba(139,92,246,0.4); padding: 0.25rem 0.6rem; border-radius: 4px;">Upgrade &nearr;</a>
+                <a href="{% url 'subscription_upgrade' %}" style="white-space: nowrap; font-size: 0.82rem; background: #ef4444; color: #fff; font-weight: 700; text-decoration: none; padding: 0.45rem 1rem; border-radius: 6px; display: inline-flex; align-items: center; gap: 6px;">
+                    <i data-lucide="zap" style="width: 14px; height: 14px;"></i> Redeem Subscription &nearr;
+                </a>
+            </div>
+            {% elif user.profile.plan == 'FREE' %}
+            <div class="status-banner status-banner-upgrade" style="background: linear-gradient(90deg, rgba(139,92,246,0.15), rgba(139,92,246,0.05)); border-left: 3px solid #8b5cf6; padding: 0.65rem 1.25rem; font-size: 0.82rem; color: #c4b5fd; display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 1rem; border-radius: 0 6px 6px 0;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <i data-lucide="sparkles" style="width: 15px; height: 15px; flex-shrink: 0; color: #a78bfa;"></i>
+                    <span><strong>14-Day Free Trial Active ({{ user.profile.trial_days_remaining }} day{{ user.profile.trial_days_remaining|pluralize }} remaining)</strong> &mdash; You have full access to all <strong>Premium</strong> features, including product photos and advanced analytics.</span>
+                </div>
+                <a href="{% url 'subscription_upgrade' %}" style="white-space: nowrap; font-size: 0.78rem; color: #a78bfa; font-weight: 700; text-decoration: none; border: 1px solid rgba(139,92,246,0.4); padding: 0.25rem 0.65rem; border-radius: 4px;">Choose Plan &nearr;</a>
+            </div>
+            {% endif %}
+            {% elif user.profile.is_account_suspended %}
+            <div class="status-banner" style="background: linear-gradient(90deg, rgba(239,68,68,0.2), rgba(239,68,68,0.06)); border-left: 3px solid #ef4444; padding: 0.75rem 1.25rem; font-size: 0.85rem; color: #fca5a5; display: flex; align-items: center; gap: 8px; margin-bottom: 1rem; border-radius: 0 6px 6px 0;">
+                <i data-lucide="shield-alert" style="width: 18px; height: 18px; flex-shrink: 0; color: #ef4444;"></i>
+                <span><strong>Store Suspended.</strong> Store operations are currently restricted. Please ask the business owner to redeem the subscription.</span>
             </div>
             {% endif %}
             {% endif %}
@@ -441,6 +600,235 @@
             });
         }
     </script>
+    <!-- Notification Drawer Slide-out -->
+    {% if user.is_authenticated %}
+    <div id="notif-drawer-overlay" class="notif-drawer-overlay" onclick="if(event.target === this) toggleNotificationDrawer()">
+        <aside class="notif-drawer">
+            <div style="padding: 1.25rem; border-bottom: 1px solid var(--border-color); display: flex; align-items: center; justify-content: space-between; background: rgba(0,0,0,0.15);">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <i data-lucide="bell" style="color: var(--color-primary); width: 20px; height: 20px;"></i>
+                    <h3 style="font-size: 1.1rem; font-weight: 700; margin: 0; color: var(--text-primary);">Announcements &amp; Updates</h3>
+                </div>
+                <button type="button" onclick="toggleNotificationDrawer()" style="background: none; border: none; color: var(--text-muted); cursor: pointer; padding: 4px;">
+                    <i data-lucide="x" style="width: 20px; height: 20px;"></i>
+                </button>
+            </div>
+
+            <!-- Web Push Notifications Prompt -->
+            <div id="push-permission-box" style="padding: 0.85rem 1.25rem; background: rgba(99, 102, 241, 0.08); border-bottom: 1px solid rgba(99, 102, 241, 0.2); display: flex; align-items: center; justify-content: space-between; gap: 10px;">
+                <div style="font-size: 0.8rem; color: var(--text-secondary); line-height: 1.3;">
+                    <strong style="color: var(--text-primary); display: block;">Desktop Push Alerts</strong>
+                    Receive instant system alerts when new updates are posted.
+                </div>
+                <button type="button" id="enable-push-btn" onclick="requestPushPermission()" class="btn btn-sm btn-primary" style="font-size: 0.75rem; padding: 0.35rem 0.75rem; white-space: nowrap;">
+                    Enable Push
+                </button>
+            </div>
+
+            <div style="padding: 0.75rem 1.25rem; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-color);">
+                <span style="font-size: 0.8rem; color: var(--text-muted);">
+                    <span id="drawer-unread-count">{{ unread_notifications_count }}</span> unread
+                </span>
+                {% if unread_notifications_count > 0 %}
+                <button type="button" onclick="markAllNotificationsRead()" style="background: none; border: none; color: var(--color-primary); font-size: 0.8rem; font-weight: 600; cursor: pointer;">
+                    Mark all as read
+                </button>
+                {% endif %}
+            </div>
+
+            <!-- Notifications List -->
+            <div style="flex: 1; overflow-y: auto; padding: 1rem 1.25rem; display: flex; flex-direction: column; gap: 0.75rem;" id="drawer-notifs-list">
+                {% for notif in tenant_notifications %}
+                <div class="glass-panel notif-item-card" id="notif-item-{{ notif.id }}" style="padding: 1rem; border-radius: 10px; border: 1px solid {% if not notif.is_read %}rgba(99,102,241,0.4){% else %}var(--border-color){% endif %}; background: {% if not notif.is_read %}rgba(99,102,241,0.06){% else %}rgba(255,255,255,0.02){% endif %};">
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; margin-bottom: 6px;">
+                        <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+                            {% if notif.type == 'URGENT' %}
+                            <span class="badge badge-danger" style="font-size: 0.65rem;">URGENT</span>
+                            {% elif notif.type == 'WARNING' %}
+                            <span class="badge badge-warning" style="font-size: 0.65rem; background: rgba(245,158,11,0.15); color: #f59e0b;">NOTICE</span>
+                            {% elif notif.type == 'FEATURE' %}
+                            <span class="badge badge-info" style="font-size: 0.65rem; background: rgba(139,92,246,0.15); color: #a78bfa;">NEW</span>
+                            {% else %}
+                            <span class="badge badge-info" style="font-size: 0.65rem;">UPDATE</span>
+                            {% endif %}
+                            <strong style="font-size: 0.88rem; color: var(--text-primary);">{{ notif.title }}</strong>
+                        </div>
+                        {% if not notif.is_read %}
+                        <button type="button" onclick="markNotificationRead({{ notif.id }}, this.closest('.notif-item-card'))" class="btn btn-sm btn-secondary" style="font-size: 0.7rem; padding: 0.2rem 0.5rem; flex-shrink: 0;" title="Mark as read">
+                            Read
+                        </button>
+                        {% endif %}
+                    </div>
+                    <p style="font-size: 0.82rem; color: var(--text-secondary); margin: 0 0 6px 0; line-height: 1.45; word-break: break-word;">
+                        {{ notif.message }}
+                    </p>
+                    <div style="font-size: 0.7rem; color: var(--text-muted); display: flex; justify-content: space-between;">
+                        <span>{{ notif.created_at|date:"M d, Y H:i" }}</span>
+                        {% if notif.target_is_all %}
+                        <span>Broadcast</span>
+                        {% else %}
+                        <span>Direct Notice</span>
+                        {% endif %}
+                    </div>
+                </div>
+                {% empty %}
+                <div style="text-align: center; padding: 3rem 1rem; color: var(--text-muted); font-size: 0.88rem;">
+                    <i data-lucide="check-check" style="width: 32px; height: 32px; margin: 0 auto 0.75rem; color: var(--color-success); display: block;"></i>
+                    You're all caught up! No new announcements.
+                </div>
+                {% endfor %}
+            </div>
+        </aside>
+    </div>
+
+    <script>
+        function getCsrfToken() {
+            const input = document.querySelector('[name=csrfmiddlewaretoken]');
+            if (input) return input.value;
+            const cookie = document.cookie.split('; ').find(row => row.startsWith('csrftoken='));
+            return cookie ? cookie.split('=')[1] : '';
+        }
+
+        function toggleNotificationDrawer() {
+            const overlay = document.getElementById('notif-drawer-overlay');
+            if (overlay) {
+                overlay.classList.toggle('active');
+                if (overlay.classList.contains('active')) {
+                    lucide.createIcons();
+                    checkPushPermissionUI();
+                }
+            }
+        }
+
+        function checkPushPermissionUI() {
+            const box = document.getElementById('push-permission-box');
+            if (!box) return;
+            if (!('Notification' in window) || Notification.permission === 'granted') {
+                box.style.display = 'none';
+            } else {
+                box.style.display = 'flex';
+            }
+        }
+
+        function requestPushPermission() {
+            if (!('Notification' in window)) {
+                alert("Your browser does not support desktop notifications.");
+                return;
+            }
+            Notification.requestPermission().then(permission => {
+                if (permission === 'granted') {
+                    checkPushPermissionUI();
+                    showNotification("Desktop push notifications enabled!", "success");
+                    try {
+                        new Notification("viARMS Notifications Enabled", {
+                            body: "You will now receive desktop alerts for system updates and announcements.",
+                            icon: "/static/icons/icon-192.png"
+                        });
+                    } catch (e) {
+                        console.log("Notification constructor err:", e);
+                    }
+                }
+            });
+        }
+
+        function markNotificationRead(notifId, elementToUpdate) {
+            fetch('/api/notifications/mark-read/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCsrfToken()
+                },
+                body: JSON.stringify({ notification_id: notifId })
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    if (elementToUpdate) {
+                        if (elementToUpdate.id === 'urgent-broadcast-banner') {
+                            elementToUpdate.remove();
+                        } else {
+                            elementToUpdate.style.background = 'rgba(255,255,255,0.02)';
+                            elementToUpdate.style.borderColor = 'var(--border-color)';
+                            const btn = elementToUpdate.querySelector('button');
+                            if (btn) btn.remove();
+                        }
+                    }
+                    updateUnreadBadge(-1);
+                }
+            })
+            .catch(err => console.error("Error marking read:", err));
+        }
+
+        function markAllNotificationsRead() {
+            fetch('/api/notifications/mark-read/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCsrfToken()
+                },
+                body: JSON.stringify({ notification_id: 'all' })
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    const urgent = document.getElementById('urgent-broadcast-banner');
+                    if (urgent) urgent.remove();
+                    document.querySelectorAll('.notif-item-card').forEach(card => {
+                        card.style.background = 'rgba(255,255,255,0.02)';
+                        card.style.borderColor = 'var(--border-color)';
+                        const btn = card.querySelector('button');
+                        if (btn) btn.remove();
+                    });
+                    document.querySelectorAll('.notif-badge-pill').forEach(pill => pill.remove());
+                    const drawerCount = document.getElementById('drawer-unread-count');
+                    if (drawerCount) drawerCount.textContent = '0';
+                }
+            })
+            .catch(err => console.error("Error marking all read:", err));
+        }
+
+        function updateUnreadBadge(delta) {
+            const pills = document.querySelectorAll('.notif-badge-pill');
+            pills.forEach(pill => {
+                let val = parseInt(pill.textContent || '0', 10) + delta;
+                if (val <= 0) {
+                    pill.remove();
+                } else {
+                    pill.textContent = val;
+                }
+            });
+            const drawerCount = document.getElementById('drawer-unread-count');
+            if (drawerCount) {
+                let val = parseInt(drawerCount.textContent || '0', 10) + delta;
+                drawerCount.textContent = Math.max(0, val);
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            checkPushPermissionUI();
+            if ('Notification' in window && Notification.permission === 'granted') {
+                const firstUnread = document.querySelector('.notif-item-card[style*="rgba(99,102,241,0.06)"]');
+                if (firstUnread) {
+                    const notifId = firstUnread.id.replace('notif-item-', '');
+                    const lastNotified = localStorage.getItem('viarms_last_push_notif_id');
+                    if (lastNotified !== notifId) {
+                        const titleEl = firstUnread.querySelector('strong');
+                        const msgEl = firstUnread.querySelector('p');
+                        if (titleEl) {
+                            try {
+                                new Notification(titleEl.textContent, {
+                                    body: msgEl ? msgEl.textContent.trim() : 'New admin update available.',
+                                    icon: '/static/icons/icon-192.png'
+                                });
+                                localStorage.setItem('viarms_last_push_notif_id', notifId);
+                            } catch(e) {}
+                        }
+                    }
+                }
+            }
+        });
+    </script>
+    {% endif %}
 </body>
 
 </html>

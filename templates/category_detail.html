@@ -1,0 +1,171 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}{{ category.name }} Dashboard - viARMS{% endblock %}
+
+{% block content %}
+<div style="padding: 0 0 2rem;">
+
+  <!-- Page Header -->
+  <div class="panel-header" style="margin-bottom: 1.5rem; flex-wrap: wrap; gap: 1rem; align-items: flex-start;">
+    <div>
+      <div style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.4rem;">
+        <a href="{% url 'products' %}" class="btn btn-secondary btn-sm" style="padding: 0.3rem 0.7rem; font-size: 0.8rem;">
+          <i data-lucide="arrow-left" style="width: 14px; height: 14px;"></i> Products
+        </a>
+        <span style="color: var(--text-muted); font-size: 0.85rem;">/ Categories /</span>
+        <span style="color: var(--color-primary); font-size: 0.85rem; font-weight: 600;">{{ category.name }}</span>
+      </div>
+      <h1 style="font-size: 1.75rem; font-weight: 700; display: flex; align-items: center; gap: 0.6rem;">
+        <i data-lucide="folder-open" style="width: 28px; height: 28px; color: var(--color-primary);"></i>
+        {{ category.name }}
+      </h1>
+      {% if category.description %}
+      <p style="color: var(--text-secondary); font-size: 0.9rem; margin-top: 0.3rem;">{{ category.description }}</p>
+      {% endif %}
+    </div>
+    <div style="display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: center;">
+      <form method="GET" style="display: flex; gap: 0.5rem; align-items: center;">
+        <input type="search" name="q" value="{{ search_q }}" class="form-control" placeholder="Search products…" style="width: 220px; font-size: 0.85rem;">
+        <button type="submit" class="btn btn-secondary btn-sm"><i data-lucide="search" style="width: 14px; height: 14px;"></i></button>
+        {% if search_q %}<a href="{% url 'category_detail' category.id %}" class="btn btn-secondary btn-sm" style="color: #ef4444;">✕</a>{% endif %}
+      </form>
+      <a href="{% url 'expired_products' %}?category_id={{ category.id }}" class="btn btn-secondary btn-sm" style="border-color: rgba(239,68,68,0.5); color: #ef4444;">
+        <i data-lucide="alert-triangle" style="width: 14px; height: 14px;"></i> Expired in Category
+      </a>
+    </div>
+  </div>
+
+  <!-- Expired Alert Banner -->
+  {% if expired_count > 0 %}
+  <div style="background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.4); border-radius: 10px; padding: 0.9rem 1.2rem; margin-bottom: 1.5rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
+    <div style="display: flex; align-items: center; gap: 0.6rem;">
+      <i data-lucide="alert-octagon" style="width: 20px; height: 20px; color: #ef4444;"></i>
+      <span style="font-weight: 600; color: #ef4444;">{{ expired_count }} expired product{{ expired_count|pluralize }}</span>
+      <span style="color: var(--text-secondary); font-size: 0.9rem;">in this category —</span>
+      <span style="font-weight: 700; color: #ef4444;">₦{{ expired_cost_value|floatformat:2 }} capital at risk</span>
+    </div>
+    <a href="{% url 'expired_products' %}?category_id={{ category.id }}" class="btn btn-sm" style="background: rgba(239,68,68,0.15); border: 1px solid rgba(239,68,68,0.4); color: #ef4444; padding: 0.3rem 0.8rem; font-size: 0.8rem;">
+      View Expired Items &rarr;
+    </a>
+  </div>
+  {% endif %}
+
+  <!-- Summary Cards -->
+  <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 1rem; margin-bottom: 1.75rem;">
+    <div class="glass-panel" style="padding: 1.1rem 1.25rem;">
+      <div style="font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 0.4rem;">Products</div>
+      <div style="font-size: 1.8rem; font-weight: 700; color: var(--text-primary);">{{ total_products_count }}</div>
+      <div style="font-size: 0.75rem; color: var(--text-secondary);">distinct SKUs</div>
+    </div>
+    <div class="glass-panel" style="padding: 1.1rem 1.25rem;">
+      <div style="font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 0.4rem;">Total Units</div>
+      <div style="font-size: 1.8rem; font-weight: 700; color: var(--text-primary);">{{ total_items_quantity }}</div>
+      <div style="font-size: 0.75rem; color: var(--text-secondary);">units in stock</div>
+    </div>
+    <div class="glass-panel" style="padding: 1.1rem 1.25rem;">
+      <div style="font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 0.4rem;">Cost Value</div>
+      <div style="font-size: 1.5rem; font-weight: 700; color: #60a5fa;">₦{{ total_cost_value|floatformat:2 }}</div>
+      <div style="font-size: 0.75rem; color: var(--text-secondary);">capital invested</div>
+    </div>
+    <div class="glass-panel" style="padding: 1.1rem 1.25rem;">
+      <div style="font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 0.4rem;">Selling Value</div>
+      <div style="font-size: 1.5rem; font-weight: 700; color: #34d399;">₦{{ total_selling_value|floatformat:2 }}</div>
+      <div style="font-size: 0.75rem; color: var(--text-secondary);">gross revenue target</div>
+    </div>
+    <div class="glass-panel" style="padding: 1.1rem 1.25rem;">
+      <div style="font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 0.4rem;">Potential Profit</div>
+      <div style="font-size: 1.5rem; font-weight: 700; color: {% if total_potential_profit >= 0 %}#a78bfa{% else %}#ef4444{% endif %};">₦{{ total_potential_profit|floatformat:2 }}</div>
+      <div style="font-size: 0.75rem; color: var(--text-secondary);">if all sold</div>
+    </div>
+    <div class="glass-panel" style="padding: 1.1rem 1.25rem;">
+      <div style="font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 0.4rem;">Profit Margin</div>
+      <div style="font-size: 1.8rem; font-weight: 700; color: {% if profit_margin_pct >= 20 %}#34d399{% elif profit_margin_pct >= 10 %}#fbbf24{% else %}#ef4444{% endif %};">{{ profit_margin_pct|floatformat:1 }}%</div>
+      <div style="font-size: 0.75rem; color: var(--text-secondary);">overall margin</div>
+    </div>
+  </div>
+
+  <!-- Products Table -->
+  <div class="glass-panel" style="padding: 1.5rem;">
+    <div class="panel-header" style="margin-bottom: 1rem;">
+      <h2 class="panel-title" style="font-size: 1rem; display: flex; align-items: center; gap: 0.5rem;">
+        <i data-lucide="list" style="width: 16px; height: 16px; color: var(--color-primary);"></i>
+        Product Breakdown
+        {% if search_q %}<span style="font-size: 0.75rem; color: var(--text-muted); font-weight: 400;">&nbsp;— results for "{{ search_q }}"</span>{% endif %}
+      </h2>
+    </div>
+
+    {% if products %}
+    <div style="overflow-x: auto;">
+      <table class="data-table" style="width: 100%; font-size: 0.82rem;">
+        <thead>
+          <tr>
+            <th>Product</th>
+            <th>SKU</th>
+            <th>Batch</th>
+            <th>Shop</th>
+            <th style="text-align: right;">Qty</th>
+            <th style="text-align: right;">Unit Cost</th>
+            <th style="text-align: right;">Unit Sell</th>
+            <th style="text-align: right;">Total Cost</th>
+            <th style="text-align: right;">Total Sell</th>
+            <th style="text-align: right;">Potential Profit</th>
+            <th style="text-align: right;">Margin %</th>
+            <th>Expiry</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in products %}
+          {% with p=row.product %}
+          <tr {% if p.is_expired %}style="background: rgba(239,68,68,0.06); border-left: 2px solid rgba(239,68,68,0.5);"{% elif p.stock_quantity <= p.min_stock_level %}style="background: rgba(251,191,36,0.05); border-left: 2px solid rgba(251,191,36,0.4);"{% endif %}>
+            <td>
+              <div style="font-weight: 600; {% if p.is_expired %}text-decoration: line-through; color: var(--text-muted);{% endif %}">{{ p.name }}</div>
+              {% if p.is_expired %}<span style="font-size: 0.7rem; color: #ef4444; font-weight: 600;">EXPIRED</span>{% elif p.stock_quantity <= p.min_stock_level %}<span style="font-size: 0.7rem; color: #fbbf24; font-weight: 600;">LOW STOCK</span>{% endif %}
+            </td>
+            <td style="font-family: monospace; font-size: 0.8rem; font-weight: 600;">{{ p.sku }}</td>
+            <td><span style="font-size: 0.75rem; background: rgba(99,102,241,0.12); color: var(--color-primary); padding: 2px 7px; border-radius: 4px; font-weight: 600;">{{ p.batch_number|default:"BN: 1" }}</span></td>
+            <td style="font-size: 0.8rem; color: var(--text-secondary);">{{ p.shop.name|default:"—" }}</td>
+            <td style="text-align: right; font-weight: 600;">{{ p.stock_quantity }}</td>
+            <td style="text-align: right;">₦{{ p.cost_price|floatformat:2 }}</td>
+            <td style="text-align: right;">₦{{ p.selling_price|floatformat:2 }}</td>
+            <td style="text-align: right; color: #60a5fa;">₦{{ row.cost_total|floatformat:2 }}</td>
+            <td style="text-align: right; color: #34d399;">₦{{ row.selling_total|floatformat:2 }}</td>
+            <td style="text-align: right; font-weight: 600; color: {% if row.potential_profit >= 0 %}#a78bfa{% else %}#ef4444{% endif %};">₦{{ row.potential_profit|floatformat:2 }}</td>
+            <td style="text-align: right; color: {% if row.margin_pct >= 20 %}#34d399{% elif row.margin_pct >= 10 %}#fbbf24{% else %}#ef4444{% endif %}; font-weight: 600;">{{ row.margin_pct|floatformat:1 }}%</td>
+            <td style="font-size: 0.8rem;">
+              {% if p.expiry_date %}
+                <span {% if p.is_expired %}style="color: #ef4444; font-weight: 600;"{% elif p.days_until_expiry is not None and p.days_until_expiry <= 30 %}style="color: #fbbf24; font-weight: 600;"{% endif %}>
+                  {{ p.expiry_date|date:"M d, Y" }}
+                </span>
+              {% else %}—{% endif %}
+            </td>
+          </tr>
+          {% endwith %}
+          {% endfor %}
+        </tbody>
+        <!-- Totals Row -->
+        <tfoot>
+          <tr style="border-top: 2px solid var(--border-color); background: rgba(255,255,255,0.03);">
+            <td colspan="4" style="font-weight: 700; padding: 0.75rem 1rem; font-size: 0.85rem;">TOTALS</td>
+            <td style="text-align: right; font-weight: 700;">{{ total_items_quantity }}</td>
+            <td colspan="2"></td>
+            <td style="text-align: right; font-weight: 700; color: #60a5fa;">₦{{ total_cost_value|floatformat:2 }}</td>
+            <td style="text-align: right; font-weight: 700; color: #34d399;">₦{{ total_selling_value|floatformat:2 }}</td>
+            <td style="text-align: right; font-weight: 700; color: #a78bfa;">₦{{ total_potential_profit|floatformat:2 }}</td>
+            <td style="text-align: right; font-weight: 700; color: {% if profit_margin_pct >= 20 %}#34d399{% elif profit_margin_pct >= 10 %}#fbbf24{% else %}#ef4444{% endif %};">{{ profit_margin_pct|floatformat:1 }}%</td>
+            <td></td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+    {% else %}
+    <div style="text-align: center; padding: 3rem 1rem; color: var(--text-muted);">
+      <i data-lucide="package" style="width: 48px; height: 48px; margin-bottom: 1rem; opacity: 0.3;"></i>
+      <p style="font-size: 1rem; font-weight: 500;">No products found{% if search_q %} matching "{{ search_q }}"{% endif %}.</p>
+      <p style="font-size: 0.85rem; margin-top: 0.5rem;">Add products to this category from the <a href="{% url 'products' %}" style="color: var(--color-primary);">Products page</a>.</p>
+    </div>
+    {% endif %}
+  </div>
+
+</div>
+{% endblock %}

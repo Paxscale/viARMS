@@ -49,6 +49,7 @@
             </thead>
             <tbody>
                 {% for profile in pending_users %}
+                {% if not profile.user.is_superuser %}
                 <tr>
                     <td>
                         <div style="font-weight: 600;">{{ profile.user.username }}</div>
@@ -68,6 +69,7 @@
                         </form>
                     </td>
                 </tr>
+                {% endif %}
                 {% empty %}
                 <tr>
                     <td colspan="6" style="text-align: center; padding: 2rem; color: var(--text-muted);">
@@ -95,6 +97,7 @@
                 <thead><tr><th>Applicant</th><th>Business</th><th>Verification details</th><th>Status</th><th>Review action</th></tr></thead>
                 <tbody>
                     {% for profile in pending_kyc %}
+                    {% if not profile.user.is_superuser %}
                     <tr>
                         <td><strong>{{ profile.user.username }}</strong><div style="font-size: 0.78rem; color: var(--text-muted);">{{ profile.user.email }}</div></td>
                         <td>{{ profile.shop.name|default:"-" }}<div style="font-size: 0.78rem; color: var(--text-muted);">{{ profile.get_business_type_display }}</div></td>
@@ -108,8 +111,100 @@
                             </form>
                         </td>
                     </tr>
+                    {% endif %}
                     {% empty %}
                     <tr><td colspan="5" style="text-align: center; padding: 2rem; color: var(--text-muted);">No KYC submissions need review.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Subscription & Upgrade Confirmations Queue -->
+<div style="margin-bottom: 2rem;">
+    <div class="panel-header" style="margin-bottom: 1rem;">
+        <div>
+            <h2 style="font-size: 1.25rem; font-weight: 600; display: flex; align-items: center; gap: 8px;">
+                <i data-lucide="credit-card" style="color: var(--color-primary);"></i> Subscription &amp; Upgrade Confirmations
+            </h2>
+            <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: 0.25rem;">
+                Review bank transfer proofs and confirm tenant subscription plan upgrades.
+            </p>
+        </div>
+        <span class="badge {% if pending_payments_count > 0 %}badge-warning{% else %}badge-success{% endif %}">
+            {{ pending_payments_count }} awaiting confirmation
+        </span>
+    </div>
+    <div class="glass-panel" style="padding: 1.25rem;">
+        <div class="table-responsive">
+            <table class="custom-table">
+                <thead>
+                    <tr>
+                        <th>Tenant</th>
+                        <th>Requested Plan</th>
+                        <th>Amount</th>
+                        <th>Method &amp; Reference</th>
+                        <th>Sender / Bank</th>
+                        <th>Payment Proof</th>
+                        <th>Date Submitted</th>
+                        <th style="text-align: right;">Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for p in pending_payments %}
+                    <tr>
+                        <td>
+                            <strong>{{ p.tenant.username }}</strong>
+                            <div style="font-size: 0.78rem; color: var(--text-muted);">{{ p.tenant.email }}</div>
+                        </td>
+                        <td>
+                            <span class="badge" style="background: rgba(99,102,241,0.15); color: var(--color-primary);">{{ p.get_plan_display }}</span>
+                            <div style="font-size: 0.75rem; color: var(--text-muted);">{{ p.get_billing_cycle_display }}</div>
+                        </td>
+                        <td>
+                            <strong style="color: var(--text-primary); font-size: 0.95rem;">₦{{ p.amount|floatformat:2 }}</strong>
+                        </td>
+                        <td>
+                            <span style="font-size: 0.82rem;">{{ p.get_payment_method_display }}</span>
+                            <div style="font-family: monospace; font-size: 0.75rem; color: #a78bfa;">#{{ p.reference }}</div>
+                        </td>
+                        <td>
+                            <div style="font-size: 0.82rem; font-weight: 600;">{{ p.sender_name|default:"Not specified" }}</div>
+                            <div style="font-size: 0.75rem; color: var(--text-muted);">{{ p.sender_bank|default:"-" }}</div>
+                        </td>
+                        <td>
+                            {% if p.proof_image %}
+                            <a href="{{ p.proof_image.url }}" target="_blank" class="btn btn-sm btn-secondary" style="font-size: 0.75rem; padding: 0.25rem 0.5rem; display: inline-flex; align-items: center; gap: 4px;">
+                                <i data-lucide="external-link" style="width: 12px; height: 12px;"></i> View Proof
+                            </a>
+                            {% else %}
+                            <span style="font-size: 0.75rem; color: var(--text-muted);">No receipt image</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <div style="font-size: 0.8rem;">{{ p.created_at|date:"M d, Y" }}</div>
+                            <div style="font-size: 0.72rem; color: var(--text-muted);">{{ p.created_at|date:"h:i A" }}</div>
+                        </td>
+                        <td style="text-align: right;">
+                            <form method="POST" style="display: inline-flex; gap: 0.4rem;">
+                                {% csrf_token %}
+                                <input type="hidden" name="payment_id" value="{{ p.id }}">
+                                <button type="submit" name="action" value="confirm_subscription" class="btn btn-primary btn-sm" style="background: #10b981; border-color: #10b981; font-size: 0.78rem;">
+                                    Confirm &amp; Upgrade
+                                </button>
+                                <button type="submit" name="action" value="reject_subscription" class="btn btn-danger btn-sm" style="font-size: 0.78rem;" onclick="return confirm('Reject this subscription payment?');">
+                                    Reject
+                                </button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="8" style="text-align: center; padding: 2rem; color: var(--text-muted);">
+                            No pending subscription upgrade payments awaiting confirmation.
+                        </td>
+                    </tr>
                     {% endfor %}
                 </tbody>
             </table>
@@ -146,6 +241,7 @@
                 </thead>
                 <tbody>
                     {% for profile in all_tenants %}
+                    {% if not profile.user.is_superuser %}
                     <tr>
                         <td>
                             <div style="font-weight: 600;">{{ profile.shop.name|default:profile.user.username }}</div>
@@ -160,10 +256,22 @@
                                 <input type="hidden" name="action" value="update_plan">
                                 <input type="hidden" name="tenant_search" value="{{ tenant_search }}">
                                 <select name="plan" class="form-control" style="font-size: 0.75rem; padding: 0.2rem;" onchange="this.form.submit()">
-                                    <option value="FREE" {% if profile.plan == 'FREE' %}selected{% endif %}>Free</option>
+                                    <option value="FREE" {% if profile.plan == 'FREE' %}selected{% endif %}>14-Day Free Trial</option>
+                                    <option value="STANDARD" {% if profile.plan == 'STANDARD' %}selected{% endif %}>Standard</option>
                                     <option value="PREMIUM" {% if profile.plan == 'PREMIUM' %}selected{% endif %}>Premium</option>
                                     <option value="GOLDEN_PREMIUM" {% if profile.plan == 'GOLDEN_PREMIUM' %}selected{% endif %}>Golden Premium</option>
                                 </select>
+                                {% if profile.is_account_suspended %}
+                                    <div style="margin-top: 4px;">
+                                        <span class="badge" style="background: rgba(239,68,68,0.2); color: #ef4444; font-size: 0.7rem; padding: 2px 6px; font-weight: 700;">
+                                            Suspended ({{ profile.days_until_deletion }}d to auto-deletion)
+                                        </span>
+                                    </div>
+                                {% elif profile.plan == 'FREE' and profile.trial_days_remaining is not None %}
+                                    <div style="margin-top: 4px;">
+                                        <span class="badge" style="background: rgba(139,92,246,0.15); color: #a78bfa; font-size: 0.7rem; padding: 2px 6px;">{{ profile.trial_days_remaining }}d trial left</span>
+                                    </div>
+                                {% endif %}
                             </form>
                         </td>
                         <td>
@@ -205,6 +313,7 @@
                             </div>
                         </td>
                     </tr>
+                    {% endif %}
                     {% empty %}
                     <tr>
                         <td colspan="5" style="text-align: center; padding: 2rem; color: var(--text-muted);">{% if tenant_search %}No tenants match your search.{% else %}No tenants registered.{% endif %}</td>
@@ -212,6 +321,115 @@
                     {% endfor %}
                 </tbody>
             </table>
+        </div>
+    </div>
+
+    <!-- Tenant Announcements, Updates & Push Notifications -->
+    <div class="glass-panel" style="padding: 1.5rem; margin-bottom: 2rem;">
+        <h2 style="font-size: 1.25rem; font-weight: 600; margin-bottom: 1rem; display: flex; align-items: center; gap: 8px;">
+            <i data-lucide="bell-ring" style="color: var(--color-primary);"></i> Broadcast &amp; Push Notifications to Tenants
+        </h2>
+        <p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 1.25rem;">
+            Send announcements, system alerts, maintenance schedules, or feature releases to all business accounts or specific tenants.
+        </p>
+
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1.5rem;">
+            <!-- Send Form -->
+            <form method="POST" style="background: rgba(0,0,0,0.15); padding: 1.25rem; border-radius: 12px; border: 1px solid var(--border-color);">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="send_notification">
+                <h4 style="font-size: 0.95rem; font-weight: 600; margin-bottom: 1rem; color: var(--text-primary); display: flex; align-items: center; gap: 6px;">
+                    <i data-lucide="send" style="width: 16px; height: 16px; color: var(--color-primary);"></i> New Announcement / Push Alert
+                </h4>
+
+                <div class="form-group" style="margin-bottom: 0.75rem;">
+                    <label class="form-label" style="font-size: 0.75rem; text-transform: uppercase; font-weight: 600; color: var(--text-muted);">Title</label>
+                    <input type="text" name="title" class="form-control" placeholder="e.g. Scheduled System Update / New Feature Released" required>
+                </div>
+
+                <div class="form-row-grid-2" style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-bottom: 0.75rem;">
+                    <div class="form-group">
+                        <label class="form-label" style="font-size: 0.75rem; text-transform: uppercase; font-weight: 600; color: var(--text-muted);">Type</label>
+                        <select name="notification_type" class="form-control" required>
+                            <option value="INFO">Info / General Update</option>
+                            <option value="WARNING">Important Notice</option>
+                            <option value="URGENT">Critical / Action Required</option>
+                            <option value="FEATURE">New Feature Release</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" style="font-size: 0.75rem; text-transform: uppercase; font-weight: 600; color: var(--text-muted);">Recipient</label>
+                        <select name="target_tenant_id" class="form-control">
+                            <option value="ALL">All Tenants (Broadcast)</option>
+                            {% for tp in tenant_options %}
+                            {% if not tp.user.is_superuser %}
+                            <option value="{{ tp.user.id }}">{{ tp.shop.name|default:tp.user.username }} ({{ tp.user.username }})</option>
+                            {% endif %}
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-group" style="margin-bottom: 1rem;">
+                    <label class="form-label" style="font-size: 0.75rem; text-transform: uppercase; font-weight: 600; color: var(--text-muted);">Message Body</label>
+                    <textarea name="message" class="form-control" placeholder="Write announcement details or instructions..." rows="3" required></textarea>
+                </div>
+
+                <button type="submit" class="btn btn-primary btn-block" style="display: flex; align-items: center; justify-content: center; gap: 8px;">
+                    <i data-lucide="radio" style="width: 16px; height: 16px;"></i> Send Push Notification &amp; Announcement
+                </button>
+            </form>
+
+            <!-- Active Broadcasts List -->
+            <div style="background: rgba(0,0,0,0.15); padding: 1.25rem; border-radius: 12px; border: 1px solid var(--border-color); display: flex; flex-direction: column;">
+                <h4 style="font-size: 0.95rem; font-weight: 600; margin-bottom: 1rem; color: var(--text-primary); display: flex; align-items: center; justify-content: space-between;">
+                    <span style="display: flex; align-items: center; gap: 6px;">
+                        <i data-lucide="list" style="width: 16px; height: 16px; color: var(--color-primary);"></i> Published Announcements
+                    </span>
+                    <span class="badge" style="background: rgba(99,102,241,0.15); color: var(--color-primary); font-size: 0.75rem;">{{ admin_notifications|length }} active</span>
+                </h4>
+
+                <div style="overflow-y: auto; max-height: 280px; flex: 1;">
+                    <ul style="list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 0.5rem;">
+                        {% for n in admin_notifications %}
+                        <li style="padding: 0.75rem; background: rgba(255,255,255,0.03); border: 1px solid var(--border-color); border-radius: 8px; display: flex; justify-content: space-between; align-items: flex-start; gap: 0.75rem;">
+                            <div style="flex: 1; min-width: 0;">
+                                <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 4px;">
+                                    {% if n.notification_type == 'URGENT' %}
+                                    <span class="badge badge-danger" style="font-size: 0.65rem;">URGENT</span>
+                                    {% elif n.notification_type == 'WARNING' %}
+                                    <span class="badge badge-warning" style="font-size: 0.65rem; background: rgba(245,158,11,0.15); color: #f59e0b; border: 1px solid rgba(245,158,11,0.3);">NOTICE</span>
+                                    {% elif n.notification_type == 'FEATURE' %}
+                                    <span class="badge badge-info" style="font-size: 0.65rem; background: rgba(139,92,246,0.15); color: #a78bfa; border: 1px solid rgba(139,92,246,0.3);">NEW</span>
+                                    {% else %}
+                                    <span class="badge badge-info" style="font-size: 0.65rem;">UPDATE</span>
+                                    {% endif %}
+                                    <strong style="font-size: 0.85rem; color: var(--text-primary);">{{ n.title }}</strong>
+                                </div>
+                                <p style="font-size: 0.78rem; color: var(--text-secondary); margin: 0 0 4px 0; line-height: 1.4; word-break: break-word;">
+                                    {{ n.message }}
+                                </p>
+                                <div style="font-size: 0.68rem; color: var(--text-muted);">
+                                    Target: <strong>{% if n.target_tenant %}{{ n.target_tenant.username }}{% else %}All Tenants{% endif %}</strong> &nbsp;·&nbsp; {{ n.created_at|date:"M d, Y H:i" }}
+                                </div>
+                            </div>
+                            <form method="POST" style="margin: 0; flex-shrink: 0;">
+                                {% csrf_token %}
+                                <input type="hidden" name="action" value="delete_notification">
+                                <input type="hidden" name="notification_id" value="{{ n.id }}">
+                                <button type="submit" class="btn btn-danger btn-sm" style="padding: 0.25rem 0.45rem;" onclick="return confirm('Delete this announcement?')" title="Delete announcement">
+                                    <i data-lucide="trash-2" style="width: 13px; height: 13px;"></i>
+                                </button>
+                            </form>
+                        </li>
+                        {% empty %}
+                        <li style="text-align: center; padding: 2rem 1rem; color: var(--text-muted); font-size: 0.82rem;">
+                            No broadcast announcements have been published yet.
+                        </li>
+                        {% endfor %}
+                    </ul>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -259,25 +477,177 @@
             </ul>
         </div>
     </div>
+
+    <!-- Company Bank & Subscription Payment Settings -->
+    <div class="glass-panel" style="padding: 1.5rem; grid-column: 1 / -1;">
+        <h2 style="font-size: 1.25rem; font-weight: 600; margin-bottom: 0.5rem; display: flex; align-items: center; gap: 8px;">
+            <i data-lucide="landmark" style="color: var(--color-primary);"></i> Company Bank &amp; Payment Gateway Settings
+        </h2>
+        <p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 1.25rem;">
+            These bank details and gateway credentials are shown to tenants during subscription upgrade checkout.
+        </p>
+
+        <form method="POST">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="update_bank_settings">
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; margin-bottom: 1.25rem;">
+                <div class="form-group">
+                    <label class="form-label" style="font-size: 0.82rem; font-weight: 600;">Bank Name</label>
+                    <input type="text" name="company_bank_name" class="form-control" value="{{ store_settings.company_bank_name|default:'Zenith Bank' }}" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" style="font-size: 0.82rem; font-weight: 600;">Account Name</label>
+                    <input type="text" name="company_account_name" class="form-control" value="{{ store_settings.company_account_name|default:'viARMS Technologies Limited' }}" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" style="font-size: 0.82rem; font-weight: 600;">Account Number</label>
+                    <input type="text" name="company_account_number" class="form-control" value="{{ store_settings.company_account_number|default:'1012345678' }}" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" style="font-size: 0.82rem; font-weight: 600;">Remita Merchant ID (Biller ID)</label>
+                    <input type="text" name="remita_merchant_id" class="form-control" value="{{ store_settings.remita_merchant_id|default:'' }}" placeholder="e.g. 2547916 (sandbox) or your live Biller ID">
+                    <span style="font-size: 0.72rem; color: var(--text-muted);">Found in your Remita Business Dashboard under Biller Management</span>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" style="font-size: 0.82rem; font-weight: 600;">Remita Service Type ID</label>
+                    <input type="text" name="remita_service_type_id" class="form-control" value="{{ store_settings.remita_service_type_id|default:'' }}" placeholder="e.g. 4430731 (sandbox) or your live Service Type ID">
+                    <span style="font-size: 0.72rem; color: var(--text-muted);">The Service Type ID assigned to this subscription product in Remita</span>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" style="font-size: 0.82rem; font-weight: 600;">Remita API Key <span style="color:#ef4444;">*</span></label>
+                    <input type="password" name="remita_api_key" class="form-control" value="{% if store_settings.remita_api_key %}********{% endif %}" placeholder="Your Remita API Key (kept secret server-side)">
+                    <span style="font-size: 0.72rem; color: var(--text-muted);">Kept confidential server-side. Used for SHA-512 request hashing &amp; payment verification. Never sent to browser.</span>
+                </div>
+            </div>
+
+            <!-- Remita IPN Webhook Info Box -->
+            <div style="background: rgba(0,0,0,0.2); border: 1px dashed var(--border-color); border-radius: 8px; padding: 0.85rem 1rem; margin-bottom: 1.25rem; font-size: 0.82rem; color: var(--text-secondary);">
+                <div style="display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.5rem;">
+                    <div>
+                        <strong style="color: var(--text-primary);"><i data-lucide="webhook" style="width: 14px; height: 14px; vertical-align: middle; margin-right: 4px;"></i>Remita IPN (Webhook) URL:</strong>
+                        <code style="background: rgba(255,255,255,0.06); padding: 2px 6px; border-radius: 4px; color: #a78bfa; margin-left: 6px; word-break: break-all;">{{ request.scheme }}://{{ request.get_host }}{% url 'remita_webhook' %}</code>
+                    </div>
+                </div>
+                <div style="font-size: 0.75rem; color: var(--text-muted); line-height: 1.6;">
+                    <strong>Setup steps in Remita Business Dashboard:</strong><br>
+                    1. Login at <a href="https://login.remita.net" target="_blank" style="color:#a78bfa;">login.remita.net</a> &rarr; Biller Management &rarr; your service.<br>
+                    2. Set <strong>Notification URL</strong> (IPN) to the URL above.<br>
+                    3. Copy your <strong>Merchant ID</strong>, <strong>Service Type ID</strong>, and <strong>API Key</strong> into the fields above and save.<br>
+                    4. For <strong>sandbox testing</strong>: Merchant ID = <code style="color:#a78bfa;">2547916</code>, Service Type ID = <code style="color:#a78bfa;">4430731</code>, API Key = <code style="color:#a78bfa;">1946</code> (Remita public demo credentials).
+                </div>
+            </div>
+
+            <button type="submit" class="btn btn-primary" style="padding: 0.55rem 1.5rem; font-size: 0.85rem;">
+                Save Payment &amp; Gateway Settings
+            </button>
+        </form>
+    </div>
 </div>
 {% endblock %}
 
 {% block scripts %}
+<!-- Delete Confirmation Modal -->
+<div id="deleteConfirmModal" style="display:none; position:fixed; inset:0; z-index:9999; background:rgba(0,0,0,0.6); align-items:center; justify-content:center;">
+    <div style="background:var(--glass-bg,#1e1e2e); border:1px solid rgba(255,255,255,0.15); border-radius:12px; padding:2rem; max-width:420px; width:90%; box-shadow:0 20px 60px rgba(0,0,0,0.5);">
+        <h3 style="margin:0 0 0.5rem; color:#ef4444; font-size:1.1rem; display:flex; align-items:center; gap:8px;">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            Confirm Permanent Deletion
+        </h3>
+        <p id="deleteModalDesc" style="margin:0.75rem 0; color:var(--text-muted,#aaa); font-size:0.9rem; line-height:1.5;"></p>
+        <div style="margin-bottom:1rem;">
+            <label style="font-size:0.85rem; font-weight:600; display:block; margin-bottom:0.4rem;">
+                Type <strong id="deleteModalUsername" style="color:#ef4444;"></strong> to confirm:
+            </label>
+            <input id="deleteConfirmInput" type="text" autocomplete="off"
+                style="width:100%; padding:0.55rem 0.75rem; border-radius:8px; border:1px solid rgba(255,255,255,0.2); background:rgba(255,255,255,0.05); color:inherit; font-size:0.9rem; outline:none; box-sizing:border-box;"
+                placeholder="Enter exact username...">
+            <p id="deleteConfirmError" style="display:none; color:#ef4444; font-size:0.8rem; margin:0.4rem 0 0;">Username does not match. Try again.</p>
+        </div>
+        <div style="display:flex; gap:0.75rem; justify-content:flex-end;">
+            <button onclick="closeDeleteModal()" style="padding:0.5rem 1.25rem; border-radius:8px; border:1px solid rgba(255,255,255,0.2); background:transparent; color:inherit; cursor:pointer; font-size:0.9rem;">Cancel</button>
+            <button id="deleteConfirmBtn" onclick="submitDeleteForm()"
+                style="padding:0.5rem 1.25rem; border-radius:8px; border:none; background:#ef4444; color:#fff; cursor:pointer; font-size:0.9rem; font-weight:600;">
+                Delete Permanently
+            </button>
+        </div>
+    </div>
+</div>
+
 <script>
+    let _pendingDeleteForm = null;
+
     function confirmTenantDeletion(form, event) {
-        const action = event.submitter ? event.submitter.value : form.querySelector('[name="action"]').value;
-        if (action !== 'reject_user' && action !== 'delete_tenant') {
-            return true;
+        event.preventDefault();
+
+        // Determine action from submitter button OR from hidden input field
+        let action = '';
+        if (event.submitter && event.submitter.value) {
+            action = event.submitter.value;
+        } else {
+            const hiddenAction = form.querySelector('input[name="action"]');
+            action = hiddenAction ? hiddenAction.value : '';
         }
-        const username = form.dataset.deleteUsername;
-        const confirmation = prompt(
-            `Permanently delete "${username}" and all associated business data? This cannot be undone.\n\nType the username to confirm:`
-        );
-        if (confirmation !== username) {
+
+        // Only intercept destructive actions
+        if (action !== 'reject_user' && action !== 'delete_tenant') {
+            form.submit();
             return false;
         }
-        form.elements.delete_confirmation.value = confirmation;
-        return true;
+
+        const username = form.dataset.deleteUsername;
+        _pendingDeleteForm = form;
+
+        // Populate modal
+        const descEl = document.getElementById('deleteModalDesc');
+        if (action === 'delete_tenant') {
+            descEl.innerHTML = 'This will <strong style="color:#ef4444;">permanently delete</strong> the tenant <strong>"' + username + '"</strong> and <strong>all associated business data</strong>. This action <strong>cannot be undone</strong>.';
+        } else {
+            descEl.innerHTML = 'This will <strong style="color:#ef4444;">reject and permanently delete</strong> the pending registration for <strong>"' + username + '"</strong>. This action <strong>cannot be undone</strong>.';
+        }
+        document.getElementById('deleteModalUsername').textContent = username;
+        document.getElementById('deleteConfirmInput').value = '';
+        document.getElementById('deleteConfirmError').style.display = 'none';
+
+        // Show modal
+        const modal = document.getElementById('deleteConfirmModal');
+        modal.style.display = 'flex';
+        setTimeout(function() { document.getElementById('deleteConfirmInput').focus(); }, 100);
+
+        // Allow Enter key to confirm
+        document.getElementById('deleteConfirmInput').onkeydown = function(e) {
+            if (e.key === 'Enter') submitDeleteForm();
+        };
+
+        return false;
     }
+
+    function submitDeleteForm() {
+        if (!_pendingDeleteForm) return;
+        const username = _pendingDeleteForm.dataset.deleteUsername;
+        const input = document.getElementById('deleteConfirmInput').value.trim();
+        const errorEl = document.getElementById('deleteConfirmError');
+
+        if (input !== username) {
+            errorEl.style.display = 'block';
+            document.getElementById('deleteConfirmInput').focus();
+            return;
+        }
+
+        errorEl.style.display = 'none';
+        _pendingDeleteForm.elements.delete_confirmation.value = input;
+        closeDeleteModal();
+        _pendingDeleteForm.submit();
+        _pendingDeleteForm = null;
+    }
+
+    function closeDeleteModal() {
+        document.getElementById('deleteConfirmModal').style.display = 'none';
+        _pendingDeleteForm = null;
+    }
+
+    // Close modal on backdrop click
+    document.getElementById('deleteConfirmModal').addEventListener('click', function(e) {
+        if (e.target === this) closeDeleteModal();
+    });
 </script>
 {% endblock %}

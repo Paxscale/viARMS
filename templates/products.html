@@ -25,7 +25,7 @@
         {% endif %}
         
         {% if is_admin or is_manager %}
-        <div style="display: flex; gap: 0.75rem;">
+        <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
             {% if is_admin %}
             <button class="btn btn-secondary" onclick="openModal('add-category-modal')">
                 <i data-lucide="plus-circle" style="width: 16px; height: 16px; color: var(--color-primary);"></i> Category
@@ -37,6 +37,12 @@
             <button class="btn btn-secondary" onclick="openModal('bulk-products-modal')">
                 <i data-lucide="layers"></i> Bulk Add
             </button>
+            <a href="{% url 'expired_products' %}" class="btn btn-secondary" style="border-color: rgba(239,68,68,0.5); color: #ef4444;">
+                <i data-lucide="alert-triangle" style="width: 15px; height: 15px;"></i> Expired Stock
+            </a>
+            <a href="{% url 'stock_batches' %}" class="btn btn-secondary" style="border-color: rgba(99,102,241,0.5); color: #818cf8;">
+                <i data-lucide="package" style="width: 15px; height: 15px;"></i> Stock Batches
+            </a>
         </div>
         {% endif %}
     </div>
@@ -97,6 +103,7 @@
                     <tr>
                         <th>Product Details</th>
                         <th>SKU/Barcode</th>
+                        <th>Batch</th>
                         <th>Category</th>
                         {% if is_admin %}
                         <th>Shop Branch</th>
@@ -107,7 +114,7 @@
                         <th>Generic / Form</th>
                         <th>Manufacturer</th>
                         <th>Strength</th>
-                        <th>Batch / NAFDAC</th>
+                        <th>NAFDAC Reg No</th>
                         <th>Storage</th>
                         <th>Rx Required</th>
                         {% elif business_type == 'BOOK_ACCESSORIES' %}
@@ -132,7 +139,7 @@
                         {% for p in products %}
                             <tr class="product-row" data-name="{{ p.name|lower }}" data-sku="{{ p.sku|lower }}" data-category="{% if p.category %}{{ p.category.name }}{% else %}Uncategorized{% endif %}">
                                 <td>
-                                    {% if p.image %}
+                                    {% if p.image and user.profile.allows_product_images %}
                                     <img src="{{ p.image.url }}" alt="{{ p.name }}" loading="lazy" style="width: 48px; height: 48px; object-fit: cover; border-radius: 6px; margin-bottom: 0.35rem;">
                                     {% endif %}
                                     <div style="font-weight: 600; {% if p.is_expired %}text-decoration: line-through; color: var(--text-muted);{% endif %}">{{ p.name }}</div>
@@ -142,7 +149,14 @@
                                 </td>
                                 <td style="font-family: monospace; font-size: 0.85rem; font-weight: 600;">{{ p.sku }}</td>
                                 <td>
-                                    <span class="badge badge-info">{% if p.category %}{{ p.category.name }}{% else %}Uncategorized{% endif %}</span>
+                                    <span class="badge" style="background: rgba(99, 102, 241, 0.12); color: var(--color-primary); font-size: 0.75rem; padding: 3px 8px; border-radius: 5px; font-weight: 600;">{{ p.batch_number_display }}</span>
+                                </td>
+                                <td>
+                                    {% if p.category %}
+                                    <a href="{% url 'category_detail' p.category.id %}" class="badge badge-info" style="text-decoration: none; cursor: pointer;" title="View {{ p.category.name }} dashboard">{{ p.category.name }}</a>
+                                    {% else %}
+                                    <span class="badge badge-info">Uncategorized</span>
+                                    {% endif %}
                                 </td>
                                 {% if is_admin %}
                                 <td>
@@ -159,8 +173,7 @@
                                 <td style="font-size: 0.85rem;">{{ p.manufacturer|default:"-" }}</td>
                                 <td style="font-size: 0.85rem;">{{ p.strength|default:"-" }}</td>
                                 <td style="font-size: 0.85rem;">
-                                    Batch: <code>{{ p.batch_number|default:"-" }}</code>
-                                    <div style="font-size: 0.75rem; color: var(--text-muted);">NAFDAC: {{ p.nafdac_reg_no|default:"-" }}</div>
+                                    <code style="font-family: monospace; font-size: 0.82rem;">{{ p.nafdac_reg_no|default:"-" }}</code>
                                 </td>
                                 <td style="font-size: 0.85rem; font-style: italic;">{{ p.storage_conditions|default:"-" }}</td>
                                 <td>
@@ -246,7 +259,7 @@
                 {% for c in categories %}
                     <li style="display: flex; justify-content: space-between; align-items: center; padding: 0.5rem 0.75rem; background: rgba(15, 23, 42, 0.4); border-radius: 8px; border: 1px solid var(--border-color);">
                         <div style="max-width: 60%;">
-                            <span style="font-size: 0.85rem; font-weight: 600; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ c.name }}</span>
+                            <a href="{% url 'category_detail' c.id %}" style="font-size: 0.85rem; font-weight: 600; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--color-primary); text-decoration: none;" title="View {{ c.name }} dashboard">{{ c.name }}</a>
                             <span style="font-size: 0.7rem; color: var(--text-muted);">{{ c.products.count }} items</span>
                         </div>
                         {% if is_admin %}
@@ -387,9 +400,10 @@
                     <label for="prod-min" class="form-label">Min Stock (Alert)</label>
                     <input type="number" name="min_stock_level" id="prod-min" class="form-control" value="5" min="0" required>
                 </div>
-                {% if not is_admin %}
-                <div style="display:none;"></div> <!-- Filler grid space -->
-                {% endif %}
+                <div class="form-group">
+                    <label for="prod-batch" class="form-label">Batch Number (Optional)</label>
+                    <input type="text" name="batch_number" id="prod-batch" class="form-control" placeholder="e.g. BN: 1 or BN: 2 (auto if blank)">
+                </div>
             </div>
 
             <div class="form-row-grid-3" style="gap: 0.75rem;">
@@ -411,6 +425,7 @@
                 <label for="prod-desc" class="form-label">Description (Optional)</label>
                 <textarea name="description" id="prod-desc" class="form-control" rows="2" placeholder="Product details..."></textarea>
             </div>
+            {% if user.profile.allows_product_images %}
             <div class="form-group">
                 <label for="prod-image" class="form-label">Product Image (optional, max 5 MB; saved at 50 KB or less)</label>
                 <div style="display: flex; align-items: flex-start; gap: 0.75rem;">
@@ -426,6 +441,17 @@
                     </button>
                 </div>
             </div>
+            {% else %}
+            <div class="form-group" style="background: rgba(234,179,8,0.06); border: 1px dashed rgba(234,179,8,0.3); border-radius: 8px; padding: 0.75rem 1rem;">
+                <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+                    <div>
+                        <strong style="font-size: 0.82rem; color: #fde047;"><i data-lucide="ban" style="width: 14px; height: 14px; vertical-align: middle; margin-right: 4px;"></i> Product Images Disabled</strong>
+                        <p style="font-size: 0.75rem; color: var(--text-muted); margin: 0.2rem 0 0;">Product images are not supported on the <strong>Standard Plan</strong>.</p>
+                    </div>
+                    <a href="{% url 'subscription_upgrade' %}" style="font-size: 0.75rem; color: #a78bfa; font-weight: 700; text-decoration: none; border: 1px solid rgba(139,92,246,0.3); padding: 3px 8px; border-radius: 4px; white-space: nowrap;">Upgrade to Premium &nearr;</a>
+                </div>
+            </div>
+            {% endif %}
 
             {% if business_type == 'PHARMACEUTICAL' %}
             <hr style="border-color: var(--border-color); margin: 1rem 0;">
@@ -450,11 +476,7 @@
                     <input type="text" name="strength" class="form-control" placeholder="e.g. 500mg, 10mg/5ml">
                 </div>
             </div>
-            <div class="form-row-grid-3" style="margin-top: 0.5rem;">
-                <div class="form-group">
-                    <label class="form-label">Batch Number</label>
-                    <input type="text" name="batch_number" class="form-control" placeholder="e.g. B1234">
-                </div>
+            <div class="form-row-grid-2" style="margin-top: 0.5rem;">
                 <div class="form-group">
                     <label class="form-label">NAFDAC Reg. No</label>
                     <input type="text" name="nafdac_reg_no" class="form-control" placeholder="e.g. A4-1234">
@@ -715,6 +737,10 @@
                     <label for="edit-prod-min" class="form-label">Min Stock (Alert)</label>
                     <input type="number" name="min_stock_level" id="edit-prod-min" class="form-control" min="0" required>
                 </div>
+                <div class="form-group">
+                    <label for="edit-prod-batch" class="form-label">Batch Number</label>
+                    <input type="text" name="batch_number" id="edit-prod-batch" class="form-control" placeholder="e.g. BN: 1 or BN: 2">
+                </div>
             </div>
 
             <div class="form-row-grid-3" style="gap: 0.75rem;">
@@ -736,6 +762,7 @@
                 <label for="edit-prod-desc" class="form-label">Description (Optional)</label>
                 <textarea name="description" id="edit-prod-desc" class="form-control" rows="2"></textarea>
             </div>
+            {% if user.profile.allows_product_images %}
             <div class="form-group">
                 <label for="edit-prod-image" class="form-label">Product Image (optional, max 5 MB; saved at 50 KB or less)</label>
                 <div style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.5rem;">
@@ -746,6 +773,11 @@
                 </div>
                 <input type="file" name="image" id="edit-prod-image" class="form-control" accept="image/jpeg,image/png,image/webp,image/gif">
             </div>
+            {% else %}
+            <div class="form-group" style="background: rgba(234,179,8,0.06); border: 1px dashed rgba(234,179,8,0.3); border-radius: 8px; padding: 0.75rem 1rem;">
+                <p style="font-size: 0.75rem; color: var(--text-muted); margin: 0;"><i data-lucide="ban" style="width: 14px; height: 14px; vertical-align: middle; margin-right: 4px;"></i> Product images are not supported on the <strong>Standard Plan</strong>.</p>
+            </div>
+            {% endif %}
 
             {% if business_type == 'PHARMACEUTICAL' %}
             <hr style="border-color: var(--border-color); margin: 1rem 0;">
@@ -770,11 +802,7 @@
                     <input type="text" name="strength" id="edit-prod-strength" class="form-control" placeholder="e.g. 500mg, 10mg/5ml">
                 </div>
             </div>
-            <div class="form-row-grid-3" style="margin-top: 0.5rem;">
-                <div class="form-group">
-                    <label class="form-label">Batch Number</label>
-                    <input type="text" name="batch_number" id="edit-prod-batch" class="form-control" placeholder="e.g. B1234">
-                </div>
+            <div class="form-row-grid-2" style="margin-top: 0.5rem;">
                 <div class="form-group">
                     <label class="form-label">NAFDAC Reg. No</label>
                     <input type="text" name="nafdac_reg_no" id="edit-prod-nafdac" class="form-control" placeholder="e.g. A4-1234">

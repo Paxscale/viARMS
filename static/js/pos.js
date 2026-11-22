@@ -1,3 +1,12 @@
+function formatBatch(batch) {
+    if (!batch) return '';
+    let b = String(batch).trim();
+    while (/^(b\/n|bn|batch)[\s:]+/i.test(b)) {
+        b = b.replace(/^(b\/n|bn|batch)[\s:]+/i, '').trim();
+    }
+    return 'BN: ' + (b || '1');
+}
+
 let cart = [];
 let activeCategory = 'all';
 let searchQuery = '';
@@ -235,10 +244,21 @@ function searchForScannedBarcode(decodedText) {
 
     const searchInput = document.getElementById('search-input');
     // Match against SKU or barcode field (case-insensitive)
-    const matchedProduct = productsData.find(product =>
+    const matchingProducts = productsData.filter(product =>
         (product.sku && product.sku.toLowerCase() === barcode.toLowerCase()) ||
         (product.batch_number && product.batch_number.toLowerCase() === barcode.toLowerCase())
     );
+
+    let matchedProduct = null;
+    if (matchingProducts.length > 0) {
+        const inStock = matchingProducts.filter(p => p.stock_quantity > 0);
+        const pool = inStock.length > 0 ? inStock : matchingProducts;
+        matchedProduct = pool.sort((a, b) => {
+            if (!a.expiry_date || a.expiry_date === 'No Expiry') return 1;
+            if (!b.expiry_date || b.expiry_date === 'No Expiry') return -1;
+            return a.expiry_date.localeCompare(b.expiry_date);
+        })[0];
+    }
 
     if (activeCategory !== 'all') {
         activeCategory = 'all';
@@ -342,6 +362,11 @@ function renderCatalog() {
             expiryLabel = `<div style="font-size: 0.72rem; color: var(--text-secondary); margin-top: 3px; display: flex; align-items: center; gap: 3px;"><i data-lucide="calendar" style="width:12px; height:12px;"></i>Exp: ${escapeHtml(product.expiry_date)}</div>`;
         }
 
+        let batchBadge = '';
+        if (product.batch_number) {
+            batchBadge = `<span class="badge batch-badge-pos" style="background: rgba(99, 102, 241, 0.22); color: #818cf8; border: 1px solid rgba(99, 102, 241, 0.4); font-size: 0.68rem; font-weight: 700; padding: 0.15rem 0.45rem; border-radius: 4px; letter-spacing: 0.3px; white-space: nowrap;">${escapeHtml(formatBatch(product.batch_number))}</span>`;
+        }
+
         let pharmaBadge = '';
         let pharmaSubtext = '';
         let businessSubtext = '';
@@ -353,7 +378,6 @@ function renderCatalog() {
 
             let extraInfo = [];
             if (product.manufacturer) extraInfo.push(escapeHtml(product.manufacturer));
-            if (product.batch_number) extraInfo.push(`B/N: ${escapeHtml(product.batch_number)}`);
             if (product.nafdac_reg_no) extraInfo.push(`NAFDAC: ${escapeHtml(product.nafdac_reg_no)}`);
             if (product.storage_conditions) extraInfo.push(`[${escapeHtml(product.storage_conditions)}]`);
 
@@ -365,9 +389,9 @@ function renderCatalog() {
             `;
 
             if (product.prescription_required) {
-                pharmaBadge = `<span class="badge badge-danger" style="font-size: 0.65rem; padding: 0.1rem 0.3rem; margin-left: 6px;">Rx</span>`;
+                pharmaBadge = `<span class="badge badge-danger" style="font-size: 0.65rem; padding: 0.15rem 0.4rem; font-weight: 700; white-space: nowrap;">Rx</span>`;
             } else {
-                pharmaBadge = `<span class="badge badge-info" style="font-size: 0.65rem; padding: 0.1rem 0.3rem; margin-left: 6px; opacity: 0.7; background: rgba(16, 185, 129, 0.2); color: #10b981; border-color: transparent;">OTC</span>`;
+                pharmaBadge = `<span class="badge badge-info" style="font-size: 0.65rem; padding: 0.15rem 0.4rem; opacity: 0.85; background: rgba(16, 185, 129, 0.2); color: #10b981; border-color: transparent; white-space: nowrap;">OTC</span>`;
             }
         }
 
@@ -388,11 +412,14 @@ function renderCatalog() {
                 ${product.image_url ? `<img class="product-card-image" src="${escapeHtml(product.image_url)}" alt="${productName}" loading="lazy">` : ''}
                 <div class="product-card-details">
                     <div class="product-card-information">
-                        <div class="product-card-name" style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap;">
-                            <span>${productName}</span>
-                            ${pharmaBadge}
+                        <div class="product-card-name" style="display: flex; align-items: flex-start; justify-content: space-between; gap: 8px;">
+                            <span style="flex: 1; min-width: 0; line-height: 1.3;">${productName}</span>
+                            <div class="product-card-badges" style="display: inline-flex; align-items: center; gap: 5px; flex-shrink: 0; margin-left: auto;">
+                                ${batchBadge}
+                                ${pharmaBadge}
+                            </div>
                         </div>
-                        <div class="product-card-sku">SKU: ${productSku}</div>
+                        <div class="product-card-sku"><span>SKU: ${productSku}</span></div>
                         <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 2px;">${categoryName}</div>
                         ${expiryLabel}
                         ${expiryWarning}
@@ -440,6 +467,7 @@ function addToCart(productId) {
             product_id: product.id,
             name: product.name,
             strength: product.strength,
+            batch_number: product.batch_number,
             price: parseFloat(product.selling_price),
             qty: 1,
             max_stock: product.stock_quantity
@@ -447,7 +475,7 @@ function addToCart(productId) {
     }
 
     updateCartUI();
-    showNotification(`Added ${product.name} to cart.`);
+    showNotification(`Added ${product.name}${product.batch_number ? ` (${formatBatch(product.batch_number)})` : ''} to cart.`);
 }
 
 // Update Cart HTML and recalculate numbers
@@ -477,6 +505,9 @@ function updateCartUI() {
             let nameHTML = item.name;
             if (item.strength) {
                 nameHTML += ` <span style="font-size: 0.75rem; color: var(--text-muted); font-weight: normal;">(${item.strength})</span>`;
+            }
+            if (item.batch_number) {
+                nameHTML += ` <span class="badge" style="background: rgba(99, 102, 241, 0.15); color: var(--color-primary); font-size: 0.68rem; padding: 1px 5px; border-radius: 4px; font-weight: 600; margin-left: 4px;">${escapeHtml(formatBatch(item.batch_number))}</span>`;
             }
 
             row.innerHTML = `
@@ -614,10 +645,12 @@ function submitCheckout() {
             const taxableAmount = Math.max(0, subtotal - discount);
             const taxAmount = taxableAmount * (defaultTaxRate / 100);
             
+            const fallbackSettings = typeof storeSettings !== 'undefined' ? storeSettings : {};
             const mockReceipt = {
-                store_name: "viARMS (Offline)",
-                store_address: "Pending Sync",
-                store_phone: "",
+                store_name: fallbackSettings.store_name || "viARMS (Offline)",
+                store_address: fallbackSettings.store_address || "",
+                store_phone: fallbackSettings.store_phone || "",
+                store_email: fallbackSettings.store_email || "",
                 receipt_number: localReceiptNumber,
                 timestamp: new Date().toLocaleString(),
                 cashier: "Current User",
@@ -627,9 +660,9 @@ function submitCheckout() {
                 tax_amount: taxAmount.toFixed(2),
                 total_amount: (taxableAmount + taxAmount).toFixed(2),
                 payment_method: paymentMethod,
-                receipt_footer: "Thank you! (Offline Receipt)",
+                receipt_footer: fallbackSettings.receipt_footer || "Thank you! (Offline Receipt)",
                 items: cart.map(item => ({
-                    name: item.name,
+                    name: item.name + (item.batch_number ? ` [${formatBatch(item.batch_number)}]` : ''),
                     quantity: item.qty,
                     subtotal: (item.price * item.qty).toFixed(2)
                 }))
@@ -714,9 +747,10 @@ function displayReceiptModal(receipt) {
 
     area.innerHTML = `
         <div class="receipt-header">
-            <h4 style="margin: 0; font-size: 1.1rem; font-weight: bold;">${receipt.store_name}</h4>
-            <div style="font-size: 0.75rem; color: #333; margin: 4px 0;">${receipt.store_address}</div>
-            <div style="font-size: 0.75rem; color: #333;">Tel: ${receipt.store_phone}</div>
+            <h4 style="margin: 0; font-size: 1.1rem; font-weight: bold; text-align: center;">${escapeHtml(receipt.store_name || '')}</h4>
+            ${receipt.store_address ? `<div style="font-size: 0.75rem; color: #333; margin: 4px 0; text-align: center;">${escapeHtml(receipt.store_address)}</div>` : ''}
+            ${receipt.store_phone ? `<div style="font-size: 0.75rem; color: #333; text-align: center;">Tel: ${escapeHtml(receipt.store_phone)}</div>` : ''}
+            ${receipt.store_email ? `<div style="font-size: 0.75rem; color: #333; text-align: center;">Email: ${escapeHtml(receipt.store_email)}</div>` : ''}
         </div>
         
         <div style="font-size: 0.75rem; margin-bottom: 0.5rem;">
@@ -750,9 +784,11 @@ function displayReceiptModal(receipt) {
         <div style="font-size: 0.8rem;">Method: ${receipt.payment_method}</div>
         <div class="receipt-divider"></div>
         
+        ${receipt.receipt_footer ? `
         <div style="text-align: center; font-size: 0.75rem; margin-top: 1rem; font-style: italic;">
-            ${receipt.receipt_footer}
+            ${escapeHtml(receipt.receipt_footer)}
         </div>
+        ` : ''}
     `;
 
     document.getElementById('receipt-modal').classList.add('active');

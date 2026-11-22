@@ -203,9 +203,10 @@
 
         area.innerHTML = `
             <div class="receipt-header">
-                <h4 style="margin: 0; font-size: 1.1rem; font-weight: bold; text-align: center;">${receipt.store_name}</h4>
-                <div style="font-size: 0.75rem; color: #333; margin: 4px 0; text-align: center;">${receipt.store_address}</div>
-                <div style="font-size: 0.75rem; color: #333; text-align: center;">Tel: ${receipt.store_phone}</div>
+                <h4 style="margin: 0; font-size: 1.1rem; font-weight: bold; text-align: center;">${receipt.store_name || ''}</h4>
+                ${receipt.store_address ? `<div style="font-size: 0.75rem; color: #333; margin: 4px 0; text-align: center;">${receipt.store_address}</div>` : ''}
+                ${receipt.store_phone ? `<div style="font-size: 0.75rem; color: #333; text-align: center;">Tel: ${receipt.store_phone}</div>` : ''}
+                ${receipt.store_email ? `<div style="font-size: 0.75rem; color: #333; text-align: center;">Email: ${receipt.store_email}</div>` : ''}
             </div>
             
             <div style="font-size: 0.75rem; margin-bottom: 0.5rem;">
@@ -240,9 +241,11 @@
             <div style="font-size: 0.8rem;">Method: ${receipt.payment_method}</div>
             <div class="receipt-divider"></div>
             
+            ${receipt.receipt_footer ? `
             <div style="text-align: center; font-size: 0.75rem; margin-top: 1rem; font-style: italic;">
                 ${receipt.receipt_footer}
             </div>
+            ` : ''}
         `;
     }
 

@@ -193,10 +193,17 @@
     // Embed products list from django context view safely into JS variable
     const productsData = {{ products_json| safe }};
     const defaultTaxRate = parseFloat("{{ settings.tax_rate }}");
+    const storeSettings = {
+        store_name: "{{ settings.store_name|default:'Our Shop'|escapejs }}",
+        store_address: "{{ settings.address|default:''|escapejs }}",
+        store_phone: "{{ settings.phone|default:''|escapejs }}",
+        store_email: "{{ settings.email|default:''|escapejs }}",
+        receipt_footer: "{{ settings.receipt_footer|default:'Thank you for shopping with us!'|escapejs }}"
+    };
     const checkoutUrl = "{% url 'checkout_api' %}";
     const csrfToken = "{{ csrf_token }}";
 </script>
 <script src="https://unpkg.com/dexie@3.2.4/dist/dexie.min.js"></script>
 <script src="https://unpkg.com/html5-qrcode"></script>
-<script src="{% static 'js/pos.js' %}?v=5"></script>
+<script src="{% static 'js/pos.js' %}?v=6"></script>
 {% endblock %}

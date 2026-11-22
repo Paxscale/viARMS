@@ -1,13 +1,32 @@
 {% extends 'base.html' %}
 {% load static %}
 
-{% block title %}Dashboard - viARMS{% endblock %}
+{% block title %}{% if dashboard_mode == 'wholesale' %}Wholesale Dashboard{% else %}Dashboard{% endif %} - viARMS{% endblock %}
 
 {% block content %}
 <div class="panel-header" style="flex-wrap: wrap; gap: 1rem;">
     <div>
-        <h1 style="font-size: 1.75rem; font-weight: 700;">Sales Dashboard</h1>
-        <p style="color: var(--text-secondary); font-size: 0.9rem;">Overview of retail operations, metrics, and shelf monitoring.</p>
+        <div style="display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;">
+            <h1 style="font-size: 1.75rem; font-weight: 700;">
+                {% if dashboard_mode == 'wholesale' %}Wholesale Operations Dashboard{% else %}Sales Dashboard{% endif %}
+            </h1>
+            {% if dashboard_mode == 'wholesale' %}
+            <span class="badge" style="background: rgba(16, 185, 129, 0.15); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.4); padding: 3px 10px; border-radius: 20px; font-size: 0.72rem; font-weight: 700; display: inline-flex; align-items: center; gap: 4px;">
+                <i data-lucide="boxes" style="width: 12px; height: 12px;"></i> WHOLESALE MODE
+            </span>
+            {% else %}
+            <span class="badge" style="background: rgba(99, 102, 241, 0.15); color: #818cf8; border: 1px solid rgba(99, 102, 241, 0.4); padding: 3px 10px; border-radius: 20px; font-size: 0.72rem; font-weight: 700; display: inline-flex; align-items: center; gap: 4px;">
+                <i data-lucide="store" style="width: 12px; height: 12px;"></i> RETAIL MODE
+            </span>
+            {% endif %}
+        </div>
+        <p style="color: var(--text-secondary); font-size: 0.9rem;">
+            {% if dashboard_mode == 'wholesale' %}
+            Overview of wholesale operations, bulk transactions, inventory metrics, and warehouse monitoring.
+            {% else %}
+            Overview of retail operations, metrics, and shelf monitoring.
+            {% endif %}
+        </p>
     </div>
     <div style="display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap;">
         <form method="GET" id="dashboard-filter-form" style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
@@ -30,6 +49,383 @@
         </form>
     </div>
 </div>
+
+{% if dashboard_mode == 'wholesale' %}
+<!-- ==========================================================================
+     WHOLESALE MODE DASHBOARD CONTENT
+     ========================================================================== -->
+
+<!-- Wholesale Quick Actions Hub -->
+<div class="wholesale-action-hub">
+    <div style="display: flex; align-items: center; gap: 8px; margin-right: auto;">
+        <span style="font-weight: 700; color: #10b981; font-size: 0.9rem; display: flex; align-items: center; gap: 6px;">
+            <i data-lucide="package-search" style="width: 18px; height: 18px;"></i> Wholesale Management Hub
+        </span>
+        <span style="font-size: 0.75rem; color: var(--text-muted);">(Bulk Distribution & B2B Tools)</span>
+    </div>
+    <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center;">
+        <a href="{% url 'pos' %}" class="btn btn-primary btn-sm" style="display: inline-flex; align-items: center; gap: 6px;">
+            <i data-lucide="shopping-cart" style="width: 14px; height: 14px;"></i> Bulk Checkout (POS)
+        </a>
+        <a href="{% url 'stock_batches' %}" class="btn btn-outline-primary btn-sm" style="display: inline-flex; align-items: center; gap: 6px;">
+            <i data-lucide="layers" style="width: 14px; height: 14px;"></i> Batches & Stock Intake
+        </a>
+        <a href="{% url 'products' %}" class="btn btn-outline-primary btn-sm" style="display: inline-flex; align-items: center; gap: 6px;">
+            <i data-lucide="package-plus" style="width: 14px; height: 14px;"></i> Bulk Inventory
+        </a>
+        <button type="button" class="btn btn-outline-primary btn-sm" onclick="openWholesaleCatalogModal()" style="display: inline-flex; align-items: center; gap: 6px;">
+            <i data-lucide="printer" style="width: 14px; height: 14px;"></i> View / Print Line Sheet
+        </button>
+        <a href="{% url 'export_wholesale_catalog_csv' %}" class="btn btn-outline-primary btn-sm" style="display: inline-flex; align-items: center; gap: 6px;">
+            <i data-lucide="download" style="width: 14px; height: 14px;"></i> Export Price Sheet (CSV)
+        </a>
+    </div>
+</div>
+
+<!-- Wholesale KPI Summary Cards -->
+<div class="metrics-grid">
+    <div class="metric-card glass-panel" style="--glow-color: rgba(16, 185, 129, 0.2)">
+        <div style="position: absolute; right: 1.5rem; top: 1.5rem; color: var(--color-success); opacity: 0.3;">
+            <i data-lucide="package-check" style="width: 32px; height: 32px;"></i>
+        </div>
+        <div class="metric-title">Warehouse Capital (Cost)</div>
+        <div class="metric-value">₦{{ wholesale_metrics.total_inventory_cost|floatformat:2 }}</div>
+        <div class="metric-subtext">{{ wholesale_metrics.total_stock_units }} total bulk units available in inventory</div>
+    </div>
+
+    <div class="metric-card glass-panel" style="--glow-color: rgba(99, 102, 241, 0.2)">
+        <div style="position: absolute; right: 1.5rem; top: 1.5rem; color: var(--color-primary); opacity: 0.3;">
+            <i data-lucide="boxes" style="width: 32px; height: 32px;"></i>
+        </div>
+        <div class="metric-title">Potential Wholesale Revenue</div>
+        <div class="metric-value">₦{{ wholesale_metrics.total_inventory_wholesale_val|floatformat:2 }}</div>
+        <div class="metric-subtext">₦{{ wholesale_metrics.potential_inventory_profit|floatformat:2 }} expected profit ({{ wholesale_metrics.avg_inv_margin_pct|floatformat:1 }}% avg margin)</div>
+    </div>
+
+    <div class="metric-card glass-panel" style="--glow-color: rgba(99, 102, 241, 0.2)">
+        <div style="position: absolute; right: 1.5rem; top: 1.5rem; color: var(--color-primary); opacity: 0.3;">
+            <i data-lucide="wallet" style="width: 32px; height: 32px;"></i>
+        </div>
+        <div class="metric-title">Period Wholesale Revenue</div>
+        <div class="metric-value">₦{{ today_revenue|floatformat:2 }}</div>
+        <div class="metric-subtext">{{ today_count }} B2B orders · AOV: ₦{{ wholesale_metrics.avg_order_value|floatformat:2 }}</div>
+    </div>
+
+    <div class="metric-card glass-panel" style="--glow-color: rgba(16, 185, 129, 0.2)">
+        <div style="position: absolute; right: 1.5rem; top: 1.5rem; color: var(--color-success); opacity: 0.3;">
+            <i data-lucide="pie-chart" style="width: 32px; height: 32px;"></i>
+        </div>
+        <div class="metric-title">Period Net Margin & Profit</div>
+        <div class="metric-value" style="color: var(--color-success);">₦{{ today_profit|floatformat:2 }}</div>
+        <div class="metric-subtext">{{ wholesale_metrics.realized_margin_pct|floatformat:1 }}% realized wholesale profit margin</div>
+    </div>
+
+    <div class="metric-card glass-panel" style="--glow-color: {% if wholesale_metrics.reorder_count > 0 %}rgba(244, 63, 94, 0.2){% else %}rgba(16, 185, 129, 0.2){% endif %}">
+        <div style="position: absolute; right: 1.5rem; top: 1.5rem; color: {% if wholesale_metrics.reorder_count > 0 %}var(--color-danger){% else %}var(--color-success){% endif %}; opacity: 0.3;">
+            <i data-lucide="truck" style="width: 32px; height: 32px;"></i>
+        </div>
+        <div class="metric-title">Bulk Movement & Reorders</div>
+        <div class="metric-value" style="display: flex; gap: 10px; font-size: 1.5rem; margin-top: 0.35rem;">
+            <span><i data-lucide="arrow-up-right" style="width: 16px; height: 16px; vertical-align: middle; color: #10b981;"></i> {{ wholesale_metrics.total_units_sold }} units</span>
+            {% if wholesale_metrics.reorder_count > 0 %}
+            <span style="color: var(--color-danger);" title="Restock Required"><i data-lucide="alert-triangle" style="width: 16px; height: 16px; vertical-align: middle;"></i> {{ wholesale_metrics.reorder_count }}</span>
+            {% endif %}
+        </div>
+        <div class="metric-subtext">Avg {{ wholesale_metrics.avg_units_per_order }} units/order · Reorder est: ₦{{ wholesale_metrics.total_reorder_est_cost|floatformat:2 }}</div>
+    </div>
+</div>
+
+<!-- Interactive Wholesale Management Tools Row -->
+<div class="wholesale-tools-grid">
+    <!-- Tool 1: Live Bulk Margin & Carton Price Calculator -->
+    <div class="glass-panel wholesale-calc-card">
+        <div class="panel-header" style="margin-bottom: 0.75rem;">
+            <h2 class="panel-title" style="font-size: 0.95rem; display: flex; align-items: center; gap: 6px;">
+                <i data-lucide="calculator" style="width: 16px; height: 16px; color: var(--color-primary);"></i>
+                Wholesale Carton & Margin Calculator
+            </h2>
+            <span style="font-size: 0.72rem; color: var(--text-muted);">Real-time pricing tool</span>
+        </div>
+        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.75rem; margin-bottom: 1rem;">
+            <div>
+                <label style="font-size: 0.72rem; color: var(--text-secondary); display: block; margin-bottom: 3px;">Unit Cost (₦)</label>
+                <input type="number" id="calc-unit-cost" class="form-control" value="2500" min="0" step="50" oninput="runWholesaleCalculator()">
+            </div>
+            <div>
+                <label style="font-size: 0.72rem; color: var(--text-secondary); display: block; margin-bottom: 3px;">Carton/Pack Units</label>
+                <input type="number" id="calc-pack-size" class="form-control" value="24" min="1" step="1" oninput="runWholesaleCalculator()">
+            </div>
+            <div>
+                <label style="font-size: 0.72rem; color: var(--text-secondary); display: block; margin-bottom: 3px;">Target Margin (%)</label>
+                <input type="number" id="calc-margin-pct" class="form-control" value="15" min="1" max="90" step="1" oninput="runWholesaleCalculator()">
+            </div>
+        </div>
+        <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.75rem; background: rgba(255, 255, 255, 0.03); border: 1px solid var(--border-color); border-radius: 8px; padding: 0.85rem;">
+            <div>
+                <span style="font-size: 0.7rem; color: var(--text-muted); display: block;">Suggested Unit Wholesale:</span>
+                <strong id="calc-out-unit-price" style="font-size: 1.15rem; color: var(--color-primary);">₦2,941.18</strong>
+                <span id="calc-out-unit-profit" style="font-size: 0.72rem; color: #10b981; display: block;">+₦441.18 profit/unit</span>
+            </div>
+            <div>
+                <span style="font-size: 0.7rem; color: var(--text-muted); display: block;">Full Carton Price:</span>
+                <strong id="calc-out-pack-price" style="font-size: 1.15rem; color: #10b981;">₦70,588.24</strong>
+                <span id="calc-out-pack-profit" style="font-size: 0.72rem; color: #10b981; display: block;">+₦10,588.24 profit/carton</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tool 2: Wholesale Volume Tier Matrix & Order Estimator -->
+    <div class="glass-panel wholesale-calc-card">
+        <div class="panel-header" style="margin-bottom: 0.75rem;">
+            <h2 class="panel-title" style="font-size: 0.95rem; display: flex; align-items: center; gap: 6px;">
+                <i data-lucide="layers" style="width: 16px; height: 16px; color: #10b981;"></i>
+                B2B Volume Tier Rules & Discount Estimator
+            </h2>
+            <span style="font-size: 0.72rem; color: var(--text-muted);">Standard trade discounts</span>
+        </div>
+        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem; margin-bottom: 1rem;">
+            <div style="background: rgba(99, 102, 241, 0.06); border: 1px solid rgba(99, 102, 241, 0.2); border-radius: 6px; padding: 0.5rem; text-align: center;">
+                <span style="font-size: 0.68rem; color: var(--text-muted); display: block;">Tier 1 (10-49 units)</span>
+                <strong style="color: var(--color-primary); font-size: 0.9rem;">5% Discount</strong>
+                <span style="font-size: 0.65rem; color: var(--text-secondary); display: block;">Trade Wholesale</span>
+            </div>
+            <div style="background: rgba(16, 185, 129, 0.06); border: 1px solid rgba(16, 185, 129, 0.2); border-radius: 6px; padding: 0.5rem; text-align: center;">
+                <span style="font-size: 0.68rem; color: var(--text-muted); display: block;">Tier 2 (50-199 units)</span>
+                <strong style="color: #10b981; font-size: 0.9rem;">10% Discount</strong>
+                <span style="font-size: 0.65rem; color: var(--text-secondary); display: block;">Pallet / Bulk</span>
+            </div>
+            <div style="background: rgba(245, 158, 11, 0.06); border: 1px solid rgba(245, 158, 11, 0.2); border-radius: 6px; padding: 0.5rem; text-align: center;">
+                <span style="font-size: 0.68rem; color: var(--text-muted); display: block;">Tier 3 (200+ units)</span>
+                <strong style="color: var(--color-warning); font-size: 0.9rem;">15% Discount</strong>
+                <span style="font-size: 0.65rem; color: var(--text-secondary); display: block;">Master Distributor</span>
+            </div>
+        </div>
+        <div style="display: flex; gap: 0.5rem; align-items: center; background: rgba(255, 255, 255, 0.03); border: 1px solid var(--border-color); border-radius: 8px; padding: 0.65rem;">
+            <div style="flex: 1;">
+                <label style="font-size: 0.68rem; color: var(--text-muted); display: block;">Units Ordered:</label>
+                <input type="number" id="tier-order-units" class="form-control" value="60" min="1" style="padding: 0.25rem 0.5rem; font-size: 0.85rem;" oninput="runTierDiscountEstimator()">
+            </div>
+            <div style="flex: 1.2;">
+                <label style="font-size: 0.68rem; color: var(--text-muted); display: block;">Gross Total (₦):</label>
+                <input type="number" id="tier-gross-val" class="form-control" value="150000" min="0" step="5000" style="padding: 0.25rem 0.5rem; font-size: 0.85rem;" oninput="runTierDiscountEstimator()">
+            </div>
+            <div style="flex: 1.2; text-align: right;">
+                <span style="font-size: 0.68rem; color: #10b981;" id="tier-discount-badge">10% Tier 2 Applied</span>
+                <strong id="tier-final-val" style="font-size: 1.05rem; display: block; color: var(--text-primary);">₦135,000.00</strong>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Main Wholesale Layout -->
+<div class="dashboard-layout">
+    <!-- Left Column: Sales Trend + Bulk Inventory Valuation Table -->
+    <div style="display: flex; flex-direction: column; gap: 1.5rem;">
+        <!-- Weekly Wholesale Trend Chart -->
+        <div class="chart-container glass-panel">
+            <div class="panel-header">
+                <h2 class="panel-title" style="display: flex; align-items: center; gap: 8px;">
+                    <i data-lucide="trending-up" style="width: 18px; height: 18px; color: var(--color-primary);"></i>
+                    Weekly Wholesale Sales & Profit Trend
+                </h2>
+                <div style="display: flex; gap: 10px; font-size: 0.75rem;">
+                    <span style="display: flex; align-items: center; gap: 4px; color: var(--text-secondary);">
+                        <span style="width: 10px; height: 10px; border-radius: 50%; background: #6366f1; display: inline-block;"></span> Wholesale Revenue
+                    </span>
+                    {% if is_admin %}
+                    <span style="display: flex; align-items: center; gap: 4px; color: var(--text-secondary);">
+                        <span style="width: 10px; height: 10px; border-radius: 50%; background: #10b981; display: inline-block;"></span> Realized Net Profit
+                    </span>
+                    {% endif %}
+                </div>
+            </div>
+            <div style="position: relative; height: 260px; width: 100%;">
+                <canvas id="salesChart"></canvas>
+            </div>
+        </div>
+
+        <!-- Bulk Inventory Valuation & Line Sheet Table -->
+        <div class="glass-panel" style="padding: 1.5rem;">
+            <div class="panel-header" style="margin-bottom: 1rem; flex-wrap: wrap; gap: 0.5rem;">
+                <div>
+                    <h2 class="panel-title" style="display: flex; align-items: center; gap: 6px;">
+                        <i data-lucide="table-properties" style="width: 18px; height: 18px; color: #10b981;"></i>
+                        Warehouse Bulk Inventory Valuation
+                    </h2>
+                    <p style="font-size: 0.75rem; color: var(--text-muted); margin: 0;">Stock units, unit costs, wholesale line sheet pricing, and capital tied in inventory.</p>
+                </div>
+                <div style="display: flex; gap: 0.5rem;">
+                    <a href="{% url 'export_wholesale_catalog_csv' %}" class="btn btn-secondary btn-sm" style="font-size: 0.75rem;">
+                        <i data-lucide="file-spreadsheet" style="width: 14px; height: 14px;"></i> Export CSV
+                    </a>
+                    <a href="{% url 'products' %}" class="btn btn-primary btn-sm" style="font-size: 0.75rem;">
+                        <i data-lucide="package" style="width: 14px; height: 14px;"></i> Full Stock Manager
+                    </a>
+                </div>
+            </div>
+            {% if wholesale_metrics.inventory_rows %}
+            <div class="table-responsive">
+                <table class="custom-table">
+                    <thead>
+                        <tr>
+                            <th>Product & SKU</th>
+                            <th>Category</th>
+                            <th>Batch / Lot</th>
+                            <th style="text-align: right;">In-Stock</th>
+                            <th style="text-align: right;">Unit Cost</th>
+                            <th style="text-align: right;">Wholesale Price</th>
+                            <th style="text-align: right;">Tied Capital</th>
+                            <th style="text-align: right;">Potential Val.</th>
+                            <th style="text-align: center;">Margin</th>
+                            <th style="text-align: center;">Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in wholesale_metrics.inventory_rows %}
+                        <tr>
+                            <td>
+                                <strong style="font-size: 0.88rem; color: var(--text-primary); display: block;">{{ row.product.name }}</strong>
+                                <span style="font-size: 0.72rem; color: var(--text-muted); font-family: monospace;">{{ row.product.sku }}</span>
+                            </td>
+                            <td><span style="font-size: 0.78rem;">{{ row.product.category.name|default:"General" }}</span></td>
+                            <td><code style="color: var(--color-primary); font-size: 0.78rem;">{{ row.product.batch_number|default:"BN: 1" }}</code></td>
+                            <td style="text-align: right; font-weight: 700; color: {% if row.stock <= row.product.min_stock_level %}var(--color-danger){% else %}var(--text-primary){% endif %};">
+                                {{ row.stock }}
+                            </td>
+                            <td style="text-align: right; font-size: 0.85rem; color: var(--text-secondary);">₦{{ row.cost_price|floatformat:2 }}</td>
+                            <td style="text-align: right; font-weight: 700; color: #10b981; font-size: 0.88rem;">₦{{ row.wholesale_price|floatformat:2 }}</td>
+                            <td style="text-align: right; font-size: 0.82rem; color: var(--text-secondary);">₦{{ row.cost_valuation|floatformat:2 }}</td>
+                            <td style="text-align: right; font-size: 0.85rem; font-weight: 600; color: var(--text-primary);">₦{{ row.wholesale_valuation|floatformat:2 }}</td>
+                            <td style="text-align: center;">
+                                <span class="badge" style="font-size: 0.7rem; font-weight: 700; background: rgba(16, 185, 129, 0.15); color: #10b981;">{{ row.margin_pct|floatformat:1 }}%</span>
+                            </td>
+                            <td style="text-align: center;">
+                                {% if row.stock <= 0 %}
+                                    <span class="badge badge-danger">OUT</span>
+                                {% elif row.stock <= row.product.min_stock_level %}
+                                    <span class="badge badge-warning">LOW</span>
+                                {% else %}
+                                    <span class="badge badge-success" style="background: rgba(16, 185, 129, 0.2); color: #10b981;">HEALTHY</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <p style="font-size: 0.85rem; color: var(--text-muted); text-align: center; padding: 2rem;">No wholesale products added yet.</p>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Right Column: Reorder Advisory, Top Volume Movers & High-Value Invoices -->
+    <div style="display: flex; flex-direction: column; gap: 1.5rem;">
+        <!-- Bulk Restock & Reorder Advisory Panel -->
+        <div class="glass-panel" style="padding: 1.25rem; border-color: {% if wholesale_metrics.reorder_count > 0 %}rgba(244, 63, 94, 0.3){% else %}var(--border-color){% endif %};">
+            <div class="panel-header" style="margin-bottom: 0.85rem;">
+                <div>
+                    <h2 class="panel-title" style="font-size: 0.95rem; display: flex; align-items: center; gap: 6px;">
+                        <i data-lucide="package-minus" style="width: 16px; height: 16px; color: var(--color-danger);"></i>
+                        Bulk Reorder Advisory
+                    </h2>
+                    <span style="font-size: 0.72rem; color: var(--text-muted);">Items at or below wholesale minimum buffer</span>
+                </div>
+                <span class="badge badge-danger">{{ wholesale_metrics.reorder_count }} Need Restock</span>
+            </div>
+
+            {% if wholesale_metrics.reorder_items %}
+            <div style="background: rgba(244, 63, 94, 0.05); border: 1px solid rgba(244, 63, 94, 0.2); border-radius: 8px; padding: 0.75rem; margin-bottom: 0.85rem; display: flex; justify-content: space-between; align-items: center;">
+                <span style="font-size: 0.75rem; color: var(--text-secondary);">Est. Capital Required:</span>
+                <strong style="color: var(--color-danger); font-size: 1.05rem;">₦{{ wholesale_metrics.total_reorder_est_cost|floatformat:2 }}</strong>
+            </div>
+            <ul style="list-style: none; display: flex; flex-direction: column; gap: 0.65rem; max-height: 280px; overflow-y: auto;">
+                {% for item in wholesale_metrics.reorder_items %}
+                <li style="display: flex; justify-content: space-between; align-items: center; padding: 0.6rem; background: rgba(15, 23, 42, 0.4); border-radius: 6px; border: 1px solid var(--border-color);">
+                    <div>
+                        <strong style="font-size: 0.85rem; color: var(--text-primary); display: block;">{{ item.product.name }}</strong>
+                        <span style="font-size: 0.72rem; color: var(--color-danger);">Stock: {{ item.current_stock }} units left (Min: {{ item.min_level }})</span>
+                        <span style="font-size: 0.68rem; color: var(--text-muted); display: block;">Batch: {{ item.product.batch_number|default:"BN: 1" }}</span>
+                    </div>
+                    <div style="text-align: right;">
+                        <span class="badge" style="background: rgba(99, 102, 241, 0.15); color: #818cf8; font-size: 0.72rem; font-weight: 700;">+{{ item.suggested_reorder }} units</span>
+                        <span style="font-size: 0.72rem; color: var(--text-muted); display: block; margin-top: 3px;">₦{{ item.estimated_cost|floatformat:2 }}</span>
+                    </div>
+                </li>
+                {% endfor %}
+            </ul>
+            <div style="margin-top: 0.75rem; text-align: center;">
+                <a href="{% url 'stock_batches' %}" style="font-size: 0.75rem; color: var(--color-primary); text-decoration: underline;">Open Batch Intake & Stock Replenishment &rarr;</a>
+            </div>
+            {% else %}
+            <p style="font-size: 0.8rem; color: var(--text-muted); text-align: center; padding: 1.5rem 0;">All wholesale products maintain healthy warehouse stock buffers.</p>
+            {% endif %}
+        </div>
+
+        <!-- Top Bulk Moving Products -->
+        <div class="glass-panel" style="padding: 1.25rem;">
+            <div class="panel-header" style="margin-bottom: 0.85rem;">
+                <h2 class="panel-title" style="font-size: 0.95rem; display: flex; align-items: center; gap: 6px;">
+                    <i data-lucide="award" style="width: 16px; height: 16px; color: #10b981;"></i>
+                    Top Bulk Movers (Volume Sold)
+                </h2>
+                <span style="font-size: 0.72rem; color: var(--text-muted);">In selected period</span>
+            </div>
+            {% if wholesale_metrics.top_bulk_movers %}
+            <ul style="list-style: none; display: flex; flex-direction: column; gap: 0.65rem;">
+                {% for item in wholesale_metrics.top_bulk_movers %}
+                <li style="display: flex; justify-content: space-between; align-items: center; padding: 0.55rem; background: rgba(15, 23, 42, 0.4); border-radius: 6px; border: 1px solid var(--border-color);">
+                    <div>
+                        <strong style="font-size: 0.85rem; color: var(--text-primary); display: block;">{{ item.product__name }}</strong>
+                        <span style="font-size: 0.72rem; color: var(--text-muted);">SKU: {{ item.product__sku }}</span>
+                    </div>
+                    <div style="text-align: right;">
+                        <span style="font-weight: 700; color: #10b981; font-size: 0.88rem;">{{ item.total_qty }} units</span>
+                        <span style="font-size: 0.72rem; color: var(--text-muted); display: block;">₦{{ item.total_rev|floatformat:2 }}</span>
+                    </div>
+                </li>
+                {% endfor %}
+            </ul>
+            {% else %}
+            <p style="font-size: 0.8rem; color: var(--text-muted); text-align: center; padding: 1.5rem 0;">No bulk shipments recorded in this period.</p>
+            {% endif %}
+        </div>
+
+        <!-- Top High-Value Wholesale Orders -->
+        <div class="glass-panel" style="padding: 1.25rem;">
+            <div class="panel-header" style="margin-bottom: 0.85rem;">
+                <h2 class="panel-title" style="font-size: 0.95rem; display: flex; align-items: center; gap: 6px;">
+                    <i data-lucide="receipt" style="width: 16px; height: 16px; color: var(--color-primary);"></i>
+                    Major B2B Wholesale Invoices
+                </h2>
+                <a href="{% url 'sales_history' %}" style="font-size: 0.72rem; color: var(--color-primary); text-decoration: none;">View All</a>
+            </div>
+            {% if wholesale_metrics.high_value_sales %}
+            <ul style="list-style: none; display: flex; flex-direction: column; gap: 0.65rem;">
+                {% for s in wholesale_metrics.high_value_sales %}
+                <li style="display: flex; justify-content: space-between; align-items: center; padding: 0.55rem; background: rgba(15, 23, 42, 0.4); border-radius: 6px; border: 1px solid var(--border-color);">
+                    <div>
+                        <span style="font-family: monospace; font-weight: 700; color: var(--color-primary); font-size: 0.82rem;">{{ s.receipt_number }}</span>
+                        <span style="font-size: 0.72rem; color: var(--text-muted); display: block;">{{ s.timestamp|date:"M d, H:i" }} · {{ s.cashier.username|default:"System" }}</span>
+                    </div>
+                    <div style="text-align: right;">
+                        <strong style="font-size: 0.95rem; color: var(--text-primary); display: block;">₦{{ s.total_amount|floatformat:2 }}</strong>
+                        <span class="badge badge-info" style="font-size: 0.65rem;">{{ s.get_payment_method_display }}</span>
+                    </div>
+                </li>
+                {% endfor %}
+            </ul>
+            {% else %}
+            <p style="font-size: 0.8rem; color: var(--text-muted); text-align: center; padding: 1.5rem 0;">No high-value invoices recorded yet.</p>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+{% else %}
+<!-- ==========================================================================
+     RETAIL MODE DASHBOARD CONTENT (ORIGINAL)
+     ========================================================================== -->
 
 <!-- Metrics Summary Cards -->
 <div class="metrics-grid">
@@ -84,7 +480,7 @@
     </div>
 </div>
 
-<!-- Main Section: Charts and Lists -->
+<!-- Main Section: Charts and Lists (Retail Mode) -->
 <div class="dashboard-layout">
     <!-- Left Column: Weekly trends and business-specific inventory -->
     <div style="display: flex; flex-direction: column; gap: 1.5rem;">
@@ -201,9 +597,8 @@
         {% endif %}
     </div>
 
-    <!-- Right Side Sidebar Panels: Alerts & Popular Products -->
+    <!-- Right Side Sidebar Panels: Alerts & Popular Products (Retail Mode) -->
     <div style="display: flex; flex-direction: column; gap: 1.5rem;">
-        
         <!-- Expiry Alerts List Panel -->
         <div class="glass-panel" style="padding: 1.25rem; border-color: {% if expired_count > 0 %}rgba(244, 63, 94, 0.3){% else %}var(--border-color){% endif %};">
             <div class="panel-header" style="margin-bottom: 0.85rem;">
@@ -212,10 +607,8 @@
                     {% if request.user.profile.business_type == 'PHARMACEUTICAL' %}Drug Expiry Radar (90 Days){% else %}Shelf Expiry Watch{% endif %}
                 </h2>
             </div>
-            
             {% if expired_products or expiring_soon_products or pharmaceutical_metrics.radar_batches %}
                 <ul style="list-style: none; display: flex; flex-direction: column; gap: 0.65rem; max-height: 250px; overflow-y: auto;">
-                    <!-- Expired items -->
                     {% for p in expired_products %}
                         <li style="display: flex; justify-content: space-between; align-items: center; padding: 0.5rem; background: rgba(244, 63, 94, 0.08); border-radius: 6px; border: 1px solid rgba(244, 63, 94, 0.2);">
                             <div>
@@ -229,8 +622,6 @@
                             <span class="badge badge-danger">EXPIRED</span>
                         </li>
                     {% endfor %}
-
-                    <!-- Expiring soon items / Pharmacy Radar items -->
                     {% if request.user.profile.business_type == 'PHARMACEUTICAL' %}
                         {% for p in pharmaceutical_metrics.radar_batches %}
                             {% if p not in expired_products %}
@@ -241,9 +632,10 @@
                                         {% if p.strength %}<span style="font-size: 0.75rem; color: var(--text-muted);">({{ p.strength }})</span>{% endif %}
                                     </span>
                                     <span style="font-size: 0.7rem; color: var(--color-warning); font-weight: 500; display: block;">Expires: {{ p.expiry_date|date:"Y-m-d" }}</span>
-                                    <span style="font-size: 0.65rem; color: var(--text-muted); display: block;">
-                                        Batch: <code>{{ p.batch_number|default:"-" }}</code> | NAFDAC: {{ p.nafdac_reg_no|default:"-" }}
-                                    </span>
+                                    <div style="font-size: 0.68rem; color: var(--text-muted); display: flex; gap: 8px; flex-wrap: wrap; margin-top: 3px;">
+                                        <span>Batch: <code style="color: var(--color-primary);">{{ p.batch_number|default:"Batch 1" }}</code></span>
+                                        {% if p.nafdac_reg_no %}<span>NAFDAC: <code>{{ p.nafdac_reg_no }}</code></span>{% endif %}
+                                    </div>
                                 </div>
                                 <span class="badge badge-warning" style="opacity: 0.8; font-size: 0.65rem;">{{ p.expiry_date|timeuntil }}</span>
                             </li>
@@ -266,7 +658,7 @@
             {% endif %}
         </div>
 
-        <!-- Low Stock list panel -->
+        <!-- Low Stock Alerts Panel (Retail Mode) -->
         <div class="glass-panel" style="padding: 1.25rem;">
             <div class="panel-header" style="margin-bottom: 0.85rem;">
                 <h2 class="panel-title" style="font-size: 1rem;"><i data-lucide="alert-circle" style="width: 16px; height: 16px; vertical-align: middle; margin-right: 6px; color: var(--color-danger)"></i>Low Stock Alerts</h2>
@@ -289,7 +681,7 @@
             {% endif %}
         </div>
 
-        <!-- Top Selling Panel -->
+        <!-- Top Selling Panel (Retail Mode) -->
         <div class="glass-panel" style="padding: 1.25rem;">
             <div class="panel-header" style="margin-bottom: 0.85rem;">
                 <h2 class="panel-title" style="font-size: 1rem;"><i data-lucide="award" style="width: 16px; height: 16px; vertical-align: middle; margin-right: 6px; color: var(--color-success)"></i>Top Products (30 Days)</h2>
@@ -312,11 +704,15 @@
         </div>
     </div>
 </div>
+{% endif %}
 
-<!-- Bottom Section: Recent Transactions -->
-<div class="glass-panel" style="padding: 1.5rem;">
+<!-- Bottom Section: Recent Transactions (Appears in both modes) -->
+<div class="glass-panel" style="padding: 1.5rem; margin-top: 1.5rem;">
     <div class="panel-header">
-        <h2 class="panel-title">Recent Transactions</h2>
+        <div>
+            <h2 class="panel-title">Recent Transactions</h2>
+            <p style="font-size: 0.75rem; color: var(--text-muted); margin: 0;">Completed checkout invoices for this store branch.</p>
+        </div>
         <a href="{% url 'sales_history' %}" class="btn btn-secondary btn-sm">
             <i data-lucide="arrow-right" style="width: 14px; height: 14px;"></i> View Sales Ledger
         </a>
@@ -330,7 +726,7 @@
                     <th>Shop Branch</th>
                     <th>Cashier</th>
                     <th>Payment Method</th>
-                    <th>Total amount</th>
+                    <th style="text-align: right;">Total Amount</th>
                 </tr>
             </thead>
             <tbody>
@@ -339,23 +735,119 @@
                         <tr>
                             <td style="font-family: monospace; font-weight: 600; color: var(--color-primary);">{{ s.receipt_number }}</td>
                             <td>{{ s.timestamp|date:"Y-m-d H:i" }}</td>
-                            <td><span style="font-size: 0.8rem; font-weight:500;">{{ s.shop.name|default:"-" }}</span></td>
+                            <td><span style="font-size: 0.8rem; font-weight: 500;">{{ s.shop.name|default:"-" }}</span></td>
                             <td>{{ s.cashier.username|title }}</td>
                             <td>
                                 <span class="badge badge-info">{{ s.get_payment_method_display }}</span>
                             </td>
-                            <td style="font-weight: 700;">₦{{ s.total_amount|floatformat:2 }}</td>
+                            <td style="font-weight: 700; text-align: right;">₦{{ s.total_amount|floatformat:2 }}</td>
                         </tr>
                     {% endfor %}
                 {% else %}
                     <tr>
-                        <td colspan="6" style="text-align: center; color: var(--text-muted); padding: 2rem;">No recent transactions. Go to the POS checkout screen to complete a sale!</td>
+                        <td colspan="6" style="text-align: center; color: var(--text-muted); padding: 2rem;">No recent transactions recorded.</td>
                     </tr>
                 {% endif %}
             </tbody>
         </table>
     </div>
 </div>
+
+{% if dashboard_mode == 'wholesale' %}
+<!-- ==========================================================================
+     WHOLESALE LINE SHEET / CATALOG MODAL (CLIENT-READY & PRINTABLE)
+     ========================================================================== -->
+<div class="wholesale-modal-overlay" id="wholesale-catalog-modal" onclick="if(event.target === this) closeWholesaleCatalogModal()">
+    <div class="wholesale-modal-box">
+        <div class="wholesale-modal-header no-print">
+            <div style="display: flex; align-items: center; gap: 8px;">
+                <i data-lucide="file-text" style="width: 20px; height: 20px; color: #10b981;"></i>
+                <h3 style="margin: 0; font-size: 1.15rem; font-weight: 700; color: var(--text-primary);">Wholesale Price Sheet & Catalog</h3>
+            </div>
+            <button type="button" class="btn btn-secondary btn-sm" onclick="closeWholesaleCatalogModal()" style="border: none; background: transparent; font-size: 1.2rem; cursor: pointer;">&times;</button>
+        </div>
+
+        <div class="wholesale-modal-body">
+            <!-- Printable Sheet Area -->
+            <div id="wholesale-printable-sheet">
+                <!-- Header for Buyers -->
+                <div style="border-bottom: 2px solid var(--border-color); padding-bottom: 1rem; margin-bottom: 1.25rem; display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 1rem;">
+                    <div>
+                        <h2 style="font-size: 1.5rem; font-weight: 800; color: var(--color-primary); margin: 0;">{{ store_settings.store_name|default:"viARMS Wholesale" }}</h2>
+                        <p style="margin: 3px 0 0; font-size: 0.85rem; color: var(--text-secondary);">
+                            {{ store_settings.address|default:"Commercial District" }} · Tel: {{ store_settings.phone|default:"-" }}
+                            {% if store_settings.email %} · Email: {{ store_settings.email }}{% endif %}
+                        </p>
+                    </div>
+                    <div style="text-align: right;">
+                        <span class="badge" style="background: rgba(16, 185, 129, 0.2); color: #10b981; font-weight: 700; font-size: 0.75rem;">OFFICIAL WHOLESALE LINE SHEET</span>
+                        <span style="display: block; font-size: 0.75rem; color: var(--text-muted); margin-top: 4px;">Effective Date: {% now "F d, Y" %}</span>
+                    </div>
+                </div>
+
+                <!-- Instant Search Input (hidden during print) -->
+                <div class="no-print" style="margin-bottom: 1rem; display: flex; gap: 0.5rem;">
+                    <div style="position: relative; flex: 1;">
+                        <input type="text" id="catalog-search-input" class="form-control" placeholder="Search product name, category, or barcode SKU..." oninput="filterWholesaleCatalogTable(this.value)">
+                    </div>
+                </div>
+
+                <!-- Price List Table -->
+                <div class="table-responsive">
+                    <table class="custom-table" id="wholesale-catalog-table">
+                        <thead>
+                            <tr>
+                                <th>SKU/Barcode</th>
+                                <th>Product Description</th>
+                                <th>Category</th>
+                                <th>Batch</th>
+                                <th style="text-align: center;">Stock Available</th>
+                                <th style="text-align: right;">Wholesale Unit Price (₦)</th>
+                                <th style="text-align: center;">Packaging</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for p in wholesale_metrics.all_catalog_products %}
+                            <tr class="catalog-row" data-search="{{ p.name|lower }} {{ p.sku|lower }} {{ p.category.name|default:''|lower }}">
+                                <td style="font-family: monospace; font-weight: 600;">{{ p.sku }}</td>
+                                <td>
+                                    <strong style="color: var(--text-primary);">{{ p.name }}</strong>
+                                    {% if p.strength %}<span style="font-size: 0.75rem; color: var(--text-muted);">({{ p.strength }})</span>{% endif %}
+                                </td>
+                                <td>{{ p.category.name|default:"General" }}</td>
+                                <td><code style="color: var(--color-primary); font-size: 0.78rem;">{{ p.batch_number|default:"BN: 1" }}</code></td>
+                                <td style="text-align: center; font-weight: 600;">{{ p.stock_quantity }} units</td>
+                                <td style="text-align: right; font-weight: 800; color: #10b981; font-size: 0.95rem;">₦{{ p.selling_price|floatformat:2 }}</td>
+                                <td style="text-align: center; font-size: 0.75rem; color: var(--text-muted);">Carton (12 / 24)</td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="7" style="text-align: center; color: var(--text-muted); padding: 2rem;">No products currently in wholesale inventory.</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Terms & Wholesale Policy Footer -->
+                <div style="margin-top: 1.5rem; padding-top: 1rem; border-top: 1px dashed var(--border-color); font-size: 0.75rem; color: var(--text-secondary); line-height: 1.5;">
+                    <p style="margin: 0;"><strong>Wholesale Ordering Policy:</strong> Minimum order quantities apply for bulk tier pricing. Prices subject to market stock availability. Standard payment terms: Cash / Instant Transfer on dispatch. Powered by viARMS B2B.</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="wholesale-modal-footer no-print">
+            <button type="button" class="btn btn-secondary btn-sm" onclick="closeWholesaleCatalogModal()">Close</button>
+            <a href="{% url 'export_wholesale_catalog_csv' %}" class="btn btn-outline-primary btn-sm" style="display: inline-flex; align-items: center; gap: 4px;">
+                <i data-lucide="download" style="width: 14px; height: 14px;"></i> Download CSV
+            </a>
+            <button type="button" class="btn btn-primary btn-sm" onclick="window.print()" style="display: inline-flex; align-items: center; gap: 4px;">
+                <i data-lucide="printer" style="width: 14px; height: 14px;"></i> Print / Save PDF
+            </button>
+        </div>
+    </div>
+</div>
+{% endif %}
 {% endblock %}
 
 {% block scripts %}
@@ -368,106 +860,109 @@
         const profitData = {{ chart_profit|safe }};
         const isAdmin = {{ is_admin|yesno:"true,false" }};
 
-        const ctx = document.getElementById('salesChart').getContext('2d');
-        
-        // Define gradients
-        const revGradient = ctx.createLinearGradient(0, 0, 0, 250);
-        revGradient.addColorStop(0, 'rgba(99, 102, 241, 0.4)');
-        revGradient.addColorStop(1, 'rgba(99, 102, 241, 0.0)');
+        const salesCanvas = document.getElementById('salesChart');
+        if (salesCanvas) {
+            const ctx = salesCanvas.getContext('2d');
+            
+            // Define gradients
+            const revGradient = ctx.createLinearGradient(0, 0, 0, 250);
+            revGradient.addColorStop(0, 'rgba(99, 102, 241, 0.4)');
+            revGradient.addColorStop(1, 'rgba(99, 102, 241, 0.0)');
 
-        const profGradient = ctx.createLinearGradient(0, 0, 0, 250);
-        profGradient.addColorStop(0, 'rgba(16, 185, 129, 0.4)');
-        profGradient.addColorStop(1, 'rgba(16, 185, 129, 0.0)');
+            const profGradient = ctx.createLinearGradient(0, 0, 0, 250);
+            profGradient.addColorStop(0, 'rgba(16, 185, 129, 0.4)');
+            profGradient.addColorStop(1, 'rgba(16, 185, 129, 0.0)');
 
-        const datasets = [{
-            label: 'Revenue',
-            data: revenueData,
-            borderColor: '#6366f1',
-            borderWidth: 3,
-            backgroundColor: revGradient,
-            fill: true,
-            tension: 0.3,
-            pointBackgroundColor: '#6366f1',
-            pointRadius: 4,
-            pointHoverRadius: 6
-        }];
-
-        if (isAdmin) {
-            datasets.push({
-                label: 'Net Profit',
-                data: profitData,
-                borderColor: '#10b981',
+            const datasets = [{
+                label: 'Revenue',
+                data: revenueData,
+                borderColor: '#6366f1',
                 borderWidth: 3,
-                backgroundColor: profGradient,
+                backgroundColor: revGradient,
                 fill: true,
                 tension: 0.3,
-                pointBackgroundColor: '#10b981',
+                pointBackgroundColor: '#6366f1',
                 pointRadius: 4,
                 pointHoverRadius: 6
-            });
-        }
+            }];
 
-        new Chart(ctx, {
-            type: 'line',
-            data: {
-                labels: labels,
-                datasets: datasets
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: {
-                        display: false
-                    },
-                    tooltip: {
-                        mode: 'index',
-                        intersect: false,
-                        padding: 12,
-                        backgroundColor: '#151e2e',
-                        titleFont: { family: 'Outfit', size: 13 },
-                        bodyFont: { family: 'Outfit', size: 13 },
-                        borderColor: 'rgba(255, 255, 255, 0.08)',
-                        borderWidth: 1,
-                        callbacks: {
-                            label: function(context) {
-                                let label = context.dataset.label || '';
-                                if (label) {
-                                    label += ': ';
-                                }
-                                if (context.parsed.y !== null) {
-                                    label += new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN' }).format(context.parsed.y);
-                                }
-                                return label;
-                            }
-                        }
-                    }
+            if (isAdmin) {
+                datasets.push({
+                    label: 'Net Profit',
+                    data: profitData,
+                    borderColor: '#10b981',
+                    borderWidth: 3,
+                    backgroundColor: profGradient,
+                    fill: true,
+                    tension: 0.3,
+                    pointBackgroundColor: '#10b981',
+                    pointRadius: 4,
+                    pointHoverRadius: 6
+                });
+            }
+
+            new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: datasets
                 },
-                scales: {
-                    x: {
-                        grid: {
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
                             display: false
                         },
-                        ticks: {
-                            color: '#94a3b8',
-                            font: { family: 'Outfit', size: 11 }
+                        tooltip: {
+                            mode: 'index',
+                            intersect: false,
+                            padding: 12,
+                            backgroundColor: '#151e2e',
+                            titleFont: { family: 'Outfit', size: 13 },
+                            bodyFont: { family: 'Outfit', size: 13 },
+                            borderColor: 'rgba(255, 255, 255, 0.08)',
+                            borderWidth: 1,
+                            callbacks: {
+                                label: function(context) {
+                                    let label = context.dataset.label || '';
+                                    if (label) {
+                                        label += ': ';
+                                    }
+                                    if (context.parsed.y !== null) {
+                                        label += new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN' }).format(context.parsed.y);
+                                    }
+                                    return label;
+                                }
+                            }
                         }
                     },
-                    y: {
-                        grid: {
-                            color: 'rgba(255, 255, 255, 0.05)'
+                    scales: {
+                        x: {
+                            grid: {
+                                display: false
+                            },
+                            ticks: {
+                                color: '#94a3b8',
+                                font: { family: 'Outfit', size: 11 }
+                            }
                         },
-                        ticks: {
-                            color: '#94a3b8',
-                            font: { family: 'Outfit', size: 11 },
-                            callback: function(value, index, values) {
-                                return '₦' + value.toLocaleString();
+                        y: {
+                            grid: {
+                                color: 'rgba(255, 255, 255, 0.05)'
+                            },
+                            ticks: {
+                                color: '#94a3b8',
+                                font: { family: 'Outfit', size: 11 },
+                                callback: function(value, index, values) {
+                                    return '₦' + value.toLocaleString();
+                                }
                             }
                         }
                     }
                 }
-            }
-        });
+            });
+        }
 
         // Initialize pharma doughnut chart if element exists
         const pharmaCanvas = document.getElementById('pharmaDistributionChart');
@@ -507,6 +1002,100 @@
                 }
             });
         }
+
+        // Run initial wholesale calculations if in wholesale mode
+        if (document.getElementById('calc-unit-cost')) {
+            runWholesaleCalculator();
+            runTierDiscountEstimator();
+        }
     });
+
+    // =========================================================================
+    // Wholesale Interactive Calculator & Simulator Scripts
+    // =========================================================================
+    function runWholesaleCalculator() {
+        const cost = parseFloat(document.getElementById('calc-unit-cost')?.value) || 0;
+        const packSize = parseInt(document.getElementById('calc-pack-size')?.value) || 1;
+        const marginPct = parseFloat(document.getElementById('calc-margin-pct')?.value) || 0;
+
+        let unitWholesale = cost;
+        if (marginPct < 100) {
+            unitWholesale = cost / (1 - (marginPct / 100));
+        }
+        const unitProfit = Math.max(0, unitWholesale - cost);
+        const cartonPrice = unitWholesale * packSize;
+        const cartonProfit = unitProfit * packSize;
+
+        const fmt = (n) => '₦' + n.toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+        const unitPriceEl = document.getElementById('calc-out-unit-price');
+        const unitProfitEl = document.getElementById('calc-out-unit-profit');
+        const packPriceEl = document.getElementById('calc-out-pack-price');
+        const packProfitEl = document.getElementById('calc-out-pack-profit');
+
+        if (unitPriceEl) unitPriceEl.textContent = fmt(unitWholesale);
+        if (unitProfitEl) unitProfitEl.textContent = '+' + fmt(unitProfit) + ' profit/unit';
+        if (packPriceEl) packPriceEl.textContent = fmt(cartonPrice);
+        if (packProfitEl) packProfitEl.textContent = '+' + fmt(cartonProfit) + ' profit/carton';
+    }
+
+    function runTierDiscountEstimator() {
+        const units = parseInt(document.getElementById('tier-order-units')?.value) || 0;
+        const gross = parseFloat(document.getElementById('tier-gross-val')?.value) || 0;
+
+        let discountPct = 0;
+        let badgeText = 'Standard Wholesale (0%)';
+
+        if (units >= 200) {
+            discountPct = 15;
+            badgeText = '15% Tier 3 (Distributor)';
+        } else if (units >= 50) {
+            discountPct = 10;
+            badgeText = '10% Tier 2 (Pallet / Bulk)';
+        } else if (units >= 10) {
+            discountPct = 5;
+            badgeText = '5% Tier 1 (Trade Bulk)';
+        }
+
+        const discountAmt = gross * (discountPct / 100);
+        const finalTotal = Math.max(0, gross - discountAmt);
+
+        const badgeEl = document.getElementById('tier-discount-badge');
+        const finalEl = document.getElementById('tier-final-val');
+
+        if (badgeEl) badgeEl.textContent = badgeText;
+        if (finalEl) finalEl.textContent = '₦' + finalTotal.toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+
+    // Modal controls for Wholesale Price Sheet
+    function openWholesaleCatalogModal() {
+        const modal = document.getElementById('wholesale-catalog-modal');
+        if (modal) {
+            modal.classList.add('active');
+            if (window.lucide) {
+                lucide.createIcons();
+            }
+        }
+    }
+
+    function closeWholesaleCatalogModal() {
+        const modal = document.getElementById('wholesale-catalog-modal');
+        if (modal) {
+            modal.classList.remove('active');
+        }
+    }
+
+    function filterWholesaleCatalogTable(query) {
+        const q = (query || '').toLowerCase().trim();
+        const rows = document.querySelectorAll('.catalog-row');
+        rows.forEach(r => {
+            const data = r.getAttribute('data-search') || '';
+            if (!q || data.includes(q)) {
+                r.style.display = '';
+            } else {
+                r.style.display = 'none';
+            }
+        });
+    }
 </script>
 {% endblock %}

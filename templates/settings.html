@@ -61,8 +61,20 @@
                     <input type="text" name="store_name" id="store_name" class="form-control" value="{{ settings.store_name }}" required>
                 </div>
                 <div class="form-group">
+                    <label for="email" class="form-label">Contact Email Address</label>
+                    <input type="email" name="email" id="email" class="form-control" value="{{ settings.email|default:'' }}" placeholder="contact@ourshop.com">
+                </div>
+            </div>
+
+            <div class="form-row-grid-2" style="gap: 1.5rem;">
+                <div class="form-group">
                     <label for="phone" class="form-label">Contact Phone Number</label>
                     <input type="tel" name="phone" id="phone" class="form-control" value="{{ settings.phone }}" placeholder="+234 810 026 2697">
+                </div>
+                <div class="form-group">
+                    <label for="tax_rate" class="form-label">Default Invoice Tax Rate (%)</label>
+                    <input type="number" name="tax_rate" id="tax_rate" class="form-control" value="{{ settings.tax_rate }}" step="0.01" min="0" max="100" required>
+                    <span style="font-size: 0.75rem; color: var(--text-muted);">Standard VAT/Tax flat percentage to apply on sales.</span>
                 </div>
             </div>
 
@@ -70,14 +82,6 @@
                 <div class="form-group">
                     <label for="address" class="form-label">Physical Address</label>
                     <textarea name="address" id="address" class="form-control" rows="2" placeholder="e.g. 123 Main St, New York, NY">{{ settings.address }}</textarea>
-                </div>
-            </div>
-
-            <div class="form-row-grid-2" style="gap: 1.5rem;">
-                <div class="form-group">
-                    <label for="tax_rate" class="form-label">Default Invoice Tax Rate (%)</label>
-                    <input type="number" name="tax_rate" id="tax_rate" class="form-control" value="{{ settings.tax_rate }}" step="0.01" min="0" max="100" required>
-                    <span style="font-size: 0.75rem; color: var(--text-muted);">Standard VAT/Tax flat percentage to apply on sales.</span>
                 </div>
             </div>
 

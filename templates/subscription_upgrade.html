@@ -1,0 +1,582 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Upgrade Subscription - viARMS{% endblock %}
+
+{% block content %}
+<div style="max-width: 960px; margin: 0 auto;">
+    <div style="text-align: center; margin-bottom: 2rem;">
+        <span class="badge" style="background: rgba(99,102,241,0.12); color: var(--color-primary); font-size: 0.8rem; padding: 0.35rem 0.85rem; border-radius: 20px; font-weight: 600;">
+            Flexible SaaS Pricing
+        </span>
+        <h1 style="font-size: 2rem; font-weight: 800; margin: 0.6rem 0 0.4rem; color: var(--text-primary);">
+            Choose Your Subscription Plan
+        </h1>
+        <p style="color: var(--text-secondary); font-size: 0.95rem; max-width: 600px; margin: 0 auto;">
+            Scale your retail business with unlimited inventory, multiple branches, advanced analytics, and team collaboration.
+        </p>
+
+        <!-- Billing Cycle Toggle (QUARTERLY / ANNUAL — no monthly) -->
+        <div style="display: inline-flex; background: rgba(255,255,255,0.06); padding: 4px; border-radius: 30px; margin-top: 1.5rem; border: 1px solid var(--border-color);">
+            <button type="button" id="btn-quarterly" onclick="setBillingCycle('QUARTERLY')"
+                style="padding: 0.5rem 1.4rem; border-radius: 24px; border: none; font-size: 0.85rem; font-weight: 600; cursor: pointer; transition: all 0.2s; background: transparent; color: var(--text-secondary);">
+                Quarterly <span style="font-size: 0.72rem; opacity: 0.75;">(Every 3 months)</span>
+            </button>
+            <button type="button" id="btn-annual" onclick="setBillingCycle('ANNUAL')"
+                style="padding: 0.5rem 1.4rem; border-radius: 24px; border: none; font-size: 0.85rem; font-weight: 600; cursor: pointer; transition: all 0.2s; background: var(--color-primary); color: #fff;">
+                Annual <span style="background: rgba(16,185,129,0.2); color: var(--color-success); font-size: 0.72rem; padding: 2px 6px; border-radius: 10px; margin-left: 4px;">Best Value</span>
+            </button>
+        </div>
+        <div id="standard-cycle-notice" style="display:none; margin-top: 0.75rem; font-size: 0.8rem; color: #fbbf24; background: rgba(251,191,36,0.08); border: 1px solid rgba(251,191,36,0.3); border-radius: 8px; padding: 0.4rem 1rem; display: inline-block;">
+            <i data-lucide="info" style="width:13px;height:13px;vertical-align:middle;margin-right:4px;"></i>
+            Standard Plan is <strong>Annual billing only</strong> — no quarterly option available.
+        </div>
+    </div>
+
+    <!-- Plan Selection Cards -->
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1.5rem; margin-bottom: 2.5rem;">
+        <!-- STANDARD PLAN -->
+        <div class="glass-panel plan-card" id="plan-card-STANDARD" onclick="selectPlan('STANDARD')"
+            style="padding: 2rem; border-radius: 16px; cursor: pointer; transition: all 0.25s; border: 2px solid var(--border-color); position: relative;">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 1rem;">
+                <div>
+                    <h3 style="font-size: 1.35rem; font-weight: 700; color: var(--text-primary); margin: 0;">Standard</h3>
+                    <p style="font-size: 0.82rem; color: var(--text-secondary); margin: 0.2rem 0 0;">Single shop &amp; retail stores</p>
+                </div>
+                <div class="plan-radio" style="width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--border-color); display: flex; align-items: center; justify-content: center;">
+                    <div class="plan-radio-dot" style="width: 10px; height: 10px; border-radius: 50%; background: transparent;"></div>
+                </div>
+            </div>
+
+            <div style="margin: 1.25rem 0;">
+                <span class="price-val" data-plan="STANDARD" data-cycle="ANNUAL" style="font-size: 2.2rem; font-weight: 800; color: var(--text-primary);">₦80,000</span>
+                <span class="cycle-label" style="font-size: 0.85rem; color: var(--text-muted);">/ year</span>
+            </div>
+            <div style="font-size: 0.75rem; color: #fbbf24; background: rgba(251,191,36,0.1); border: 1px solid rgba(251,191,36,0.3); border-radius: 6px; padding: 0.3rem 0.6rem; margin-bottom: 0.5rem; display: inline-block;">
+                <i data-lucide="lock" style="width:12px;height:12px;vertical-align:middle;margin-right:3px;"></i> Annual billing only
+            </div>
+
+            <ul style="list-style: none; padding: 0; margin: 1.5rem 0 0; display: flex; flex-direction: column; gap: 0.75rem; font-size: 0.85rem; color: var(--text-secondary);">
+                <li style="display: flex; align-items: center; gap: 8px;">
+                    <i data-lucide="check" style="width: 16px; height: 16px; color: var(--color-success); flex-shrink: 0;"></i>
+                    1 Shop Branch
+                </li>
+                <li style="display: flex; align-items: center; gap: 8px;">
+                    <i data-lucide="check" style="width: 16px; height: 16px; color: var(--color-success); flex-shrink: 0;"></i>
+                    1 Manager &amp; Up to 3 Cashiers
+                </li>
+                <li style="display: flex; align-items: center; gap: 8px;">
+                    <i data-lucide="check" style="width: 16px; height: 16px; color: var(--color-success); flex-shrink: 0;"></i>
+                    POS Checkout &amp; Receipts
+                </li>
+                <li style="display: flex; align-items: center; gap: 8px;">
+                    <i data-lucide="check" style="width: 16px; height: 16px; color: var(--color-success); flex-shrink: 0;"></i>
+                    Batch &amp; Expiry Date Tracking
+                </li>
+                <li style="display: flex; align-items: center; gap: 8px; color: var(--text-muted);">
+                    <i data-lucide="ban" style="width: 16px; height: 16px; color: #ef4444; flex-shrink: 0;"></i>
+                    <span><strong>No Product Images</strong> (Text Catalog Only)</span>
+                </li>
+            </ul>
+        </div>
+
+        <!-- PREMIUM PLAN -->
+        <div class="glass-panel plan-card" id="plan-card-PREMIUM" onclick="selectPlan('PREMIUM')"
+            style="padding: 2rem; border-radius: 16px; cursor: pointer; transition: all 0.25s; border: 2px solid var(--border-color); position: relative;">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 1rem;">
+                <div>
+                    <h3 style="font-size: 1.35rem; font-weight: 700; color: var(--text-primary); margin: 0;">Premium</h3>
+                    <p style="font-size: 0.82rem; color: var(--text-secondary); margin: 0.2rem 0 0;">Growing retail &amp; multi-counter shops</p>
+                </div>
+                <div class="plan-radio" style="width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--border-color); display: flex; align-items: center; justify-content: center;">
+                    <div class="plan-radio-dot" style="width: 10px; height: 10px; border-radius: 50%; background: transparent;"></div>
+                </div>
+            </div>
+
+            <div style="margin: 1.25rem 0;">
+                <span class="price-val" data-plan="PREMIUM" data-cycle="ANNUAL" style="font-size: 2.2rem; font-weight: 800; color: var(--text-primary);">₦120,000</span>
+                <span class="cycle-label" style="font-size: 0.85rem; color: var(--text-muted);">/ year</span>
+            </div>
+            <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.5rem;" id="prem-quarterly-note">or ₦35,000 / quarter</div>
+
+            <ul style="list-style: none; padding: 0; margin: 1.5rem 0 0; display: flex; flex-direction: column; gap: 0.75rem; font-size: 0.85rem; color: var(--text-secondary);">
+                <li style="display: flex; align-items: center; gap: 8px;">
+                    <i data-lucide="check" style="width: 16px; height: 16px; color: var(--color-success); flex-shrink: 0;"></i>
+                    <strong>Full Product Photos &amp; Image Uploads</strong>
+                </li>
+                <li style="display: flex; align-items: center; gap: 8px;">
+                    <i data-lucide="check" style="width: 16px; height: 16px; color: var(--color-success); flex-shrink: 0;"></i>
+                    Up to 5 Shop Branches
+                </li>
+                <li style="display: flex; align-items: center; gap: 8px;">
+                    <i data-lucide="check" style="width: 16px; height: 16px; color: var(--color-success); flex-shrink: 0;"></i>
+                    Up to 5 Managers &amp; Unlimited Cashiers
+                </li>
+                <li style="display: flex; align-items: center; gap: 8px;">
+                    <i data-lucide="check" style="width: 16px; height: 16px; color: var(--color-success); flex-shrink: 0;"></i>
+                    Batch &amp; Expiry Date Management
+                </li>
+                <li style="display: flex; align-items: center; gap: 8px;">
+                    <i data-lucide="check" style="width: 16px; height: 16px; color: var(--color-success); flex-shrink: 0;"></i>
+                    Full CSV/Excel Sales Export
+                </li>
+                <li style="display: flex; align-items: center; gap: 8px;">
+                    <i data-lucide="check" style="width: 16px; height: 16px; color: var(--color-success); flex-shrink: 0;"></i>
+                    Custom Store Receipt Branding
+                </li>
+            </ul>
+        </div>
+
+        <!-- GOLDEN PREMIUM PLAN -->
+        <div class="glass-panel plan-card" id="plan-card-GOLDEN_PREMIUM" onclick="selectPlan('GOLDEN_PREMIUM')"
+            style="padding: 2rem; border-radius: 16px; cursor: pointer; transition: all 0.25s; border: 2px solid var(--border-color); position: relative; background: linear-gradient(180deg, rgba(245,158,11,0.06), rgba(0,0,0,0.1));">
+            <span style="position: absolute; top: -12px; right: 20px; background: linear-gradient(90deg, #f59e0b, #d97706); color: #fff; font-size: 0.72rem; font-weight: 700; padding: 2px 10px; border-radius: 12px; text-transform: uppercase;">
+                Most Popular
+            </span>
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 1rem;">
+                <div>
+                    <h3 style="font-size: 1.35rem; font-weight: 700; color: #f59e0b; margin: 0; display: flex; align-items: center; gap: 6px;">
+                        <i data-lucide="crown" style="width: 18px; height: 18px;"></i> Golden Premium
+                    </h3>
+                    <p style="font-size: 0.82rem; color: var(--text-secondary); margin: 0.2rem 0 0;">Enterprises, chains, and large pharmacies</p>
+                </div>
+                <div class="plan-radio" style="width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--border-color); display: flex; align-items: center; justify-content: center;">
+                    <div class="plan-radio-dot" style="width: 10px; height: 10px; border-radius: 50%; background: transparent;"></div>
+                </div>
+            </div>
+
+            <div style="margin: 1.25rem 0;">
+                <span class="price-val" data-plan="GOLDEN_PREMIUM" data-cycle="ANNUAL" style="font-size: 2.2rem; font-weight: 800; color: var(--text-primary);">₦250,000</span>
+                <span class="cycle-label" style="font-size: 0.85rem; color: var(--text-muted);">/ year</span>
+            </div>
+            <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.5rem;" id="gold-quarterly-note">or ₦70,000 / quarter</div>
+
+            <ul style="list-style: none; padding: 0; margin: 1.5rem 0 0; display: flex; flex-direction: column; gap: 0.75rem; font-size: 0.85rem; color: var(--text-secondary);">
+                <li style="display: flex; align-items: center; gap: 8px;">
+                    <i data-lucide="check" style="width: 16px; height: 16px; color: var(--color-success); flex-shrink: 0;"></i>
+                    <strong>Unlimited</strong> Shop Branches
+                </li>
+                <li style="display: flex; align-items: center; gap: 8px;">
+                    <i data-lucide="check" style="width: 16px; height: 16px; color: var(--color-success); flex-shrink: 0;"></i>
+                    <strong>Unlimited</strong> Managers &amp; Staff Cashiers
+                </li>
+                <li style="display: flex; align-items: center; gap: 8px;">
+                    <i data-lucide="check" style="width: 16px; height: 16px; color: var(--color-success); flex-shrink: 0;"></i>
+                    Multi-Branch Stock Inter-Transfers
+                </li>
+                <li style="display: flex; align-items: center; gap: 8px;">
+                    <i data-lucide="check" style="width: 16px; height: 16px; color: var(--color-success); flex-shrink: 0;"></i>
+                    Broadcast Push Notifications
+                </li>
+                <li style="display: flex; align-items: center; gap: 8px;">
+                    <i data-lucide="check" style="width: 16px; height: 16px; color: var(--color-success); flex-shrink: 0;"></i>
+                    Priority 24/7 Support &amp; SLA
+                </li>
+            </ul>
+        </div>
+    </div>
+
+    <!-- PAYMENT SECTION -->
+    <div class="glass-panel" style="padding: 2rem; border-radius: 16px; margin-bottom: 2rem;">
+        <h2 style="font-size: 1.25rem; font-weight: 700; margin-bottom: 0.5rem; display: flex; align-items: center; gap: 8px;">
+            <i data-lucide="wallet" style="color: var(--color-primary);"></i>
+            Select Payment Method
+        </h2>
+        <p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 1.5rem;">
+            Choose whether to pay via direct bank transfer (confirmed by admin) or instant online payment via Remita.
+        </p>
+
+        <!-- Payment Method Tabs -->
+        <div style="display: flex; gap: 0.75rem; margin-bottom: 1.5rem;">
+            <button type="button" id="tab-bank" onclick="setPaymentMethod('BANK_TRANSFER')"
+                style="flex: 1; padding: 0.85rem 1rem; border-radius: 10px; border: 2px solid var(--color-primary); background: rgba(99,102,241,0.08); font-weight: 600; font-size: 0.9rem; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; color: var(--text-primary);">
+                <i data-lucide="building" style="width: 18px; height: 18px; color: var(--color-primary);"></i> Direct Bank Transfer
+            </button>
+            <button type="button" id="tab-card" onclick="setPaymentMethod('REMITA')"
+                style="flex: 1; padding: 0.85rem 1rem; border-radius: 10px; border: 2px solid var(--border-color); background: rgba(255,255,255,0.02); font-weight: 600; font-size: 0.9rem; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; color: var(--text-secondary);">
+                <i data-lucide="credit-card" style="width: 18px; height: 18px;"></i> Debit Card / Remita
+            </button>
+        </div>
+
+        <!-- METHOD 1: DIRECT BANK TRANSFER -->
+        <div id="method-bank-section">
+            <!-- Official Bank Account Banner -->
+            <div style="background: linear-gradient(135deg, rgba(99,102,241,0.12), rgba(139,92,246,0.06)); border: 1px solid rgba(99,102,241,0.3); border-radius: 12px; padding: 1.5rem; margin-bottom: 1.5rem;">
+                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+                    <div>
+                        <span style="font-size: 0.75rem; text-transform: uppercase; font-weight: 700; color: #a78bfa; letter-spacing: 0.5px;">Transfer To Company Bank Account</span>
+                        <div style="font-size: 1.2rem; font-weight: 700; color: var(--text-primary); margin: 0.2rem 0;">
+                            {{ settings.company_bank_name|default:"Zenith Bank" }}
+                        </div>
+                        <div style="font-size: 0.85rem; color: var(--text-secondary);">
+                            Account Name: <strong style="color: var(--text-primary);">{{ settings.company_account_name|default:"viARMS Technologies Limited" }}</strong>
+                        </div>
+                    </div>
+                    <div style="text-align: right;">
+                        <span style="font-size: 0.72rem; color: var(--text-muted); display: block;">Account Number</span>
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <span id="acc-num-display" style="font-family: monospace; font-size: 1.5rem; font-weight: 800; color: #fff; letter-spacing: 1px;">
+                                {{ settings.company_account_number|default:"1012345678" }}
+                            </span>
+                            <button type="button" onclick="copyAccountNumber()" title="Copy Account Number"
+                                style="background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); border-radius: 6px; padding: 4px 8px; cursor: pointer; color: #fff; font-size: 0.75rem; display: flex; align-items: center; gap: 4px;">
+                                <i data-lucide="copy" style="width: 14px; height: 14px;"></i> <span id="copy-text">Copy</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Transfer Submission Form -->
+            <form method="POST" enctype="multipart/form-data" id="upgrade-form">
+                {% csrf_token %}
+                <input type="hidden" name="plan" id="selected-plan-input" value="{{ initial_plan }}">
+                <input type="hidden" name="billing_cycle" id="selected-cycle-input" value="ANNUAL">
+                <input type="hidden" name="payment_method" id="selected-method-input" value="BANK_TRANSFER">
+
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; margin-bottom: 1rem;">
+                    <div class="form-group">
+                        <label class="form-label" style="font-size: 0.82rem; font-weight: 600;">Sender Account Name <span style="color:#ef4444;">*</span></label>
+                        <input type="text" name="sender_name" class="form-control" placeholder="e.g. John Doe / Shop Account" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" style="font-size: 0.82rem; font-weight: 600;">Sender Bank <span style="color:#ef4444;">*</span></label>
+                        <input type="text" name="sender_bank" class="form-control" placeholder="e.g. GTBank, Kuda, Zenith, OPay" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" style="font-size: 0.82rem; font-weight: 600;">Transaction Reference / Session ID</label>
+                        <input type="text" name="reference" class="form-control" placeholder="e.g. 09026723049281...">
+                        <span style="font-size: 0.72rem; color: var(--text-muted);">Leave empty to auto-generate a reference code</span>
+                    </div>
+                </div>
+
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; margin-bottom: 1.5rem;">
+                    <div class="form-group">
+                        <label class="form-label" style="font-size: 0.82rem; font-weight: 600;">Attach Payment Receipt / Screenshot</label>
+                        <input type="file" name="proof_image" class="form-control" accept="image/*,.pdf" style="padding: 0.4rem 0.6rem;">
+                        <span style="font-size: 0.72rem; color: var(--text-muted);">Optional, but speeds up verification</span>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" style="font-size: 0.82rem; font-weight: 600;">Additional Notes (Optional)</label>
+                        <input type="text" name="notes" class="form-control" placeholder="Any extra information for the reviewer...">
+                    </div>
+                </div>
+
+                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem; border-top: 1px solid var(--border-color); padding-top: 1.25rem;">
+                    <div>
+                        <span style="font-size: 0.82rem; color: var(--text-muted);">Total Payable:</span>
+                        <div id="summary-total" style="font-size: 1.5rem; font-weight: 800; color: var(--text-primary);">₦15,000</div>
+                    </div>
+                    <button type="submit" class="btn btn-primary" style="padding: 0.75rem 2rem; font-weight: 700; font-size: 0.95rem; display: inline-flex; align-items: center; gap: 8px;">
+                        <i data-lucide="send" style="width: 16px; height: 16px;"></i> Submit Bank Transfer for Confirmation
+                    </button>
+                </div>
+            </form>
+        </div>
+
+        <!-- METHOD 2: ONLINE CARD / REMITA -->
+        <div id="method-card-section" style="display: none;">
+            <div style="text-align: center; padding: 2rem 1rem;">
+                <div style="width: 60px; height: 60px; border-radius: 50%; background: rgba(99,102,241,0.12); display: flex; align-items: center; justify-content: center; margin: 0 auto 1rem; color: var(--color-primary);">
+                    <i data-lucide="credit-card" style="width: 30px; height: 30px;"></i>
+                </div>
+                <h3 style="font-size: 1.25rem; font-weight: 700; margin-bottom: 0.5rem;">Instant Card &amp; Online Checkout</h3>
+                <p style="font-size: 0.85rem; color: var(--text-secondary); max-width: 450px; margin: 0 auto 1.5rem;">
+                    Pay instantly using Mastercard, Visa, Verve, Bank Transfer, or USSD via Remita. Your plan upgrades automatically once payment is confirmed.
+                </p>
+
+                <div style="background: rgba(255,255,255,0.03); border-radius: 12px; padding: 1.25rem; max-width: 380px; margin: 0 auto 1.5rem; border: 1px solid var(--border-color);">
+                    <div style="display: flex; justify-content: space-between; font-size: 0.85rem; margin-bottom: 0.4rem;">
+                        <span style="color: var(--text-muted);">Plan Selected:</span>
+                        <strong id="card-plan-name" style="color: var(--text-primary);">Premium</strong>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; font-size: 0.85rem; margin-bottom: 0.4rem;">
+                        <span style="color: var(--text-muted);">Billing Frequency:</span>
+                        <strong id="card-cycle-name" style="color: var(--text-primary);">Monthly</strong>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; font-size: 1.1rem; font-weight: 800; border-top: 1px solid var(--border-color); padding-top: 0.6rem; margin-top: 0.4rem;">
+                        <span>Amount:</span>
+                        <span id="card-amount-display" style="color: var(--color-primary);">₦15,000</span>
+                    </div>
+                </div>
+
+                <button type="button" onclick="triggerCardPayment()" class="btn btn-primary"
+                    style="padding: 0.85rem 2.5rem; font-size: 1rem; font-weight: 700; display: inline-flex; align-items: center; gap: 8px;">
+                    <i data-lucide="lock" style="width: 18px; height: 18px;"></i> Proceed with Secure Online Payment
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<!-- Remita environment detection: sandbox if no merchantId set, or starts with '2547916' -->
+<script>
+    const _remitaMerchantId = "{{ settings.remita_merchant_id|default:'' }}";
+    const _isSandbox = !_remitaMerchantId || _remitaMerchantId.startsWith('2547916');
+    const _remitaScriptSrc = _isSandbox
+        ? 'https://remitademo.net/remita/ecomm/init.reg'
+        : 'https://login.remita.net/remita/ecomm/init.reg';
+    (function() {
+        const s = document.createElement('script');
+        s.src = _remitaScriptSrc;
+        s.async = false;
+        document.head.appendChild(s);
+    })();
+</script>
+<script>
+    // Pricing table: Standard = Annual only; Premium & Golden Premium = Quarterly or Annual
+    const PRICING = {
+        'STANDARD':       { 'QUARTERLY': null,   'ANNUAL': 80000  },
+        'PREMIUM':        { 'QUARTERLY': 35000,  'ANNUAL': 120000 },
+        'GOLDEN_PREMIUM': { 'QUARTERLY': 70000,  'ANNUAL': 250000 }
+    };
+
+    let _currentPlan  = "{{ initial_plan|default:'STANDARD' }}";
+    let _currentCycle = "ANNUAL";   // default: Annual
+    let _currentMethod = "BANK_TRANSFER";
+
+    function selectPlan(plan) {
+        _currentPlan = plan;
+        document.getElementById('selected-plan-input').value = plan;
+        document.querySelectorAll('.plan-card').forEach(card => {
+            const isSelected = card.id === `plan-card-${plan}`;
+            card.style.borderColor = isSelected ? 'var(--color-primary)' : 'var(--border-color)';
+            card.style.boxShadow = isSelected ? '0 0 20px rgba(99,102,241,0.25)' : 'none';
+            const dot = card.querySelector('.plan-radio-dot');
+            if (dot) dot.style.background = isSelected ? 'var(--color-primary)' : 'transparent';
+        });
+
+        // If STANDARD selected, force ANNUAL and lock/hide the quarterly button
+        if (plan === 'STANDARD') {
+            if (_currentCycle === 'QUARTERLY') {
+                setBillingCycle('ANNUAL');
+            }
+            const btnQ = document.getElementById('btn-quarterly');
+            if (btnQ) { btnQ.disabled = true; btnQ.style.opacity = '0.35'; btnQ.style.cursor = 'not-allowed'; btnQ.title = 'Standard plan is Annual billing only'; }
+            const notice = document.getElementById('standard-cycle-notice');
+            if (notice) { notice.style.display = 'inline-block'; }
+        } else {
+            const btnQ = document.getElementById('btn-quarterly');
+            if (btnQ) { btnQ.disabled = false; btnQ.style.opacity = '1'; btnQ.style.cursor = 'pointer'; btnQ.title = ''; }
+            const notice = document.getElementById('standard-cycle-notice');
+            if (notice) { notice.style.display = 'none'; }
+        }
+
+        updatePriceDisplays();
+    }
+
+    function setBillingCycle(cycle) {
+        // Prevent QUARTERLY for Standard
+        if (cycle === 'QUARTERLY' && _currentPlan === 'STANDARD') return;
+
+        _currentCycle = cycle;
+        document.getElementById('selected-cycle-input').value = cycle;
+
+        const btnQ = document.getElementById('btn-quarterly');
+        const btnA = document.getElementById('btn-annual');
+        if (cycle === 'QUARTERLY') {
+            if (btnQ) { btnQ.style.background = 'var(--color-primary)'; btnQ.style.color = '#fff'; }
+            if (btnA) { btnA.style.background = 'transparent'; btnA.style.color = 'var(--text-secondary)'; }
+        } else {
+            if (btnA) { btnA.style.background = 'var(--color-primary)'; btnA.style.color = '#fff'; }
+            if (btnQ) { btnQ.style.background = 'transparent'; btnQ.style.color = 'var(--text-secondary)'; }
+        }
+        updatePriceDisplays();
+    }
+
+    function formatCycleLabel(cycle) {
+        if (cycle === 'QUARTERLY') return '/ 3 months';
+        return '/ year';
+    }
+
+    function updatePriceDisplays() {
+        const stdPrice  = PRICING['STANDARD'][_currentCycle]  || PRICING['STANDARD']['ANNUAL'];
+        const premPrice = PRICING['PREMIUM'][_currentCycle]   || PRICING['PREMIUM']['ANNUAL'];
+        const goldPrice = PRICING['GOLDEN_PREMIUM'][_currentCycle] || PRICING['GOLDEN_PREMIUM']['ANNUAL'];
+        const cycleText = formatCycleLabel(_currentCycle);
+
+        // Standard always shows annual price
+        document.querySelectorAll('.price-val[data-plan="STANDARD"]').forEach(el => el.textContent = '₦' + (80000).toLocaleString());
+        document.querySelectorAll('.price-val[data-plan="PREMIUM"]').forEach(el => el.textContent = '₦' + premPrice.toLocaleString());
+        document.querySelectorAll('.price-val[data-plan="GOLDEN_PREMIUM"]').forEach(el => el.textContent = '₦' + goldPrice.toLocaleString());
+
+        // Cycle label: Standard always shows /year
+        document.querySelectorAll('.cycle-label').forEach(el => el.textContent = cycleText);
+
+        // Quarterly secondary notes
+        const premNote = document.getElementById('prem-quarterly-note');
+        const goldNote = document.getElementById('gold-quarterly-note');
+        if (premNote) premNote.style.display = (_currentCycle === 'ANNUAL') ? 'block' : 'none';
+        if (goldNote) goldNote.style.display = (_currentCycle === 'ANNUAL') ? 'block' : 'none';
+
+        // Effective price for selected plan (Standard always uses ANNUAL)
+        const activePricePlan = (_currentPlan === 'STANDARD') ? 'ANNUAL' : _currentCycle;
+        const activePrice = PRICING[_currentPlan][activePricePlan] || PRICING[_currentPlan]['ANNUAL'];
+        const formatted = '₦' + activePrice.toLocaleString();
+
+        document.getElementById('summary-total').textContent = formatted;
+        document.getElementById('card-amount-display').textContent = formatted;
+
+        const planTitles = {'STANDARD': 'Standard', 'PREMIUM': 'Premium', 'GOLDEN_PREMIUM': 'Golden Premium'};
+        document.getElementById('card-plan-name').textContent = planTitles[_currentPlan] || 'Standard';
+        const cycleNames = {'QUARTERLY': 'Quarterly (3 Months)', 'ANNUAL': 'Annual (12 Months)'};
+        document.getElementById('card-cycle-name').textContent = (_currentPlan === 'STANDARD') ? 'Annual (12 Months)' : (cycleNames[_currentCycle] || 'Annual (12 Months)');
+    }
+
+    function setPaymentMethod(method) {
+        _currentMethod = method;
+        document.getElementById('selected-method-input').value = method;
+        const tabBank = document.getElementById('tab-bank');
+        const tabCard = document.getElementById('tab-card');
+        const secBank = document.getElementById('method-bank-section');
+        const secCard = document.getElementById('method-card-section');
+        if (method === 'BANK_TRANSFER') {
+            tabBank.style.borderColor = 'var(--color-primary)'; tabBank.style.background = 'rgba(99,102,241,0.08)'; tabBank.style.color = 'var(--text-primary)';
+            tabCard.style.borderColor = 'var(--border-color)'; tabCard.style.background = 'rgba(255,255,255,0.02)'; tabCard.style.color = 'var(--text-secondary)';
+            secBank.style.display = 'block'; secCard.style.display = 'none';
+        } else {
+            tabCard.style.borderColor = 'var(--color-primary)'; tabCard.style.background = 'rgba(99,102,241,0.08)'; tabCard.style.color = 'var(--text-primary)';
+            tabBank.style.borderColor = 'var(--border-color)'; tabBank.style.background = 'rgba(255,255,255,0.02)'; tabBank.style.color = 'var(--text-secondary)';
+            secBank.style.display = 'none'; secCard.style.display = 'block';
+        }
+    }
+
+    function copyAccountNumber() {
+        const text = document.getElementById('acc-num-display').textContent.trim();
+        navigator.clipboard.writeText(text).then(() => {
+            const copyBtn = document.getElementById('copy-text');
+            copyBtn.textContent = 'Copied!';
+            setTimeout(() => copyBtn.textContent = 'Copy', 2000);
+        });
+    }
+
+    // ---------------------------------------------------------------------------
+    // Remita Inline Checkout Flow
+    // ---------------------------------------------------------------------------
+    let _cardPaymentLock = false;
+
+    function triggerCardPayment() {
+        if (_cardPaymentLock) return;
+        _cardPaymentLock = true;
+
+        const btn = document.querySelector('[onclick="triggerCardPayment()"]');
+        if (btn) { btn.disabled = true; btn.textContent = 'Loading Remita...'; }
+
+        const activePriceCycle = (_currentPlan === 'STANDARD') ? 'ANNUAL' : _currentCycle;
+        const activePrice = PRICING[_currentPlan][activePriceCycle] || PRICING[_currentPlan]['ANNUAL'];
+
+        // Step 1: Request a Remita RRR from the server (server locks the amount)
+        fetch("{% url 'remita_generate_rrr_api' %}", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "X-CSRFToken": document.querySelector('[name=csrfmiddlewaretoken]').value
+            },
+            body: JSON.stringify({ plan: _currentPlan, billing_cycle: (_currentPlan === 'STANDARD' ? 'ANNUAL' : _currentCycle) })
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.status !== 'success') {
+                alert('Could not generate payment reference: ' + (data.message || 'Server error'));
+                resetPayBtn(btn);
+                return;
+            }
+
+            // No live merchant ID = test/simulation mode
+            if (!_remitaMerchantId) {
+                if (confirm('Remita not configured yet.
+
+Simulate a test payment of ₦' + activePrice.toLocaleString() + ' for ' + _currentPlan + '?')) {
+                    verifyRemitaTransaction('RRR-TEST-' + Math.random().toString(36).substring(2, 10).toUpperCase(), _currentPlan, _currentCycle, data.orderId);
+                } else {
+                    resetPayBtn(btn);
+                }
+                return;
+            }
+
+            // Step 2: Open Remita widget with server-generated RRR
+            if (typeof RmPaymentEngine === 'undefined') {
+                alert('Remita payment widget could not load. Check your internet connection.');
+                resetPayBtn(btn);
+                return;
+            }
+
+            if (btn) btn.textContent = 'Remita Checkout Opening...';
+
+            const handler = RmPaymentEngine.init({
+                key: data.merchantId,
+                processRrr: true,
+                transactionId: data.orderId,
+                channel: 'Card,Internet Banking,USSD',
+                extendedData: {
+                    customFields: [
+                        { name: 'plan', value: _currentPlan },
+                        { name: 'billing_cycle', value: _currentCycle }
+                    ]
+                },
+                onSuccess: function(response) {
+                    const rrr = (response && response.transactionId) ? response.transactionId : data.rrr;
+                    verifyRemitaTransaction(rrr, _currentPlan, _currentCycle, data.orderId);
+                },
+                onError: function(response) {
+                    console.error('Remita error:', response);
+                    alert('Payment was not completed. Please try again or use bank transfer.');
+                    resetPayBtn(btn);
+                },
+                onClose: function() {
+                    console.log('Remita widget closed.');
+                    resetPayBtn(btn);
+                }
+            });
+            handler.showPaymentWidget();
+        })
+        .catch(err => {
+            alert('Network error starting payment: ' + err);
+            resetPayBtn(btn);
+        });
+    }
+
+    function resetPayBtn(btn) {
+        _cardPaymentLock = false;
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = '<i data-lucide="lock" style="width:18px;height:18px;"></i> Proceed with Secure Online Payment';
+            if (window.lucide) lucide.createIcons();
+        }
+    }
+
+    function verifyRemitaTransaction(rrr, plan, cycle, orderId) {
+        fetch("{% url 'remita_verify_api' %}", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "X-CSRFToken": document.querySelector('[name=csrfmiddlewaretoken]').value
+            },
+            body: JSON.stringify({ rrr: rrr, orderId: orderId || '', plan: plan, billing_cycle: cycle })
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.status === 'success') {
+                alert('Payment confirmed! Your account has been upgraded to ' + (plan === 'GOLDEN_PREMIUM' ? 'Golden Premium' : 'Premium') + '.');
+                window.location.href = "{% url 'subscription' %}";
+            } else {
+                alert('Payment verification failed: ' + (data.message || 'Unknown error. Contact support.'));
+                _cardPaymentLock = false;
+            }
+        })
+        .catch(err => {
+            alert('Verification error: ' + err + '\n\nYour payment may have been received. Contact support with your RRR: ' + rrr);
+            _cardPaymentLock = false;
+        });
+    }
+
+    // Init on page load
+    document.addEventListener('DOMContentLoaded', function() {
+        setBillingCycle('ANNUAL');  // Default to Annual billing
+        selectPlan(_currentPlan);
+        lucide.createIcons();
+    });
+</script>
+{% endblock %}

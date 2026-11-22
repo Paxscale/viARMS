@@ -204,6 +204,7 @@
         </div>
         <h2>Account Approval Required</h2>
         <p>All new accounts registered on <strong style="color: var(--color-primary);">viARMS</strong> are subject to review and must be approved by a system administrator before you can log in and access the platform.</p>
+        <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: -1rem; margin-bottom: 1.5rem; text-align: center;">By continuing, you acknowledge and agree to the <a href="{% url 'terms_and_agreement' %}" target="_blank" style="color: var(--color-primary); text-decoration: underline;">Terms of Service &amp; Merchant Agreement</a>.</p>
         <div class="notice-modal-actions">
             <a href="{% url 'landing' %}" class="btn-decline">
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
@@ -317,7 +318,13 @@
                         <p style="font-size: 0.75rem; color: var(--text-muted); margin-top: -0.25rem;">Your account will be reviewed by the viARMS team before activation.</p>
                     </div>
 
-                    <button type="submit" id="register-submit-btn" class="btn btn-primary btn-block" style="padding: 0.85rem; display: flex; align-items: center; justify-content: center; gap: 0.6rem; font-size: 1rem; letter-spacing: 0.3px;">
+                    <div class="form-group" style="margin-top: 1rem; margin-bottom: 1.25rem;">
+                            <label style="display: flex; align-items: flex-start; gap: 0.6rem; cursor: pointer; font-size: 0.85rem; color: var(--text-secondary); line-height: 1.4;">
+                                <input type="checkbox" name="agree_terms" id="agree-terms-checkbox" required style="margin-top: 0.2rem; accent-color: var(--color-primary); width: 16px; height: 16px; cursor: pointer;">
+                                <span>I have read and agree to the <a href="{% url 'terms_and_agreement' %}" target="_blank" style="color: var(--color-primary); font-weight: 600; text-decoration: underline;">Terms and Agreement</a> &amp; Privacy Policy.</span>
+                            </label>
+                        </div>
+                        <button type="submit" id="register-submit-btn" class="btn btn-primary btn-block" style="padding: 0.85rem; display: flex; align-items: center; justify-content: center; gap: 0.6rem; font-size: 1rem; letter-spacing: 0.3px;">
                         <i data-lucide="user-check" style="width: 18px; height: 18px;"></i>
                         <span data-i18n="btn_register">Sign Up</span>
                     </button>
@@ -331,7 +338,7 @@
 
             <!-- Copyright -->
             <div style="margin-top: 2rem; padding-top: 1rem; border-top: 1px solid rgba(255,255,255,0.06); text-align: center; font-size: 0.7rem; color: var(--text-muted); line-height: 1.6;">
-                &copy; {{ "now"|date:"Y" }} viARMS &nbsp;·&nbsp; Powered by <strong style="color: var(--color-primary);">viARMS</strong> | Scales Technologies
+                &copy; {{ "now"|date:"Y" }} viARMS &nbsp;·&nbsp; <a href="{% url 'terms_and_agreement' %}" style="color: var(--text-muted); text-decoration: underline;">Terms &amp; Agreement</a> &nbsp;·&nbsp; Powered by <strong style="color: var(--color-primary);">viARMS</strong> | Scales Technologies
             </div>
         </div>
 

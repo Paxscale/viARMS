@@ -1,0 +1,186 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Subscription &amp; Billing - viARMS{% endblock %}
+
+{% block content %}
+<div class="panel-header" style="margin-bottom: 1.5rem; display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 1rem;">
+    <div>
+        <h1 style="font-size: 1.75rem; font-weight: 700; display: flex; align-items: center; gap: 10px;">
+            <i data-lucide="credit-card" style="color: var(--color-primary);"></i>
+            Subscription &amp; Billing
+        </h1>
+        <p style="color: var(--text-secondary); font-size: 0.9rem;">
+            Manage your store's plan, upgrade your limits, and view payment transaction history.
+        </p>
+    </div>
+    {% if profile.plan == 'FREE' or profile.is_trial_expired or profile.is_subscription_expired %}
+    <a href="{% url 'subscription_upgrade' %}" class="btn btn-primary" style="padding: 0.65rem 1.5rem; font-weight: 600; display: inline-flex; align-items: center; gap: 8px;">
+        <i data-lucide="zap" style="width: 16px; height: 16px;"></i> Upgrade Plan Now
+    </a>
+    {% else %}
+    <a href="{% url 'subscription_upgrade' %}" class="btn btn-secondary" style="padding: 0.65rem 1.5rem; font-weight: 600; display: inline-flex; align-items: center; gap: 8px;">
+        <i data-lucide="arrow-up-right" style="width: 16px; height: 16px;"></i> Change or Extend Plan
+    </a>
+    {% endif %}
+</div>
+
+<!-- Plan Status Overview Cards -->
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1.25rem; margin-bottom: 2rem;">
+    <!-- Active Plan Card -->
+    <div class="glass-panel" style="padding: 1.5rem; border-left: 4px solid var(--color-primary);">
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.75rem;">
+            <span style="font-size: 0.8rem; text-transform: uppercase; font-weight: 600; color: var(--text-muted); letter-spacing: 0.5px;">Current Plan</span>
+            {% if profile.is_account_suspended %}
+                <span class="badge badge-danger">Suspended</span>
+            {% elif profile.plan == 'FREE' %}
+                <span class="badge" style="background: rgba(139,92,246,0.15); color: #a78bfa;">Free Trial (Premium Features)</span>
+            {% else %}
+                <span class="badge" style="background: rgba(16,185,129,0.15); color: var(--color-success);">Active Plan</span>
+            {% endif %}
+        </div>
+        <div style="font-size: 1.6rem; font-weight: 700; color: var(--text-primary); margin-bottom: 0.4rem;">
+            {{ profile.get_plan_display }}
+        </div>
+        <p style="font-size: 0.82rem; color: var(--text-secondary); margin-bottom: 1rem;">
+            {% if profile.is_account_suspended %}
+                <span style="color: #ef4444; font-weight: 600;">Your store account is suspended. You have <strong style="color: #fff; background: rgba(239,68,68,0.5); padding: 1px 5px; border-radius: 3px;">{{ profile.days_until_deletion }} day{{ profile.days_until_deletion|pluralize }} remaining</strong> to redeem your subscription before permanent account deletion.</span>
+            {% elif profile.plan == 'FREE' %}
+                <span>14-day free trial with all Premium features active. <strong>{{ profile.trial_days_remaining }} day{{ profile.trial_days_remaining|pluralize }} remaining</strong>.</span>
+            {% else %}
+                {% if profile.subscription_expires_at %}
+                Active until <strong>{{ profile.subscription_expires_at|date:"F d, Y" }}</strong>
+                {% else %}
+                Active ongoing subscription
+                {% endif %}
+            {% endif %}
+        </p>
+        <a href="{% url 'subscription_upgrade' %}" style="font-size: 0.82rem; color: var(--color-primary); font-weight: 600; text-decoration: none; display: inline-flex; align-items: center; gap: 4px;">
+            Upgrade to higher tier &rarr;
+        </a>
+    </div>
+
+    <!-- Plan Capacity & Limits -->
+    <div class="glass-panel" style="padding: 1.5rem;">
+        <span style="font-size: 0.8rem; text-transform: uppercase; font-weight: 600; color: var(--text-muted); letter-spacing: 0.5px; display: block; margin-bottom: 0.75rem;">Account Limits</span>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+            <div style="background: rgba(255,255,255,0.03); padding: 0.75rem; border-radius: 8px;">
+                <span style="font-size: 0.75rem; color: var(--text-muted); display: block;">Shop Branches</span>
+                <strong style="font-size: 1.1rem; color: var(--text-primary);">
+                    {% if profile.plan == 'FREE' %}1 Branch (Trial){% elif profile.plan == 'STANDARD' %}1 Branch{% elif profile.plan == 'PREMIUM' %}Up to 5{% else %}Unlimited{% endif %}
+                </strong>
+            </div>
+            <div style="background: rgba(255,255,255,0.03); padding: 0.75rem; border-radius: 8px;">
+                <span style="font-size: 0.75rem; color: var(--text-muted); display: block;">Team Members</span>
+                <strong style="font-size: 1.1rem; color: var(--text-primary);">
+                    {% if profile.plan == 'FREE' %}1 Mgr / 1 Cashier{% elif profile.plan == 'STANDARD' %}1 Mgr / 3 Cashiers{% elif profile.plan == 'PREMIUM' %}Up to 15 Staff{% else %}Unlimited Staff{% endif %}
+                </strong>
+            </div>
+        </div>
+        <div style="margin-top: 0.85rem; font-size: 0.78rem; color: var(--text-muted);">
+            Need more staff or branches? Upgrading instantly lifts all limitations.
+        </div>
+    </div>
+
+    <!-- Official Bank Transfer Quick Info -->
+    <div class="glass-panel" style="padding: 1.5rem; background: rgba(99,102,241,0.04); border-color: rgba(99,102,241,0.2);">
+        <span style="font-size: 0.8rem; text-transform: uppercase; font-weight: 600; color: var(--color-primary); letter-spacing: 0.5px; display: flex; align-items: center; gap: 6px; margin-bottom: 0.75rem;">
+            <i data-lucide="building-2" style="width: 14px; height: 14px;"></i> Official Payment Account
+        </span>
+        <div style="font-size: 0.95rem; font-weight: 700; color: var(--text-primary);">{{ settings.company_bank_name|default:"Zenith Bank" }}</div>
+        <div style="font-family: monospace; font-size: 1.1rem; color: #a78bfa; font-weight: 700; margin: 0.2rem 0;">
+            {{ settings.company_account_number|default:"1012345678" }}
+        </div>
+        <div style="font-size: 0.78rem; color: var(--text-secondary);">
+            {{ settings.company_account_name|default:"viARMS Technologies Limited" }}
+        </div>
+    </div>
+</div>
+
+<!-- Payment & Upgrade History Table -->
+<div class="glass-panel" style="padding: 1.5rem;">
+    <div class="panel-header" style="margin-bottom: 1.25rem;">
+        <h2 style="font-size: 1.15rem; font-weight: 600; display: flex; align-items: center; gap: 8px;">
+            <i data-lucide="history" style="color: var(--color-primary);"></i>
+            Payment Transactions &amp; Receipts
+        </h2>
+    </div>
+
+    <div class="table-responsive">
+        <table class="custom-table">
+            <thead>
+                <tr>
+                    <th>Reference</th>
+                    <th>Plan &amp; Cycle</th>
+                    <th>Amount</th>
+                    <th>Payment Method</th>
+                    <th>Date Submitted</th>
+                    <th>Status</th>
+                    <th>Proof / Notes</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for p in payments %}
+                <tr>
+                    <td>
+                        <strong style="font-family: monospace; font-size: 0.88rem; color: var(--color-primary);">#{{ p.reference }}</strong>
+                    </td>
+                    <td>
+                        <div style="font-weight: 600;">{{ p.get_plan_display }}</div>
+                        <div style="font-size: 0.75rem; color: var(--text-muted);">{{ p.get_billing_cycle_display }}</div>
+                    </td>
+                    <td>
+                        <strong style="font-size: 0.95rem; color: var(--text-primary);">₦{{ p.amount|floatformat:2 }}</strong>
+                    </td>
+                    <td>
+                        <span style="font-size: 0.85rem;">{{ p.get_payment_method_display }}</span>
+                        {% if p.sender_bank %}
+                        <div style="font-size: 0.75rem; color: var(--text-muted);">{{ p.sender_bank }}{% if p.sender_name %} ({{ p.sender_name }}){% endif %}</div>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <div style="font-size: 0.85rem;">{{ p.created_at|date:"M d, Y" }}</div>
+                        <div style="font-size: 0.75rem; color: var(--text-muted);">{{ p.created_at|date:"h:i A" }}</div>
+                    </td>
+                    <td>
+                        {% if p.status == 'CONFIRMED' %}
+                        <span class="badge" style="background: rgba(16,185,129,0.15); color: var(--color-success); font-weight: 600;">
+                            <i data-lucide="check-circle" style="width: 12px; height: 12px; vertical-align: middle; margin-right: 2px;"></i> Confirmed
+                        </span>
+                        {% elif p.status == 'REJECTED' %}
+                        <span class="badge badge-danger">
+                            <i data-lucide="x-circle" style="width: 12px; height: 12px; vertical-align: middle; margin-right: 2px;"></i> Rejected
+                        </span>
+                        {% else %}
+                        <span class="badge" style="background: rgba(245,158,11,0.15); color: #f59e0b; font-weight: 600;">
+                            <i data-lucide="clock" style="width: 12px; height: 12px; vertical-align: middle; margin-right: 2px;"></i> Awaiting Confirmation
+                        </span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if p.proof_image %}
+                        <a href="{{ p.proof_image.url }}" target="_blank" style="font-size: 0.78rem; color: var(--color-primary); text-decoration: underline; display: inline-flex; align-items: center; gap: 4px;">
+                            <i data-lucide="paperclip" style="width: 13px; height: 13px;"></i> View Receipt
+                        </a>
+                        {% elif p.notes %}
+                        <span style="font-size: 0.75rem; color: var(--text-muted);">{{ p.notes|truncatechars:30 }}</span>
+                        {% else %}
+                        <span style="color: var(--text-muted); font-size: 0.75rem;">-</span>
+                        {% endif %}
+                        {% if p.rejection_reason %}
+                        <div style="color: #ef4444; font-size: 0.72rem; margin-top: 3px;">Note: {{ p.rejection_reason }}</div>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="7" style="text-align: center; padding: 2.5rem; color: var(--text-muted);">
+                        No payment transactions recorded yet. <a href="{% url 'subscription_upgrade' %}" style="color: var(--color-primary); font-weight: 600;">Upgrade your plan now &nearr;</a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

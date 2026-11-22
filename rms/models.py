@@ -1,3 +1,4 @@
+from decimal import Decimal
 from django.db import models
 from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
@@ -22,13 +23,26 @@ class UserProfile(models.Model):
         ('MANAGER', 'Manager'),
         ('CASHIER', 'Cashier'),
     ]
+
+    TENANT_TYPE_CHOICES = [
+        ('RETAIL', 'Retail'),
+        ('WHOLESALE', 'Wholesale'),
+    ]
+
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='profile')
     role = models.CharField(max_length=20, choices=ROLES, default='CASHIER')
     shop = models.ForeignKey(Shop, on_delete=models.SET_NULL, null=True, blank=True, related_name='staff')
 
     # SaaS Fields
+    PLAN_CHOICES = [
+        ('FREE', '14-Day Free Trial'),
+        ('STANDARD', 'Standard'),
+        ('PREMIUM', 'Premium'),
+        ('GOLDEN_PREMIUM', 'Golden Premium'),
+    ]
     tenant_owner = models.ForeignKey(User, on_delete=models.CASCADE, related_name='tenant_members', null=True, blank=True)
-    plan = models.CharField(max_length=20, choices=[('FREE', 'Free'), ('PREMIUM', 'Premium'), ('GOLDEN_PREMIUM', 'Golden Premium')], default='FREE')
+    tenant_type = models.CharField(max_length=20, choices=TENANT_TYPE_CHOICES, default='RETAIL')
+    plan = models.CharField(max_length=20, choices=PLAN_CHOICES, default='FREE')
     is_approved = models.BooleanField(default=False)
     KYC_STATUSES = [
         ('PENDING', 'Pending review'),
@@ -48,6 +62,133 @@ class UserProfile(models.Model):
         ('UTENSILS', 'Utensils & Housewares'),
         ('LAUNDRY', 'Laundry & Dry Cleaning')
     ], default='GENERAL')
+    # Trial & Subscription tracking
+    trial_start_date = models.DateField(null=True, blank=True, help_text="Date the free trial began")
+    subscription_expires_at = models.DateField(null=True, blank=True, help_text="Date the paid subscription expires")
+    is_suspended = models.BooleanField(default=False, help_text="True if tenant store account is suspended")
+    suspended_at = models.DateTimeField(null=True, blank=True, help_text="Timestamp when account was suspended")
+    suspension_reason = models.CharField(max_length=255, blank=True, default="", help_text="Reason for suspension")
+    suspension_notified = models.BooleanField(default=False, help_text="True if suspension notice has been sent")
+
+    @property
+    def is_subscription_expired(self):
+        """Returns True if a paid plan subscription has passed its expires_at date."""
+        if self.user.is_superuser:
+            return False
+        target = self.tenant_owner.profile if (self.tenant_owner and self.tenant_owner != self.user and hasattr(self.tenant_owner, 'profile')) else self
+        if target.user.is_superuser:
+            return False
+        if target.plan == 'FREE':
+            return False
+        if target.subscription_expires_at:
+            from django.utils import timezone
+            return timezone.localdate() > target.subscription_expires_at
+        return False
+
+    @property
+    def has_active_subscription(self):
+        """Returns True if the tenant has an active trial or an unexpired paid subscription."""
+        if self.user.is_superuser:
+            return True
+        target = self.tenant_owner.profile if (self.tenant_owner and self.tenant_owner != self.user and hasattr(self.tenant_owner, 'profile')) else self
+        if target.plan == 'FREE':
+            return not target.is_trial_expired
+        return not target.is_subscription_expired
+
+    @property
+    def is_trial_expired(self):
+        """Returns True if this is a FREE plan account and the 14-day trial has ended.
+        Superusers are always exempt."""
+        if self.user.is_superuser:
+            return False
+        if self.tenant_owner and self.tenant_owner.is_superuser:
+            return False
+        target = self.tenant_owner.profile if (self.tenant_owner and self.tenant_owner != self.user and hasattr(self.tenant_owner, 'profile')) else self
+        if target.user.is_superuser:
+            return False
+        if target.plan != 'FREE' or not target.trial_start_date:
+            return False
+        from django.utils import timezone
+        return (timezone.localdate() - target.trial_start_date).days >= 14
+
+    @property
+    def trial_days_remaining(self):
+        """Returns the number of days remaining in the free trial (0 if expired or not applicable).
+        Superusers are always exempt."""
+        if self.user.is_superuser:
+            return None
+        if self.tenant_owner and self.tenant_owner.is_superuser:
+            return None
+        target = self.tenant_owner.profile if (self.tenant_owner and self.tenant_owner != self.user and hasattr(self.tenant_owner, 'profile')) else self
+        if target.user.is_superuser:
+            return None
+        if target.plan != 'FREE' or not target.trial_start_date:
+            return None
+        from django.utils import timezone
+        days_used = (timezone.localdate() - target.trial_start_date).days
+        remaining = 14 - days_used
+        return max(0, remaining)
+
+    @property
+    def is_account_suspended(self):
+        """Returns True if tenant account is currently suspended (expired trial or non-payment)."""
+        if self.user.is_superuser:
+            return False
+        if self.tenant_owner and self.tenant_owner.is_superuser:
+            return False
+        target = self.tenant_owner.profile if (self.tenant_owner and self.tenant_owner != self.user and hasattr(self.tenant_owner, 'profile')) else self
+        if target.user.is_superuser:
+            return False
+        if target.is_suspended:
+            return True
+        if target.plan == 'FREE' and target.is_trial_expired:
+            return True
+        if target.is_subscription_expired:
+            return True
+        return False
+
+    @property
+    def days_suspended(self):
+        """Returns number of days elapsed since the account was suspended."""
+        target = self.tenant_owner.profile if (self.tenant_owner and self.tenant_owner != self.user and hasattr(self.tenant_owner, 'profile')) else self
+        if not target.is_account_suspended:
+            return 0
+        from django.utils import timezone
+        if target.suspended_at:
+            delta = timezone.now() - target.suspended_at
+            return max(0, delta.days)
+        if target.trial_start_date:
+            from datetime import timedelta
+            expired_date = target.trial_start_date + timedelta(days=14)
+            return max(0, (timezone.localdate() - expired_date).days)
+        return 0
+
+    @property
+    def days_until_deletion(self):
+        """Returns days remaining before 30-day automatic permanent deletion."""
+        target = self.tenant_owner.profile if (self.tenant_owner and self.tenant_owner != self.user and hasattr(self.tenant_owner, 'profile')) else self
+        if not target.is_account_suspended:
+            return 30
+        return max(0, 30 - target.days_suspended)
+
+    @property
+    def allows_product_images(self):
+        """
+        Standard Plan should not have product image.
+        14-Day Free Trial contains all Premium features (product images allowed).
+        Premium and Golden Premium allow product images.
+        """
+        if self.user.is_superuser:
+            return True
+        target = self.tenant_owner.profile if (self.tenant_owner and self.tenant_owner != self.user and hasattr(self.tenant_owner, 'profile')) else self
+        if target.user.is_superuser:
+            return True
+        if target.plan == 'FREE':
+            return True
+        if target.plan in ('PREMIUM', 'GOLDEN_PREMIUM'):
+            return True
+        # STANDARD plan does NOT allow product images
+        return False
 
     def __str__(self):
         return f"{self.user.username} - {self.get_role_display()}"
@@ -56,15 +197,28 @@ class UserProfile(models.Model):
 def create_user_profile(sender, instance, created, **kwargs):
     if created:
         role = 'ADMIN' if instance.is_superuser else 'CASHIER'
-        UserProfile.objects.get_or_create(user=instance, defaults={'role': role})
+        defaults = {'role': role}
+        if instance.is_superuser:
+            defaults['is_approved'] = True
+            defaults['kyc_status'] = 'VERIFIED'
+        UserProfile.objects.get_or_create(user=instance, defaults=defaults)
 
 @receiver(post_save, sender=User)
 def save_user_profile(sender, instance, **kwargs):
     if hasattr(instance, 'profile'):
+        if instance.is_superuser:
+            if not instance.profile.is_approved:
+                instance.profile.is_approved = True
+            if instance.profile.kyc_status != 'VERIFIED':
+                instance.profile.kyc_status = 'VERIFIED'
         instance.profile.save()
     else:
         role = 'ADMIN' if instance.is_superuser else 'CASHIER'
-        UserProfile.objects.get_or_create(user=instance, defaults={'role': role})
+        defaults = {'role': role}
+        if instance.is_superuser:
+            defaults['is_approved'] = True
+            defaults['kyc_status'] = 'VERIFIED'
+        UserProfile.objects.get_or_create(user=instance, defaults=defaults)
 
 class Category(models.Model):
     name = models.CharField(max_length=100)
@@ -107,7 +261,7 @@ class Product(models.Model):
     prescription_required = models.BooleanField(default=False, help_text="Is prescription required to sell this item?")
     manufacturer = models.CharField(max_length=200, blank=True, null=True, help_text="Manufacturer or Pharmaceutical Company")
     strength = models.CharField(max_length=100, blank=True, null=True, help_text="Dosage strength or grams (e.g., 500mg, 10mg/5ml)")
-    batch_number = models.CharField(max_length=100, blank=True, null=True, help_text="Manufacturing batch number")
+    batch_number = models.CharField(max_length=100, blank=True, null=True, default='BN: 1', help_text="Manufacturing batch number")
     nafdac_reg_no = models.CharField(max_length=100, blank=True, null=True, verbose_name="NAFDAC Reg No")
     storage_conditions = models.CharField(max_length=200, blank=True, null=True, help_text="e.g., Store below 25°C")
 
@@ -125,9 +279,14 @@ class Product(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        # Same barcode (SKU) is allowed in same shop as long as expiry dates differ.
+        # Same barcode (SKU) is allowed in same shop across different batches.
         # This supports stocking the same product with multiple batch expiry dates.
-        unique_together = [('sku', 'shop', 'expiry_date')]
+        unique_together = [('sku', 'shop', 'batch_number')]
+
+    def save(self, *args, **kwargs):
+        if not self.batch_number or not str(self.batch_number).strip():
+            self.batch_number = 'BN: 1'
+        super().save(*args, **kwargs)
 
     def __str__(self):
         shop_prefix = f"[{self.shop.name}] " if self.shop else ""
@@ -203,8 +362,16 @@ class StoreSettings(models.Model):
     store_name = models.CharField(max_length=200, default="Our Shop")
     address = models.TextField(blank=True, null=True, default="123 Retail Ave, Shoptown")
     phone = models.CharField(max_length=50, blank=True, null=True, default="+234 810 026 2697")
+    email = models.EmailField(max_length=100, blank=True, null=True, default="info@ourshop.com")
     tax_rate = models.DecimalField(max_digits=5, decimal_places=2, default=0.00, help_text="Default store tax rate in percentage")
     receipt_footer = models.TextField(blank=True, null=True, default="Thank you for shopping with us! Please come again.")
+    # Company payment details for tenant subscription upgrades
+    company_bank_name = models.CharField(max_length=100, default="Zenith Bank", blank=True)
+    company_account_name = models.CharField(max_length=150, default="viARMS Technologies Limited", blank=True)
+    company_account_number = models.CharField(max_length=50, default="1012345678", blank=True)
+    remita_merchant_id = models.CharField(max_length=150, blank=True, default="", help_text="Remita Merchant ID from your Remita profile (Biller ID)")
+    remita_service_type_id = models.CharField(max_length=150, blank=True, default="", help_text="Remita Service Type ID assigned to this product/service")
+    remita_api_key = models.CharField(max_length=255, blank=True, default="", help_text="Remita API Key - kept secret, never sent to the browser")
 
     def __str__(self):
         return self.store_name
@@ -236,3 +403,109 @@ class Advertisement(models.Model):
 
     def __str__(self):
         return self.title
+
+
+class AdminNotification(models.Model):
+    NOTIFICATION_TYPES = [
+        ('INFO', 'System Update / General Info'),
+        ('WARNING', 'Important Notice'),
+        ('URGENT', 'Critical Alert / Action Required'),
+        ('FEATURE', 'New Feature Release'),
+    ]
+
+    title = models.CharField(max_length=200)
+    message = models.TextField(help_text="Notification message or announcement body")
+    notification_type = models.CharField(max_length=20, choices=NOTIFICATION_TYPES, default='INFO')
+    target_tenant = models.ForeignKey(User, on_delete=models.CASCADE, null=True, blank=True,
+                                      related_name='received_admin_notifications',
+                                      help_text="Leave blank to broadcast to all business accounts (tenants)")
+    sender = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='sent_admin_notifications')
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"[{self.get_notification_type_display()}] {self.title}"
+
+    @property
+    def badge_color(self):
+        mapping = {
+            'INFO': 'badge-info',
+            'WARNING': 'badge-warning',
+            'URGENT': 'badge-danger',
+            'FEATURE': 'badge-success',
+        }
+        return mapping.get(self.notification_type, 'badge-info')
+
+
+class NotificationReadStatus(models.Model):
+    notification = models.ForeignKey(AdminNotification, on_delete=models.CASCADE, related_name='read_records')
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='notification_read_statuses')
+    read_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = [('notification', 'user')]
+
+    def __str__(self):
+        return f"{self.user.username} read {self.notification.id}"
+
+class SubscriptionPayment(models.Model):
+    PAYMENT_METHODS = [
+        ('REMITA', 'Debit Card / Remita'),
+        ('BANK_TRANSFER', 'Direct Bank Transfer'),
+    ]
+    STATUS_CHOICES = [
+        ('PENDING', 'Pending Confirmation'),
+        ('CONFIRMED', 'Confirmed & Active'),
+        ('REJECTED', 'Rejected'),
+    ]
+    BILLING_CYCLES = [
+        ('QUARTERLY', 'Quarterly (3 Months)'),
+        ('ANNUAL', 'Annual (12 Months)'),
+        ('MONTHLY', 'Monthly (Legacy)'),
+    ]
+    PAYMENT_PLAN_CHOICES = [
+        ('STANDARD', 'Standard'),
+        ('PREMIUM', 'Premium'),
+        ('GOLDEN_PREMIUM', 'Golden Premium'),
+    ]
+    PLAN_PRICING = {
+        'STANDARD': {
+            'ANNUAL': Decimal('80000.00'),
+        },
+        'PREMIUM': {
+            'QUARTERLY': Decimal('35000.00'),
+            'ANNUAL': Decimal('120000.00'),
+        },
+        'GOLDEN_PREMIUM': {
+            'QUARTERLY': Decimal('70000.00'),
+            'ANNUAL': Decimal('250000.00'),
+        },
+    }
+
+    tenant = models.ForeignKey(User, on_delete=models.CASCADE, related_name='subscription_payments')
+    plan = models.CharField(max_length=20, choices=PAYMENT_PLAN_CHOICES)
+    billing_cycle = models.CharField(max_length=20, choices=BILLING_CYCLES, default='MONTHLY')
+    amount = models.DecimalField(max_digits=12, decimal_places=2)
+    payment_method = models.CharField(max_length=30, choices=PAYMENT_METHODS, default='BANK_TRANSFER')
+    reference = models.CharField(max_length=100, unique=True)
+    sender_name = models.CharField(max_length=150, blank=True)
+    sender_bank = models.CharField(max_length=100, blank=True)
+    proof_image = models.ImageField(upload_to='subscription_proofs/', blank=True, null=True)
+    notes = models.TextField(blank=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='PENDING')
+    created_at = models.DateTimeField(auto_now_add=True)
+    confirmed_at = models.DateTimeField(null=True, blank=True)
+    confirmed_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='confirmed_subscriptions')
+    rejection_reason = models.TextField(blank=True)
+    starts_at = models.DateField(null=True, blank=True)
+    expires_at = models.DateField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.tenant.username} - {self.plan} ({self.status})"

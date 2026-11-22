@@ -1,0 +1,189 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Expired Products - viARMS{% endblock %}
+
+{% block content %}
+<div style="padding: 0 0 2rem;">
+
+  <!-- Page Header -->
+  <div class="panel-header" style="margin-bottom: 1.5rem; flex-wrap: wrap; gap: 1rem; align-items: flex-start;">
+    <div>
+      <div style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.4rem;">
+        <a href="{% url 'products' %}" class="btn btn-secondary btn-sm" style="padding: 0.3rem 0.7rem; font-size: 0.8rem;">
+          <i data-lucide="arrow-left" style="width: 14px; height: 14px;"></i> Products
+        </a>
+        <span style="color: var(--text-muted); font-size: 0.85rem;">/ Expired Stock</span>
+      </div>
+      <h1 style="font-size: 1.75rem; font-weight: 700; display: flex; align-items: center; gap: 0.6rem;">
+        <i data-lucide="alert-octagon" style="width: 28px; height: 28px; color: #ef4444;"></i>
+        Expired Products
+        {% if selected_category %}
+        <span style="font-size: 1rem; font-weight: 400; color: var(--text-secondary); padding: 0.2rem 0.6rem; background: rgba(239,68,68,0.1); border-radius: 6px; border: 1px solid rgba(239,68,68,0.3);">{{ selected_category.name }}</span>
+        {% endif %}
+      </h1>
+      <p style="color: var(--text-secondary); font-size: 0.9rem; margin-top: 0.3rem;">Capital Loss Analysis — Track and manage expired inventory across your store.</p>
+    </div>
+  </div>
+
+  <!-- Capital Loss Alert -->
+  {% if total_expired_count > 0 %}
+  <div style="background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.5); border-radius: 12px; padding: 1.1rem 1.5rem; margin-bottom: 1.75rem; display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;">
+    <div style="background: rgba(239,68,68,0.15); border-radius: 50%; width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+      <i data-lucide="trending-down" style="width: 22px; height: 22px; color: #ef4444;"></i>
+    </div>
+    <div>
+      <div style="font-size: 1.2rem; font-weight: 700; color: #ef4444;">₦{{ total_lost_cost_value|floatformat:2 }} Total Capital Lost</div>
+      <div style="font-size: 0.85rem; color: var(--text-secondary);">
+        {{ total_expired_count }} expired product{{ total_expired_count|pluralize }},
+        {{ total_expired_units }} total unit{{ total_expired_units|pluralize }}
+        &bull; ₦{{ total_lost_retail_value|floatformat:2 }} in retail value forfeited
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- Summary Cards -->
+  <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 1rem; margin-bottom: 1.75rem;">
+    <div class="glass-panel" style="padding: 1.1rem 1.25rem; border-color: rgba(239,68,68,0.3);">
+      <div style="font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 0.4rem;">Expired SKUs</div>
+      <div style="font-size: 2rem; font-weight: 700; color: #ef4444;">{{ total_expired_count }}</div>
+      <div style="font-size: 0.75rem; color: var(--text-secondary);">distinct products</div>
+    </div>
+    <div class="glass-panel" style="padding: 1.1rem 1.25rem; border-color: rgba(239,68,68,0.3);">
+      <div style="font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 0.4rem;">Expired Units</div>
+      <div style="font-size: 2rem; font-weight: 700; color: #f87171;">{{ total_expired_units }}</div>
+      <div style="font-size: 0.75rem; color: var(--text-secondary);">units in stock</div>
+    </div>
+    <div class="glass-panel" style="padding: 1.1rem 1.25rem; border-color: rgba(239,68,68,0.3);">
+      <div style="font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 0.4rem;">Capital Lost</div>
+      <div style="font-size: 1.5rem; font-weight: 700; color: #ef4444;">₦{{ total_lost_cost_value|floatformat:2 }}</div>
+      <div style="font-size: 0.75rem; color: var(--text-secondary);">at cost price</div>
+    </div>
+    <div class="glass-panel" style="padding: 1.1rem 1.25rem; border-color: rgba(239,68,68,0.3);">
+      <div style="font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 0.4rem;">Retail Value Lost</div>
+      <div style="font-size: 1.5rem; font-weight: 700; color: #fca5a5;">₦{{ total_lost_retail_value|floatformat:2 }}</div>
+      <div style="font-size: 0.75rem; color: var(--text-secondary);">at selling price</div>
+    </div>
+  </div>
+
+  <!-- Filters Bar -->
+  <div class="glass-panel" style="padding: 1rem 1.25rem; margin-bottom: 1.5rem;">
+    <form method="GET" style="display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: center;">
+      <div style="flex: 1; min-width: 200px;">
+        <input type="search" name="q" value="{{ search_q }}" class="form-control" placeholder="Search by name, SKU, or batch…" style="font-size: 0.85rem;">
+      </div>
+      <div style="min-width: 180px;">
+        <select name="category_id" class="form-control" style="font-size: 0.85rem;">
+          <option value="">All Categories</option>
+          {% for cat in categories %}
+          <option value="{{ cat.id }}" {% if selected_category and selected_category.id == cat.id %}selected{% endif %}>{{ cat.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <button type="submit" class="btn btn-primary btn-sm" style="padding: 0.5rem 1rem;">
+        <i data-lucide="filter" style="width: 14px; height: 14px;"></i> Filter
+      </button>
+      {% if search_q or selected_category %}
+      <a href="{% url 'expired_products' %}" class="btn btn-secondary btn-sm" style="padding: 0.5rem 1rem; color: #ef4444;">
+        <i data-lucide="x" style="width: 14px; height: 14px;"></i> Clear
+      </a>
+      {% endif %}
+    </form>
+  </div>
+
+  <!-- Category Pills (when no category selected, show affected categories) -->
+  {% if cat_counts and not selected_category %}
+  <div style="display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 1.25rem;">
+    <span style="font-size: 0.75rem; color: var(--text-muted); align-self: center;">Affected categories:</span>
+    {% for item in cat_counts %}
+    <a href="{% url 'expired_products' %}?category_id={{ item.category.id }}"
+       style="font-size: 0.75rem; padding: 0.25rem 0.65rem; background: rgba(239,68,68,0.12); border: 1px solid rgba(239,68,68,0.35); border-radius: 20px; color: #f87171; text-decoration: none; display: inline-flex; align-items: center; gap: 0.3rem;">
+      {{ item.category.name }}
+      <span style="background: rgba(239,68,68,0.3); border-radius: 10px; padding: 0px 5px; font-weight: 700;">{{ item.count }}</span>
+    </a>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <!-- Expired Products Table -->
+  <div class="glass-panel" style="padding: 1.5rem;">
+    <div class="panel-header" style="margin-bottom: 1rem;">
+      <h2 class="panel-title" style="font-size: 1rem; display: flex; align-items: center; gap: 0.5rem;">
+        <i data-lucide="list" style="width: 16px; height: 16px; color: #ef4444;"></i>
+        Expired Items
+        {% if search_q %}<span style="font-size: 0.75rem; color: var(--text-muted); font-weight: 400;">&nbsp;— "{{ search_q }}"</span>{% endif %}
+      </h2>
+    </div>
+
+    {% if expired_products %}
+    <div style="overflow-x: auto;">
+      <table class="data-table" style="width: 100%; font-size: 0.82rem;">
+        <thead>
+          <tr>
+            <th>Product</th>
+            <th>SKU</th>
+            <th>Batch</th>
+            <th>Category</th>
+            <th>Shop</th>
+            <th style="text-align: right;">Qty</th>
+            <th style="text-align: right;">Unit Cost</th>
+            <th style="text-align: right;">Total Cost Lost</th>
+            <th>Expiry Date</th>
+            <th style="text-align: right;">Days Expired</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in expired_products %}
+          {% with p=row.product %}
+          <tr style="background: rgba(239,68,68,0.04); border-left: 3px solid rgba(239,68,68,0.5);">
+            <td>
+              <div style="font-weight: 600; text-decoration: line-through; color: var(--text-muted);">{{ p.name }}</div>
+              {% if p.description %}
+              <div style="font-size: 0.72rem; color: var(--text-muted); max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ p.description }}</div>
+              {% endif %}
+            </td>
+            <td style="font-family: monospace; font-size: 0.8rem; font-weight: 600;">{{ p.sku }}</td>
+            <td><span style="font-size: 0.75rem; background: rgba(99,102,241,0.12); color: var(--color-primary); padding: 2px 7px; border-radius: 4px; font-weight: 600;">{{ p.batch_number|default:"BN: 1" }}</span></td>
+            <td>
+              {% if p.category %}
+              <a href="{% url 'category_detail' p.category.id %}" style="color: var(--color-primary); text-decoration: none; font-size: 0.8rem;">{{ p.category.name }}</a>
+              {% else %}—{% endif %}
+            </td>
+            <td style="font-size: 0.8rem; color: var(--text-secondary);">{{ p.shop.name|default:"—" }}</td>
+            <td style="text-align: right; font-weight: 600;">{{ p.stock_quantity }}</td>
+            <td style="text-align: right;">₦{{ p.cost_price|floatformat:2 }}</td>
+            <td style="text-align: right; font-weight: 700; color: #ef4444;">₦{{ row.lost_cost|floatformat:2 }}</td>
+            <td style="color: #ef4444; font-weight: 600; font-size: 0.8rem;">{{ p.expiry_date|date:"M d, Y" }}</td>
+            <td style="text-align: right;">
+              <span style="background: rgba(239,68,68,0.15); color: #ef4444; padding: 2px 8px; border-radius: 10px; font-size: 0.75rem; font-weight: 700;">
+                {{ row.days_expired }} day{{ row.days_expired|pluralize }}
+              </span>
+            </td>
+          </tr>
+          {% endwith %}
+          {% endfor %}
+        </tbody>
+        <!-- Totals Row -->
+        <tfoot>
+          <tr style="border-top: 2px solid rgba(239,68,68,0.3); background: rgba(239,68,68,0.06);">
+            <td colspan="5" style="font-weight: 700; padding: 0.75rem 1rem; font-size: 0.85rem; color: #ef4444;">TOTAL LOSS</td>
+            <td style="text-align: right; font-weight: 700; color: #ef4444;">{{ total_expired_units }}</td>
+            <td></td>
+            <td style="text-align: right; font-weight: 700; color: #ef4444;">₦{{ total_lost_cost_value|floatformat:2 }}</td>
+            <td colspan="2"></td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+    {% else %}
+    <div style="text-align: center; padding: 3rem 1rem; color: var(--text-muted);">
+      <i data-lucide="check-circle" style="width: 48px; height: 48px; margin-bottom: 1rem; opacity: 0.4; color: #34d399;"></i>
+      <p style="font-size: 1rem; font-weight: 500; color: #34d399;">No expired products{% if search_q %} matching "{{ search_q }}"{% endif %}{% if selected_category %} in {{ selected_category.name }}{% endif %}!</p>
+      <p style="font-size: 0.85rem; margin-top: 0.5rem;">Your inventory{% if selected_category %} in this category{% endif %} is all within date. Keep it up!</p>
+    </div>
+    {% endif %}
+  </div>
+
+</div>
+{% endblock %}

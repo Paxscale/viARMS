@@ -1,5 +1,7 @@
 from django.test import TestCase, Client
 from django.contrib.auth.models import User, Group
+from django.utils import timezone
+from datetime import timedelta, date, datetime
 from django.urls import reverse
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import override_settings
@@ -7,7 +9,7 @@ from decimal import Decimal
 from io import BytesIO
 from tempfile import TemporaryDirectory
 from PIL import Image
-from rms.models import Category, Product, Sale, SaleItem, Shop, StoreSettings
+from rms.models import Category, Product, Sale, SaleItem, Shop, StoreSettings, AdminNotification
 import json
 
 class RMSModelsAndAPITests(TestCase):
@@ -597,3 +599,634 @@ class RMSModelsAndAPITests(TestCase):
         shops_response = self.client.get(reverse('shops'))
         self.assertContains(shops_response, 'type="tel"')
         self.assertContains(shops_response, 'placeholder="+234 810 026 2697"')
+
+
+    def test_settings_and_receipt_data_fetching(self):
+        # Update settings
+        self.settings.store_name = "Global Supermart"
+        self.settings.address = "45 Commercial Road, Victoria Island, Lagos"
+        self.settings.phone = "+234 809 111 2233"
+        self.settings.email = "support@globalsupermart.com"
+        self.settings.receipt_footer = "Thanks for shopping! Valid for exchange in 7 days."
+        self.settings.save()
+
+        # Perform checkout as cashier
+        self.client.login(username='cashier', password='cashier123')
+        payload = {
+            'items': [{'product_id': self.product_coke.id, 'quantity': 2}],
+            'discount': 0.00,
+            'payment_method': 'CASH'
+        }
+        checkout_res = self.client.post(
+            reverse('checkout_api'),
+            data=json.dumps(payload),
+            content_type='application/json'
+        )
+        self.assertEqual(checkout_res.status_code, 200)
+        checkout_data = checkout_res.json()
+        self.assertTrue(checkout_data['success'])
+        receipt = checkout_data['receipt']
+        self.assertEqual(receipt['store_name'], "Global Supermart")
+        self.assertEqual(receipt['store_address'], "45 Commercial Road, Victoria Island, Lagos")
+        self.assertEqual(receipt['store_phone'], "+234 809 111 2233")
+        self.assertEqual(receipt['store_email'], "support@globalsupermart.com")
+        self.assertEqual(receipt['receipt_footer'], "Thanks for shopping! Valid for exchange in 7 days.")
+
+        # Test reprint endpoint sale_detail_json
+        sale = Sale.objects.get(receipt_number=receipt['receipt_number'])
+        reprint_res = self.client.get(reverse('sale_detail_json', kwargs={'sale_id': sale.id}))
+        self.assertEqual(reprint_res.status_code, 200)
+        reprint_data = reprint_res.json()
+        self.assertTrue(reprint_data['success'])
+        reprint_receipt = reprint_data['receipt']
+        self.assertEqual(reprint_receipt['store_name'], "Global Supermart")
+        self.assertEqual(reprint_receipt['store_address'], "45 Commercial Road, Victoria Island, Lagos")
+        self.assertEqual(reprint_receipt['store_phone'], "+234 809 111 2233")
+        self.assertEqual(reprint_receipt['store_email'], "support@globalsupermart.com")
+        self.assertEqual(reprint_receipt['receipt_footer'], "Thanks for shopping! Valid for exchange in 7 days.")
+
+    def test_batch_creation_for_same_sku_different_expiry(self):
+        owner, profile, shop = self.create_tenant('batch_tenant')
+        client = Client()
+        client.login(username='batch_tenant', password='tenant123')
+
+        # Add first batch
+        res1 = client.post(reverse('products'), {
+            'action': 'add_product',
+            'name': 'Vitamin C 1000mg',
+            'sku': 'VITC-1000',
+            'cost_price': '500.00',
+            'selling_price': '800.00',
+            'stock_quantity': '50',
+            'min_stock_level': '5',
+            'expiry_date': '2026-12-01',
+            'shop_id': shop.id,
+        })
+        self.assertEqual(res1.status_code, 302)
+        batch1_prod = Product.objects.get(sku='VITC-1000', expiry_date='2026-12-01', shop=shop)
+        self.assertEqual(batch1_prod.batch_number, 'BN: 1')
+
+        # Add second batch of same product & same SKU but different expiry date
+        res2 = client.post(reverse('products'), {
+            'action': 'add_product',
+            'name': 'Vitamin C 1000mg',
+            'sku': 'VITC-1000',
+            'cost_price': '550.00',
+            'selling_price': '850.00',
+            'stock_quantity': '30',
+            'min_stock_level': '5',
+            'expiry_date': '2027-06-01',
+            'shop_id': shop.id,
+        })
+        self.assertEqual(res2.status_code, 302)
+        batch2_prod = Product.objects.get(sku='VITC-1000', expiry_date='2027-06-01', shop=shop)
+        self.assertEqual(batch2_prod.batch_number, 'BN: 2')
+
+        # Add third batch
+        res3 = client.post(reverse('products'), {
+            'action': 'add_product',
+            'name': 'Vitamin C 1000mg',
+            'sku': 'VITC-1000',
+            'cost_price': '550.00',
+            'selling_price': '850.00',
+            'stock_quantity': '40',
+            'min_stock_level': '5',
+            'expiry_date': '2028-01-01',
+            'shop_id': shop.id,
+        })
+        self.assertEqual(res3.status_code, 302)
+        batch3_prod = Product.objects.get(sku='VITC-1000', expiry_date='2028-01-01', shop=shop)
+        self.assertEqual(batch3_prod.batch_number, 'BN: 3')
+
+        # Attempt to create duplicate batch on same SKU in same shop
+        res_dup = client.post(reverse('products'), {
+            'action': 'add_product',
+            'name': 'Vitamin C 1000mg',
+            'sku': 'VITC-1000',
+            'batch_number': 'BN: 2',
+            'cost_price': '550.00',
+            'selling_price': '850.00',
+            'stock_quantity': '10',
+            'min_stock_level': '5',
+            'expiry_date': '2027-06-01',
+            'shop_id': shop.id,
+        })
+        # Should stay on page with error, count stays 1
+        self.assertEqual(Product.objects.filter(sku='VITC-1000', batch_number='BN: 2', shop=shop).count(), 1)
+
+    def test_terms_and_agreement_view_and_registration_validation(self):
+        # 1. Terms page accessible
+        terms_res = self.client.get(reverse('terms_and_agreement'))
+        self.assertEqual(terms_res.status_code, 200)
+        self.assertContains(terms_res, "Terms of Service")
+        self.assertContains(terms_res, "Merchant Agreement")
+
+        # 2. Register without agree_terms fails
+        fail_reg = self.client.post(reverse('register'), {
+            'username': 'notermsuser',
+            'email': 'noterms@test.com',
+            'password': 'password123',
+            'confirm_password': 'password123',
+            'business_name': 'No Terms Shop',
+            'kyc_document_type': 'National ID',
+            'kyc_document_number': 'NIN-12345678',
+        })
+        self.assertEqual(fail_reg.status_code, 200)
+        self.assertFalse(User.objects.filter(username='notermsuser').exists())
+
+        # 3. Register with agree_terms succeeds
+        success_reg = self.client.post(reverse('register'), {
+            'username': 'termsuser',
+            'email': 'terms@test.com',
+            'password': 'password123',
+            'confirm_password': 'password123',
+            'business_name': 'Agreed Terms Shop',
+            'kyc_document_type': 'National ID',
+            'kyc_document_number': 'NIN-87654321',
+            'agree_terms': 'on',
+        })
+        self.assertEqual(success_reg.status_code, 302)
+        self.assertTrue(User.objects.filter(username='termsuser').exists())
+
+    def test_admin_broadcast_notifications_and_read_api(self):
+        from rms.models import AdminNotification, NotificationReadStatus
+        owner, profile, shop = self.create_tenant('notify_tenant')
+        client = Client()
+        client.login(username='notify_tenant', password='tenant123')
+
+        # Create broadcast via superadmin
+        admin_client = Client()
+        admin_client.login(username='admin', password='admin123')
+        create_res = admin_client.post(reverse('admin_panel'), {
+            'action': 'send_notification',
+            'title': 'Scheduled Maintenance Tonight',
+            'message': 'We will perform upgrades at 2am.',
+            'notification_type': 'URGENT',
+            'target_tenant_id': 'ALL',
+        })
+        self.assertEqual(create_res.status_code, 302)
+        notif = AdminNotification.objects.get(title='Scheduled Maintenance Tonight')
+        self.assertEqual(notif.notification_type, 'URGENT')
+        self.assertIsNone(notif.target_tenant)
+
+        # Check tenant sees unread notification
+        dash_res = client.get(reverse('dashboard'))
+        self.assertEqual(dash_res.status_code, 200)
+        self.assertEqual(dash_res.context['unread_notifications_count'], 1)
+        self.assertTrue(dash_res.context['has_urgent_notification'])
+
+        # Mark as read via API
+        mark_res = client.post(reverse('mark_notification_read_api'),
+                               json.dumps({'notification_id': notif.id}),
+                               content_type='application/json')
+        self.assertEqual(mark_res.status_code, 200)
+        self.assertEqual(mark_res.json()['status'], 'success')
+        self.assertTrue(NotificationReadStatus.objects.filter(notification=notif, user=owner).exists())
+
+        # Unread count should now be 0
+        dash_res2 = client.get(reverse('dashboard'))
+        self.assertEqual(dash_res2.context['unread_notifications_count'], 0)
+
+    def test_tenant_deletion_with_confirmation(self):
+        owner, profile, shop = self.create_tenant('deletable_tenant')
+        admin_client = Client()
+        admin_client.login(username='admin', password='admin123')
+
+        # 1. Attempt delete without exact username confirmation -> rejected
+        fail_del = admin_client.post(reverse('admin_panel'), {
+            'action': 'delete_tenant',
+            'user_id': owner.id,
+            'delete_confirmation': 'wrong_name',
+        })
+        self.assertEqual(fail_del.status_code, 302)
+        self.assertTrue(User.objects.filter(username='deletable_tenant').exists())
+
+        # 2. Attempt delete with empty confirmation -> rejected
+        fail_del2 = admin_client.post(reverse('admin_panel'), {
+            'action': 'delete_tenant',
+            'user_id': owner.id,
+            'delete_confirmation': '',
+        })
+        self.assertEqual(fail_del2.status_code, 302)
+        self.assertTrue(User.objects.filter(username='deletable_tenant').exists())
+
+        # 3. Confirm deletion with exact username -> succeeds
+        success_del = admin_client.post(reverse('admin_panel'), {
+            'action': 'delete_tenant',
+            'user_id': owner.id,
+            'delete_confirmation': 'deletable_tenant',
+        })
+        self.assertEqual(success_del.status_code, 302)
+        self.assertFalse(User.objects.filter(username='deletable_tenant').exists())
+
+    def test_free_plan_14_day_expiry_and_restrictions(self):
+        from datetime import timedelta
+        from django.utils import timezone
+        owner, profile, shop = self.create_tenant('trial_tenant')
+        profile.plan = 'FREE'
+        profile.trial_start_date = timezone.localdate()
+        profile.save()
+
+        # 1. Day 0 (Active trial)
+        self.assertFalse(profile.is_trial_expired)
+        self.assertEqual(profile.trial_days_remaining, 14)
+
+        # 2. Day 10 (Still active)
+        profile.trial_start_date = timezone.localdate() - timedelta(days=10)
+        profile.save()
+        self.assertFalse(profile.is_trial_expired)
+        self.assertEqual(profile.trial_days_remaining, 4)
+
+        # 3. Day 14 (Expired)
+        profile.trial_start_date = timezone.localdate() - timedelta(days=14)
+        profile.save()
+        self.assertTrue(profile.is_trial_expired)
+        self.assertEqual(profile.trial_days_remaining, 0)
+
+        # 4. Attempt POS checkout with expired trial -> blocked (403)
+        client = Client()
+        client.login(username='trial_tenant', password='tenant123')
+        product = Product.objects.create(
+            name='Test Item',
+            sku='TRIAL-SKU-1',
+            category=self.category,
+            selling_price=Decimal('100.00'),
+            cost_price=Decimal('70.00'),
+            stock_quantity=10,
+            shop=shop
+        )
+        checkout_res = client.post(reverse('checkout_api'), json.dumps({
+            'items': [{'product_id': product.id, 'quantity': 1, 'unit_price': '100.00'}],
+            'payment_method': 'CASH'
+        }), content_type='application/json')
+        self.assertEqual(checkout_res.status_code, 403)
+        self.assertIn('expired', checkout_res.json().get('error', '').lower())
+
+        # 5. Upgrade to PREMIUM -> trial restrictions lifted immediately
+        profile.plan = 'PREMIUM'
+        profile.save()
+        self.assertFalse(profile.is_trial_expired)
+        checkout_res2 = client.post(reverse('checkout_api'), json.dumps({
+            'items': [{'product_id': product.id, 'quantity': 1, 'unit_price': '100.00'}],
+            'payment_method': 'CASH'
+        }), content_type='application/json')
+        self.assertEqual(checkout_res2.status_code, 200)
+
+    def test_superuser_exemptions(self):
+        from datetime import timedelta
+        from django.utils import timezone
+        from django.core.exceptions import PermissionDenied
+        from rms.views import delete_tenant_accounts
+
+        admin_user = User.objects.get(username='admin')
+        self.assertTrue(admin_user.is_superuser)
+
+        # 1. Superuser trial properties: always exempt even if trial_start_date is past
+        admin_user.profile.trial_start_date = timezone.localdate() - timedelta(days=60)
+        admin_user.profile.plan = 'FREE'
+        admin_user.profile.save()
+        self.assertFalse(admin_user.profile.is_trial_expired)
+        self.assertIsNone(admin_user.profile.trial_days_remaining)
+
+        # 2. Superuser cannot be deleted
+        with self.assertRaises(PermissionDenied):
+            delete_tenant_accounts(admin_user)
+        self.assertTrue(User.objects.filter(username='admin').exists())
+
+        # 3. Superuser is not in tenant lists in admin panel
+        admin_client = Client()
+        admin_client.login(username='admin', password='admin123')
+        res = admin_client.get(reverse('admin_panel'))
+        self.assertEqual(res.status_code, 200)
+
+        # Verify admin is not in any tenant context
+        all_tenants_users = [p.user.username for p in res.context['all_tenants']]
+        pending_users = [p.user.username for p in res.context['pending_users']]
+        tenant_options = [p.user.username for p in res.context['tenant_options']]
+        self.assertNotIn('admin', all_tenants_users)
+        self.assertNotIn('admin', pending_users)
+        self.assertNotIn('admin', tenant_options)
+
+        # Verify superuser does not see trial or approval banners
+        self.assertNotContains(res, "Store Free Trial Expired")
+        self.assertNotContains(res, "14-Day Free Trial Expired")
+        self.assertNotContains(res, "Account Pending Approval")
+
+        # 4. Attempt to pass superuser id to delete_tenant returns 404
+        post_del = admin_client.post(reverse('admin_panel'), {
+            'action': 'delete_tenant',
+            'user_id': admin_user.id,
+            'delete_confirmation': 'admin',
+        })
+        self.assertEqual(post_del.status_code, 404)
+        self.assertTrue(User.objects.filter(username='admin').exists())
+
+    def test_subscription_bank_transfer_and_admin_confirmation(self):
+        from rms.models import SubscriptionPayment, AdminNotification
+        owner, profile, shop = self.create_tenant('sub_tenant')
+        profile.plan = 'FREE'
+        profile.save()
+
+        client = Client()
+        client.login(username='sub_tenant', password='tenant123')
+
+        # 1. Tenant accesses subscription pages
+        res_sub = client.get(reverse('subscription'))
+        self.assertEqual(res_sub.status_code, 200)
+        res_upg = client.get(reverse('subscription_upgrade'))
+        self.assertEqual(res_upg.status_code, 200)
+
+        # 2. Tenant submits direct bank transfer for PREMIUM upgrade
+        res_submit = client.post(reverse('subscription_upgrade'), {
+            'plan': 'PREMIUM',
+            'billing_cycle': 'MONTHLY',
+            'payment_method': 'BANK_TRANSFER',
+            'sender_name': 'Sub Tenant Business',
+            'sender_bank': 'GTBank',
+            'reference': 'TRANS-123456-ABC',
+            'notes': 'Paid via mobile app transfer',
+        })
+        self.assertEqual(res_submit.status_code, 302)
+        payment = SubscriptionPayment.objects.get(reference='TRANS-123456-ABC')
+        self.assertEqual(payment.status, 'PENDING')
+        self.assertEqual(payment.amount, Decimal('15000.00'))
+        self.assertEqual(payment.tenant, owner)
+        self.assertEqual(profile.plan, 'FREE')  # still free until confirmed
+
+        # 3. Superadmin sees payment in admin panel and confirms upgrade
+        admin_client = Client()
+        admin_client.login(username='admin', password='admin123')
+        admin_page = admin_client.get(reverse('admin_panel'))
+        self.assertEqual(admin_page.status_code, 200)
+        self.assertIn(payment, admin_page.context['pending_payments'])
+
+        confirm_res = admin_client.post(reverse('admin_panel'), {
+            'action': 'confirm_subscription',
+            'payment_id': payment.id,
+        })
+        self.assertEqual(confirm_res.status_code, 302)
+
+        payment.refresh_from_db()
+        profile.refresh_from_db()
+        self.assertEqual(payment.status, 'CONFIRMED')
+        self.assertIsNotNone(payment.confirmed_at)
+        self.assertEqual(profile.plan, 'PREMIUM')
+        self.assertIsNone(profile.trial_start_date)
+        self.assertIsNotNone(profile.subscription_expires_at)
+        self.assertFalse(profile.is_trial_expired)
+
+        # Notification sent to tenant
+        self.assertTrue(AdminNotification.objects.filter(target_tenant=owner, title__icontains='Upgraded').exists())
+
+    def test_subscription_remita_instant_verify_api(self):
+        from rms.models import SubscriptionPayment
+        owner, profile, shop = self.create_tenant('card_tenant')
+        client = Client()
+        client.login(username='card_tenant', password='tenant123')
+
+        verify_res = client.post(reverse('remita_verify_api'), json.dumps({
+            'rrr': 'RRR-TEST-999',
+            'orderId': 'ORDER-999',
+            'plan': 'GOLDEN_PREMIUM',
+            'billing_cycle': 'ANNUAL'
+        }), content_type='application/json')
+        self.assertEqual(verify_res.status_code, 200)
+        self.assertEqual(verify_res.json()['status'], 'success')
+
+        payment = SubscriptionPayment.objects.get(reference='RRR-TEST-999')
+        self.assertEqual(payment.status, 'CONFIRMED')
+        self.assertEqual(payment.payment_method, 'REMITA')
+        self.assertEqual(payment.amount, Decimal('350000.00'))
+
+        profile.refresh_from_db()
+        self.assertEqual(profile.plan, 'GOLDEN_PREMIUM')
+
+    def test_company_bank_settings_update(self):
+        from rms.models import StoreSettings
+        admin_client = Client()
+        admin_client.login(username='admin', password='admin123')
+
+        update_res = admin_client.post(reverse('admin_panel'), {
+            'action': 'update_bank_settings',
+            'company_bank_name': 'Access Bank Plc',
+            'company_account_name': 'viARMS Retail Tech',
+            'company_account_number': '0987654321',
+            'remita_merchant_id': '2547916',
+            'remita_service_type_id': '4430731',
+            'remita_api_key': '1946',
+        })
+        self.assertEqual(update_res.status_code, 302)
+        settings = StoreSettings.get_settings()
+        self.assertEqual(settings.company_bank_name, 'Access Bank Plc')
+        self.assertEqual(settings.company_account_number, '0987654321')
+        self.assertEqual(settings.remita_merchant_id, '2547916')
+        self.assertEqual(settings.remita_service_type_id, '4430731')
+        self.assertEqual(settings.remita_api_key, '1946')
+
+    def test_remita_webhook_security_and_upgrade(self):
+        import hashlib
+        from rms.models import StoreSettings, SubscriptionPayment
+
+        # Set known test secret key
+        settings = StoreSettings.get_settings()
+        test_key = 'remita_test_secret_api_key_12345'
+        settings.remita_api_key = test_key
+        settings.save()
+
+        owner, profile, shop = self.create_tenant('webhook_tenant')
+        profile.plan = 'FREE'
+        profile.save()
+
+        client = Client()
+
+        notification_id = 'NOTIF-12345'
+        amount = '15000.00'
+        status = 'SUCCESSFUL'
+        rrr = 'RRR-WEBHOOK-REF-777'
+        order_id = f'VIARMS-{owner.id}-PRE-M-WEBHOOK77'
+
+        payload = {
+            'rrr': rrr,
+            'orderId': order_id,
+            'amount': amount,
+            'paymentChannelName': status,
+            'payerEmail': 'webhook@tenant.com',
+            'notificationId': notification_id,
+        }
+        raw_body = json.dumps(payload).encode('utf-8')
+
+        # 1. Invalid signature attempt -> Rejected (HTTP 400)
+        res_invalid = client.post(
+            reverse('remita_webhook'),
+            data=raw_body,
+            content_type='application/json',
+            HTTP_X_REMITA_SIGNATURE='invalid_bogus_signature'
+        )
+        self.assertEqual(res_invalid.status_code, 400)
+        profile.refresh_from_db()
+        self.assertEqual(profile.plan, 'FREE')
+
+        # 2. Valid SHA512 signature -> Processed & Upgraded (HTTP 200)
+        # raw: apiKey + notificationId + amount + status + rrr
+        raw_sig_str = f"{test_key}{notification_id}{amount}{status}{rrr}"
+        valid_signature = hashlib.sha512(raw_sig_str.encode('utf-8')).hexdigest()
+
+        res_valid = client.post(
+            reverse('remita_webhook'),
+            data=raw_body,
+            content_type='application/json',
+            HTTP_X_REMITA_SIGNATURE=valid_signature
+        )
+        self.assertEqual(res_valid.status_code, 200)
+
+        profile.refresh_from_db()
+        self.assertEqual(profile.plan, 'PREMIUM')
+        self.assertIsNotNone(profile.subscription_expires_at)
+        payment = SubscriptionPayment.objects.get(reference=rrr)
+        self.assertEqual(payment.status, 'CONFIRMED')
+        self.assertEqual(payment.payment_method, 'REMITA')
+
+    def test_trial_contains_premium_features_and_standard_restricts_images(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        from PIL import Image
+        import io
+
+        # 1. 14-day Free Trial contains all Premium features (including images)
+        owner, profile, shop = self.create_tenant('trial_tenant')
+        profile.plan = 'FREE'
+        profile.trial_start_date = timezone.localdate()
+        profile.save()
+        self.assertTrue(profile.allows_product_images)
+
+        # 2. Standard Plan does NOT allow product images
+        owner_std, profile_std, shop_std = self.create_tenant('std_tenant')
+        profile_std.plan = 'STANDARD'
+        profile_std.save()
+        self.assertFalse(profile_std.allows_product_images)
+
+        # 3. Premium & Golden Premium allow product images
+        profile_std.plan = 'PREMIUM'
+        self.assertTrue(profile_std.allows_product_images)
+        profile_std.plan = 'GOLDEN_PREMIUM'
+        self.assertTrue(profile_std.allows_product_images)
+
+        # 4. Standard Plan strips product image upon submission
+        profile_std.plan = 'STANDARD'
+        profile_std.save()
+
+        client = Client()
+        client.login(username='std_tenant', password='tenant123')
+
+        img_file = io.BytesIO()
+        Image.new('RGB', (100, 100), color='blue').save(img_file, format='JPEG')
+        uploaded = SimpleUploadedFile('test.jpg', img_file.getvalue(), content_type='image/jpeg')
+
+        res = client.post(reverse('products'), {
+            'action': 'add_product',
+            'name': 'Standard Panadol',
+            'sku': 'SKU-STD-001',
+            'cost_price': '100.00',
+            'selling_price': '150.00',
+            'stock_quantity': '50',
+            'shop_id': shop_std.id,
+            'image': uploaded,
+        })
+        self.assertEqual(res.status_code, 302)
+        prod = Product.objects.get(sku='SKU-STD-001')
+        self.assertFalse(bool(prod.image), "Product image must be stripped on the Standard Plan")
+
+    def test_14_day_trial_auto_suspension_with_notification_and_email(self):
+        from django.core import mail
+        from rms.views import check_and_process_tenant_lifecycle
+        mail.outbox = []
+
+        owner, profile, shop = self.create_tenant('expire_tenant')
+        owner.email = 'expire@tenant.com'
+        owner.save()
+        profile.plan = 'FREE'
+        # 15 days ago -> trial expired
+        profile.trial_start_date = timezone.localdate() - timedelta(days=15)
+        profile.save()
+
+        self.assertTrue(profile.is_trial_expired)
+        self.assertFalse(profile.is_suspended)
+
+        # Run lifecycle check
+        check_and_process_tenant_lifecycle(owner)
+
+        profile.refresh_from_db()
+        self.assertTrue(profile.is_suspended)
+        self.assertTrue(profile.is_account_suspended)
+        self.assertEqual(profile.days_until_deletion, 30)
+
+        # In-app notification created
+        self.assertTrue(AdminNotification.objects.filter(target_tenant=owner, title__icontains='Suspended').exists())
+
+        # Email notice sent to tenant
+        self.assertTrue(len(mail.outbox) > 0)
+        self.assertIn('expire@tenant.com', mail.outbox[-1].to)
+        self.assertIn('Suspended', mail.outbox[-1].subject)
+        self.assertIn('30 days', mail.outbox[-1].body)
+
+        # POS checkout is blocked
+        client = Client()
+        client.login(username='expire_tenant', password='tenant123')
+        checkout_res = client.post(reverse('checkout_api'), json.dumps({
+            'items': [{'id': 1, 'quantity': 1, 'price': 100}],
+            'discount': 0,
+            'payment_method': 'CASH',
+        }), content_type='application/json')
+        self.assertEqual(checkout_res.status_code, 403)
+        self.assertIn('suspended', checkout_res.json()['error'].lower())
+
+    def test_30_day_suspension_auto_deletion(self):
+        from rms.views import check_and_process_tenant_lifecycle
+
+        owner, profile, shop = self.create_tenant('tobe_deleted')
+        profile.plan = 'FREE'
+        profile.trial_start_date = timezone.localdate() - timedelta(days=50)
+        profile.is_suspended = True
+        profile.suspended_at = timezone.now() - timedelta(days=31)
+        profile.save()
+
+        self.assertGreaterEqual(profile.days_suspended, 30)
+
+        # Run lifecycle check -> triggers permanent deletion
+        deleted = check_and_process_tenant_lifecycle(owner)
+        self.assertTrue(deleted)
+        self.assertFalse(User.objects.filter(username='tobe_deleted').exists())
+
+    def test_standard_plan_remita_upgrade_and_unsuspension(self):
+        from rms.models import SubscriptionPayment
+
+        owner, profile, shop = self.create_tenant('redeem_tenant')
+        profile.plan = 'FREE'
+        profile.trial_start_date = timezone.localdate() - timedelta(days=16)
+        profile.is_suspended = True
+        profile.suspended_at = timezone.now() - timedelta(days=2)
+        profile.save()
+        self.assertTrue(profile.is_account_suspended)
+
+        client = Client()
+        client.login(username='redeem_tenant', password='tenant123')
+
+        # Upgrade to STANDARD plan via Remita
+        verify_res = client.post(reverse('remita_verify_api'), json.dumps({
+            'rrr': 'RRR-TEST-STD-123',
+            'orderId': 'ORDER-STD-123',
+            'plan': 'STANDARD',
+            'billing_cycle': 'MONTHLY'
+        }), content_type='application/json')
+        self.assertEqual(verify_res.status_code, 200)
+        self.assertEqual(verify_res.json()['status'], 'success')
+
+        payment = SubscriptionPayment.objects.get(reference='RRR-TEST-STD-123')
+        self.assertEqual(payment.status, 'CONFIRMED')
+        self.assertEqual(payment.amount, Decimal('80000.00'))
+        self.assertEqual(payment.plan, 'STANDARD')
+
+        profile.refresh_from_db()
+        self.assertEqual(profile.plan, 'STANDARD')
+        self.assertFalse(profile.is_suspended)
+        self.assertFalse(profile.is_account_suspended)
+        self.assertFalse(profile.allows_product_images)
