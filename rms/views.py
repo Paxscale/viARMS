@@ -76,6 +76,63 @@ def prepare_product_image(uploaded_image):
         )
 
 
+def assign_product_batch(shop, sku, name, requested_batch=None):
+    """
+    Checks if a product with the same SKU or product name already exists in the shop.
+    If existing products exist:
+    - Ensures existing products have a batch label ('Batch 1' if not set).
+    - If user did not provide a custom batch, auto-assigns the next sequential batch ('Batch 2', 'Batch 3', etc.).
+    - If user provided a custom batch, uses it.
+    If no existing products exist:
+    - Uses user-provided batch if present, else defaults to 'Batch 1'.
+    Returns (batch_number, is_new_batch, duplicate_error).
+    """
+    sku_clean = str(sku).strip()
+    name_clean = str(name).strip()
+
+    existing = Product.objects.filter(
+        Q(sku__iexact=sku_clean) | Q(name__iexact=name_clean),
+        shop=shop,
+        is_active=True
+    ).order_by('id')
+
+    if existing.exists():
+        if existing.count() == 1:
+            first_prod = existing.first()
+            if not first_prod.batch_number or not first_prod.batch_number.strip():
+                first_prod.batch_number = 'Batch 1'
+                first_prod.save(update_fields=['batch_number'])
+        else:
+            for i, p in enumerate(existing, 1):
+                if not p.batch_number or not p.batch_number.strip():
+                    p.batch_number = f"Batch {i}"
+                    p.save(update_fields=['batch_number'])
+
+        if requested_batch and str(requested_batch).strip():
+            batch_num = str(requested_batch).strip()
+        else:
+            next_idx = existing.count() + 1
+            batch_num = f"Batch {next_idx}"
+            while Product.objects.filter(sku__iexact=sku_clean, shop=shop, batch_number__iexact=batch_num, is_active=True).exists():
+                next_idx += 1
+                batch_num = f"Batch {next_idx}"
+
+        if Product.objects.filter(sku__iexact=sku_clean, shop=shop, batch_number__iexact=batch_num, is_active=True).exists():
+            return batch_num, False, f"A product with SKU '{sku_clean}' and batch '{batch_num}' already exists in this shop. Please specify a different batch or adjust existing stock."
+
+        return batch_num, True, None
+    else:
+        if requested_batch and str(requested_batch).strip():
+            batch_num = str(requested_batch).strip()
+        else:
+            batch_num = 'Batch 1'
+
+        if Product.objects.filter(sku__iexact=sku_clean, shop=shop, batch_number__iexact=batch_num, is_active=True).exists():
+            return batch_num, False, f"A product with SKU '{sku_clean}' and batch '{batch_num}' already exists in this shop."
+
+        return batch_num, False, None
+
+
 def create_bulk_products(request, user_profile, tenant, is_user_admin, user_shop):
     try:
         product_count = int(request.POST.get('product_count', '0'))
@@ -182,13 +239,17 @@ def create_bulk_products(request, user_profile, tenant, is_user_admin, user_shop
             except ValueError:
                 row_errors.append("expiry date must be a valid date")
 
+        batch_val = values.get('batch_number', '').strip()
         if sku and name and not row_errors:
-            duplicate_key = (sku, product_shop.pk, expiry)
-            if duplicate_key in submitted_keys:
-                row_errors.append("another row in this submission has the same SKU and expiry date for this shop")
-            elif Product.objects.filter(sku=sku, shop=product_shop, expiry_date=expiry).exists():
-                row_errors.append("this SKU and expiry date already exist for this shop")
-            submitted_keys.add(duplicate_key)
+            batch_val, is_new_batch, batch_err = assign_product_batch(product_shop, sku, name, batch_val)
+            if batch_err:
+                row_errors.append(batch_err)
+            else:
+                values['batch_number'] = batch_val
+                duplicate_key = (sku.lower(), product_shop.pk, batch_val.lower())
+                if duplicate_key in submitted_keys:
+                    row_errors.append("another row in this submission has the same SKU and batch number for this shop")
+                submitted_keys.add(duplicate_key)
 
         if uploaded_image:
             try:
@@ -904,6 +965,8 @@ def checkout_api(request):
             name_str = item.product.name if item.product else 'Deleted Product'
             if item.product and item.product.strength:
                 name_str = f"{name_str} ({item.product.strength})"
+            if item.product and item.product.batch_number:
+                name_str = f"{name_str} [{item.product.batch_number}]"
             receipt_items.append({
                 'name': name_str,
                 'quantity': item.quantity,
@@ -921,10 +984,11 @@ def checkout_api(request):
             'total_amount': f"{sale.total_amount:.2f}",
             'payment_method': sale.get_payment_method_display(),
             'cashier': sale.cashier.username if sale.cashier else 'System',
-            'store_name': user_shop.name,
-            'store_address': user_shop.location or settings.address,
-            'store_phone': user_shop.phone or settings.phone,
-            'receipt_footer': settings.receipt_footer,
+            'store_name': settings.store_name or user_shop.name,
+            'store_address': settings.address or user_shop.location or '',
+            'store_phone': settings.phone or user_shop.phone or '',
+            'store_email': settings.email or '',
+            'receipt_footer': settings.receipt_footer or '',
             'items': receipt_items
         }
 
@@ -1081,12 +1145,9 @@ def product_list_view(request):
                 category = Category.objects.get(id=cat_id) if cat_id else None
 
             if name and sku:
-                # New rule: same SKU allowed in same shop if expiry date differs
-                duplicate = Product.objects.filter(
-                    sku=sku, shop=prod_shop, expiry_date=expiry, is_active=True
-                ).exists()
-                if duplicate:
-                    messages.error(request, f"A product with SKU '{sku}' and the same expiry date already exists in this shop. Use a different expiry date or adjust the existing stock.")
+                batch_number, is_new_batch, duplicate_error = assign_product_batch(prod_shop, sku, name, batch_number)
+                if duplicate_error:
+                    messages.error(request, duplicate_error)
                 else:
                     Product.objects.create(
                         name=name, sku=sku, category=category, cost_price=cost,
@@ -1099,7 +1160,8 @@ def product_list_view(request):
                         color=color, size=size, warranty_period=warranty_period,
                         material=material, image=uploaded_image
                     )
-                    messages.success(request, f"Product '{name}' created successfully under '{prod_shop.name}'.")
+                    batch_info = f" ({batch_number})" if batch_number else ""
+                    messages.success(request, f"Product '{name}'{batch_info} created successfully under '{prod_shop.name}'.")
 
         elif action == 'edit_product':
             prod_id = request.POST.get('product_id')
@@ -1134,14 +1196,16 @@ def product_list_view(request):
             if user_profile.business_type == 'UTENSILS' and new_material == 'PLASTIC':
                 new_expiry = None
             target_shop = prod.shop
-            # Check uniqueness: same sku + shop + expiry but a DIFFERENT product
+            new_batch = (request.POST.get('batch_number') or prod.batch_number or 'Batch 1').strip()
+            # Check uniqueness: same sku + shop + batch_number but a DIFFERENT product
             conflict = Product.objects.filter(
-                sku=sku, shop=target_shop, expiry_date=new_expiry, is_active=True
+                sku__iexact=sku, shop=target_shop, batch_number__iexact=new_batch, is_active=True
             ).exclude(id=prod.id).exists()
             if conflict:
-                messages.error(request, f"Another product with SKU '{sku}' and the same expiry date already exists in this shop.")
+                messages.error(request, f"Another product with SKU '{sku}' and batch '{new_batch}' already exists in this shop.")
             else:
                 prod.sku = sku
+                prod.batch_number = new_batch
                 if cat_id := request.POST.get('category_id'):
                     if tenant:
                         prod.category = get_object_or_404(Category, id=cat_id, tenant_owner=tenant)
@@ -1314,25 +1378,31 @@ def sale_detail_json(request, sale_id):
     tenant = get_tenant_scope(request.user)
 
     if is_user_admin:
-        if tenant:
+        if tenant and Shop.objects.filter(tenant_owner=tenant).exists():
             sale = get_object_or_404(Sale, id=sale_id, shop__tenant_owner=tenant)
         else:
             sale = get_object_or_404(Sale, id=sale_id)
     else:
-        if tenant:
-            sale = get_object_or_404(Sale, id=sale_id, shop=user_shop, shop__tenant_owner=tenant)
+        if user_shop and user_shop.tenant_owner:
+            sale = get_object_or_404(Sale, id=sale_id, shop=user_shop, shop__tenant_owner=user_shop.tenant_owner)
         else:
             sale = get_object_or_404(Sale, id=sale_id, shop=user_shop)
 
     items_data = []
     for item in sale.items.all():
+        name_str = item.product.name if item.product else 'Deleted Product'
+        if item.product and item.product.strength:
+            name_str = f"{name_str} ({item.product.strength})"
+        if item.product and item.product.batch_number:
+            name_str = f"{name_str} [{item.product.batch_number}]"
         items_data.append({
-            'name': item.product.name if item.product else 'Deleted Product',
+            'name': name_str,
             'quantity': item.quantity,
             'unit_price': f"{item.unit_price:.2f}",
             'subtotal': f"{item.subtotal:.2f}"
         })
 
+    settings = StoreSettings.get_settings()
     receipt_data = {
         'receipt_number': sale.receipt_number,
         'timestamp': sale.timestamp.strftime('%Y-%m-%d %H:%M:%S'),
@@ -1343,10 +1413,11 @@ def sale_detail_json(request, sale_id):
         'total_amount': f"{sale.total_amount:.2f}",
         'payment_method': sale.get_payment_method_display(),
         'cashier': sale.cashier.username if sale.cashier else 'System',
-        'store_name': sale.shop.name if sale.shop else "viARMS Hub",
-        'store_address': sale.shop.location if sale.shop and sale.shop.location else "Lagos, Nigeria",
-        'store_phone': sale.shop.phone if sale.shop and sale.shop.phone else "",
-        'receipt_footer': "Thank you for your business!",
+        'store_name': settings.store_name or (sale.shop.name if sale.shop else "Our Shop"),
+        'store_address': settings.address or (sale.shop.location if sale.shop and sale.shop.location else ""),
+        'store_phone': settings.phone or (sale.shop.phone if sale.shop and sale.shop.phone else ""),
+        'store_email': settings.email or '',
+        'receipt_footer': settings.receipt_footer or '',
         'items': items_data
     }
     return JsonResponse({'success': True, 'receipt': receipt_data})
@@ -1430,6 +1501,7 @@ def settings_view(request):
         settings.store_name = request.POST.get('store_name', settings.store_name)
         settings.address = request.POST.get('address', settings.address)
         settings.phone = request.POST.get('phone', settings.phone)
+        settings.email = request.POST.get('email', settings.email)
         settings.tax_rate = Decimal(request.POST.get('tax_rate', '0.00'))
         settings.receipt_footer = request.POST.get('receipt_footer', settings.receipt_footer)
         
@@ -1708,6 +1780,8 @@ def customer_display_view(request):
     context = {
         'store_name': settings.store_name,
         'store_address': settings.address or '',
+        'store_phone': settings.phone or '',
+        'store_email': settings.email or '',
         'customer_ads_json': json.dumps(active_ads),
     }
     return render(request, 'customer_display.html', context)

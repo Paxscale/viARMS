@@ -241,9 +241,10 @@
                                         {% if p.strength %}<span style="font-size: 0.75rem; color: var(--text-muted);">({{ p.strength }})</span>{% endif %}
                                     </span>
                                     <span style="font-size: 0.7rem; color: var(--color-warning); font-weight: 500; display: block;">Expires: {{ p.expiry_date|date:"Y-m-d" }}</span>
-                                    <span style="font-size: 0.65rem; color: var(--text-muted); display: block;">
-                                        Batch: <code>{{ p.batch_number|default:"-" }}</code> | NAFDAC: {{ p.nafdac_reg_no|default:"-" }}
-                                    </span>
+                                    <div style="font-size: 0.68rem; color: var(--text-muted); display: flex; gap: 8px; flex-wrap: wrap; margin-top: 3px;">
+                                        <span>Batch: <code style="color: var(--color-primary);">{{ p.batch_number|default:"Batch 1" }}</code></span>
+                                        {% if p.nafdac_reg_no %}<span>NAFDAC: <code>{{ p.nafdac_reg_no }}</code></span>{% endif %}
+                                    </div>
                                 </div>
                                 <span class="badge badge-warning" style="opacity: 0.8; font-size: 0.65rem;">{{ p.expiry_date|timeuntil }}</span>
                             </li>

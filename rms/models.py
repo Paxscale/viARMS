@@ -107,7 +107,7 @@ class Product(models.Model):
     prescription_required = models.BooleanField(default=False, help_text="Is prescription required to sell this item?")
     manufacturer = models.CharField(max_length=200, blank=True, null=True, help_text="Manufacturer or Pharmaceutical Company")
     strength = models.CharField(max_length=100, blank=True, null=True, help_text="Dosage strength or grams (e.g., 500mg, 10mg/5ml)")
-    batch_number = models.CharField(max_length=100, blank=True, null=True, help_text="Manufacturing batch number")
+    batch_number = models.CharField(max_length=100, blank=True, null=True, default='Batch 1', help_text="Manufacturing batch number")
     nafdac_reg_no = models.CharField(max_length=100, blank=True, null=True, verbose_name="NAFDAC Reg No")
     storage_conditions = models.CharField(max_length=200, blank=True, null=True, help_text="e.g., Store below 25°C")
 
@@ -125,9 +125,14 @@ class Product(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        # Same barcode (SKU) is allowed in same shop as long as expiry dates differ.
+        # Same barcode (SKU) is allowed in same shop across different batches.
         # This supports stocking the same product with multiple batch expiry dates.
-        unique_together = [('sku', 'shop', 'expiry_date')]
+        unique_together = [('sku', 'shop', 'batch_number')]
+
+    def save(self, *args, **kwargs):
+        if not self.batch_number or not str(self.batch_number).strip():
+            self.batch_number = 'Batch 1'
+        super().save(*args, **kwargs)
 
     def __str__(self):
         shop_prefix = f"[{self.shop.name}] " if self.shop else ""
@@ -203,6 +208,7 @@ class StoreSettings(models.Model):
     store_name = models.CharField(max_length=200, default="Our Shop")
     address = models.TextField(blank=True, null=True, default="123 Retail Ave, Shoptown")
     phone = models.CharField(max_length=50, blank=True, null=True, default="+234 810 026 2697")
+    email = models.EmailField(max_length=100, blank=True, null=True, default="info@ourshop.com")
     tax_rate = models.DecimalField(max_digits=5, decimal_places=2, default=0.00, help_text="Default store tax rate in percentage")
     receipt_footer = models.TextField(blank=True, null=True, default="Thank you for shopping with us! Please come again.")
 

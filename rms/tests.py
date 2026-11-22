@@ -597,3 +597,117 @@ class RMSModelsAndAPITests(TestCase):
         shops_response = self.client.get(reverse('shops'))
         self.assertContains(shops_response, 'type="tel"')
         self.assertContains(shops_response, 'placeholder="+234 810 026 2697"')
+
+
+    def test_settings_and_receipt_data_fetching(self):
+        # Update settings
+        self.settings.store_name = "Global Supermart"
+        self.settings.address = "45 Commercial Road, Victoria Island, Lagos"
+        self.settings.phone = "+234 809 111 2233"
+        self.settings.email = "support@globalsupermart.com"
+        self.settings.receipt_footer = "Thanks for shopping! Valid for exchange in 7 days."
+        self.settings.save()
+
+        # Perform checkout as cashier
+        self.client.login(username='cashier', password='cashier123')
+        payload = {
+            'items': [{'product_id': self.product_coke.id, 'quantity': 2}],
+            'discount': 0.00,
+            'payment_method': 'CASH'
+        }
+        checkout_res = self.client.post(
+            reverse('checkout_api'),
+            data=json.dumps(payload),
+            content_type='application/json'
+        )
+        self.assertEqual(checkout_res.status_code, 200)
+        checkout_data = checkout_res.json()
+        self.assertTrue(checkout_data['success'])
+        receipt = checkout_data['receipt']
+        self.assertEqual(receipt['store_name'], "Global Supermart")
+        self.assertEqual(receipt['store_address'], "45 Commercial Road, Victoria Island, Lagos")
+        self.assertEqual(receipt['store_phone'], "+234 809 111 2233")
+        self.assertEqual(receipt['store_email'], "support@globalsupermart.com")
+        self.assertEqual(receipt['receipt_footer'], "Thanks for shopping! Valid for exchange in 7 days.")
+
+        # Test reprint endpoint sale_detail_json
+        sale = Sale.objects.get(receipt_number=receipt['receipt_number'])
+        reprint_res = self.client.get(reverse('sale_detail_json', kwargs={'sale_id': sale.id}))
+        self.assertEqual(reprint_res.status_code, 200)
+        reprint_data = reprint_res.json()
+        self.assertTrue(reprint_data['success'])
+        reprint_receipt = reprint_data['receipt']
+        self.assertEqual(reprint_receipt['store_name'], "Global Supermart")
+        self.assertEqual(reprint_receipt['store_address'], "45 Commercial Road, Victoria Island, Lagos")
+        self.assertEqual(reprint_receipt['store_phone'], "+234 809 111 2233")
+        self.assertEqual(reprint_receipt['store_email'], "support@globalsupermart.com")
+        self.assertEqual(reprint_receipt['receipt_footer'], "Thanks for shopping! Valid for exchange in 7 days.")
+
+    def test_batch_creation_for_same_sku_different_expiry(self):
+        owner, profile, shop = self.create_tenant('batch_tenant')
+        client = Client()
+        client.login(username='batch_tenant', password='tenant123')
+
+        # Add first batch
+        res1 = client.post(reverse('products'), {
+            'action': 'add_product',
+            'name': 'Vitamin C 1000mg',
+            'sku': 'VITC-1000',
+            'cost_price': '500.00',
+            'selling_price': '800.00',
+            'stock_quantity': '50',
+            'min_stock_level': '5',
+            'expiry_date': '2026-12-01',
+            'shop_id': shop.id,
+        })
+        self.assertEqual(res1.status_code, 302)
+        batch1_prod = Product.objects.get(sku='VITC-1000', expiry_date='2026-12-01', shop=shop)
+        self.assertEqual(batch1_prod.batch_number, 'Batch 1')
+
+        # Add second batch of same product & same SKU but different expiry date
+        res2 = client.post(reverse('products'), {
+            'action': 'add_product',
+            'name': 'Vitamin C 1000mg',
+            'sku': 'VITC-1000',
+            'cost_price': '550.00',
+            'selling_price': '850.00',
+            'stock_quantity': '30',
+            'min_stock_level': '5',
+            'expiry_date': '2027-06-01',
+            'shop_id': shop.id,
+        })
+        self.assertEqual(res2.status_code, 302)
+        batch2_prod = Product.objects.get(sku='VITC-1000', expiry_date='2027-06-01', shop=shop)
+        self.assertEqual(batch2_prod.batch_number, 'Batch 2')
+
+        # Add third batch
+        res3 = client.post(reverse('products'), {
+            'action': 'add_product',
+            'name': 'Vitamin C 1000mg',
+            'sku': 'VITC-1000',
+            'cost_price': '550.00',
+            'selling_price': '850.00',
+            'stock_quantity': '40',
+            'min_stock_level': '5',
+            'expiry_date': '2028-01-01',
+            'shop_id': shop.id,
+        })
+        self.assertEqual(res3.status_code, 302)
+        batch3_prod = Product.objects.get(sku='VITC-1000', expiry_date='2028-01-01', shop=shop)
+        self.assertEqual(batch3_prod.batch_number, 'Batch 3')
+
+        # Attempt to create duplicate batch on same SKU in same shop
+        res_dup = client.post(reverse('products'), {
+            'action': 'add_product',
+            'name': 'Vitamin C 1000mg',
+            'sku': 'VITC-1000',
+            'batch_number': 'Batch 2',
+            'cost_price': '550.00',
+            'selling_price': '850.00',
+            'stock_quantity': '10',
+            'min_stock_level': '5',
+            'expiry_date': '2027-06-01',
+            'shop_id': shop.id,
+        })
+        # Should stay on page with error, count stays 1
+        self.assertEqual(Product.objects.filter(sku='VITC-1000', batch_number='Batch 2', shop=shop).count(), 1)

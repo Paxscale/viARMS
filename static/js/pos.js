@@ -235,10 +235,21 @@ function searchForScannedBarcode(decodedText) {
 
     const searchInput = document.getElementById('search-input');
     // Match against SKU or barcode field (case-insensitive)
-    const matchedProduct = productsData.find(product =>
+    const matchingProducts = productsData.filter(product =>
         (product.sku && product.sku.toLowerCase() === barcode.toLowerCase()) ||
         (product.batch_number && product.batch_number.toLowerCase() === barcode.toLowerCase())
     );
+
+    let matchedProduct = null;
+    if (matchingProducts.length > 0) {
+        const inStock = matchingProducts.filter(p => p.stock_quantity > 0);
+        const pool = inStock.length > 0 ? inStock : matchingProducts;
+        matchedProduct = pool.sort((a, b) => {
+            if (!a.expiry_date || a.expiry_date === 'No Expiry') return 1;
+            if (!b.expiry_date || b.expiry_date === 'No Expiry') return -1;
+            return a.expiry_date.localeCompare(b.expiry_date);
+        })[0];
+    }
 
     if (activeCategory !== 'all') {
         activeCategory = 'all';
@@ -392,7 +403,7 @@ function renderCatalog() {
                             <span>${productName}</span>
                             ${pharmaBadge}
                         </div>
-                        <div class="product-card-sku">SKU: ${productSku}</div>
+                        <div class="product-card-sku" style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;"><span>SKU: ${productSku}</span>${product.batch_number ? `<span class="badge" style="background: rgba(99, 102, 241, 0.15); color: var(--color-primary); font-size: 0.68rem; padding: 1px 5px; border-radius: 4px; font-weight: 600;">${escapeHtml(product.batch_number)}</span>` : ''}</div>
                         <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 2px;">${categoryName}</div>
                         ${expiryLabel}
                         ${expiryWarning}
@@ -440,6 +451,7 @@ function addToCart(productId) {
             product_id: product.id,
             name: product.name,
             strength: product.strength,
+            batch_number: product.batch_number,
             price: parseFloat(product.selling_price),
             qty: 1,
             max_stock: product.stock_quantity
@@ -447,7 +459,7 @@ function addToCart(productId) {
     }
 
     updateCartUI();
-    showNotification(`Added ${product.name} to cart.`);
+    showNotification(`Added ${product.name}${product.batch_number ? ` (${product.batch_number})` : ''} to cart.`);
 }
 
 // Update Cart HTML and recalculate numbers
@@ -477,6 +489,9 @@ function updateCartUI() {
             let nameHTML = item.name;
             if (item.strength) {
                 nameHTML += ` <span style="font-size: 0.75rem; color: var(--text-muted); font-weight: normal;">(${item.strength})</span>`;
+            }
+            if (item.batch_number) {
+                nameHTML += ` <span class="badge" style="background: rgba(99, 102, 241, 0.15); color: var(--color-primary); font-size: 0.68rem; padding: 1px 5px; border-radius: 4px; font-weight: 600; margin-left: 4px;">${escapeHtml(item.batch_number)}</span>`;
             }
 
             row.innerHTML = `
@@ -614,10 +629,12 @@ function submitCheckout() {
             const taxableAmount = Math.max(0, subtotal - discount);
             const taxAmount = taxableAmount * (defaultTaxRate / 100);
             
+            const fallbackSettings = typeof storeSettings !== 'undefined' ? storeSettings : {};
             const mockReceipt = {
-                store_name: "viARMS (Offline)",
-                store_address: "Pending Sync",
-                store_phone: "",
+                store_name: fallbackSettings.store_name || "viARMS (Offline)",
+                store_address: fallbackSettings.store_address || "",
+                store_phone: fallbackSettings.store_phone || "",
+                store_email: fallbackSettings.store_email || "",
                 receipt_number: localReceiptNumber,
                 timestamp: new Date().toLocaleString(),
                 cashier: "Current User",
@@ -627,9 +644,9 @@ function submitCheckout() {
                 tax_amount: taxAmount.toFixed(2),
                 total_amount: (taxableAmount + taxAmount).toFixed(2),
                 payment_method: paymentMethod,
-                receipt_footer: "Thank you! (Offline Receipt)",
+                receipt_footer: fallbackSettings.receipt_footer || "Thank you! (Offline Receipt)",
                 items: cart.map(item => ({
-                    name: item.name,
+                    name: item.name + (item.batch_number ? ` [${item.batch_number}]` : ''),
                     quantity: item.qty,
                     subtotal: (item.price * item.qty).toFixed(2)
                 }))
@@ -714,9 +731,10 @@ function displayReceiptModal(receipt) {
 
     area.innerHTML = `
         <div class="receipt-header">
-            <h4 style="margin: 0; font-size: 1.1rem; font-weight: bold;">${receipt.store_name}</h4>
-            <div style="font-size: 0.75rem; color: #333; margin: 4px 0;">${receipt.store_address}</div>
-            <div style="font-size: 0.75rem; color: #333;">Tel: ${receipt.store_phone}</div>
+            <h4 style="margin: 0; font-size: 1.1rem; font-weight: bold; text-align: center;">${escapeHtml(receipt.store_name || '')}</h4>
+            ${receipt.store_address ? `<div style="font-size: 0.75rem; color: #333; margin: 4px 0; text-align: center;">${escapeHtml(receipt.store_address)}</div>` : ''}
+            ${receipt.store_phone ? `<div style="font-size: 0.75rem; color: #333; text-align: center;">Tel: ${escapeHtml(receipt.store_phone)}</div>` : ''}
+            ${receipt.store_email ? `<div style="font-size: 0.75rem; color: #333; text-align: center;">Email: ${escapeHtml(receipt.store_email)}</div>` : ''}
         </div>
         
         <div style="font-size: 0.75rem; margin-bottom: 0.5rem;">
@@ -750,9 +768,11 @@ function displayReceiptModal(receipt) {
         <div style="font-size: 0.8rem;">Method: ${receipt.payment_method}</div>
         <div class="receipt-divider"></div>
         
+        ${receipt.receipt_footer ? `
         <div style="text-align: center; font-size: 0.75rem; margin-top: 1rem; font-style: italic;">
-            ${receipt.receipt_footer}
+            ${escapeHtml(receipt.receipt_footer)}
         </div>
+        ` : ''}
     `;
 
     document.getElementById('receipt-modal').classList.add('active');

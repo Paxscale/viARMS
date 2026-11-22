@@ -97,6 +97,7 @@
                     <tr>
                         <th>Product Details</th>
                         <th>SKU/Barcode</th>
+                        <th>Batch</th>
                         <th>Category</th>
                         {% if is_admin %}
                         <th>Shop Branch</th>
@@ -107,7 +108,7 @@
                         <th>Generic / Form</th>
                         <th>Manufacturer</th>
                         <th>Strength</th>
-                        <th>Batch / NAFDAC</th>
+                        <th>NAFDAC Reg No</th>
                         <th>Storage</th>
                         <th>Rx Required</th>
                         {% elif business_type == 'BOOK_ACCESSORIES' %}
@@ -135,12 +136,20 @@
                                     {% if p.image %}
                                     <img src="{{ p.image.url }}" alt="{{ p.name }}" loading="lazy" style="width: 48px; height: 48px; object-fit: cover; border-radius: 6px; margin-bottom: 0.35rem;">
                                     {% endif %}
-                                    <div style="font-weight: 600; {% if p.is_expired %}text-decoration: line-through; color: var(--text-muted);{% endif %}">{{ p.name }}</div>
+                                    <div style="font-weight: 600; {% if p.is_expired %}text-decoration: line-through; color: var(--text-muted);{% endif %}">
+                                        {{ p.name }}
+                                        {% if p.batch_number %}
+                                        <span class="badge" style="background: rgba(99, 102, 241, 0.12); color: var(--color-primary); font-size: 0.72rem; padding: 2px 6px; border-radius: 4px; font-weight: 600; margin-left: 6px;">{{ p.batch_number }}</span>
+                                        {% endif %}
+                                    </div>
                                     {% if p.description %}
                                         <div style="font-size: 0.75rem; color: var(--text-muted); max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ p.description }}</div>
                                     {% endif %}
                                 </td>
                                 <td style="font-family: monospace; font-size: 0.85rem; font-weight: 600;">{{ p.sku }}</td>
+                                <td>
+                                    <span class="badge" style="background: rgba(99, 102, 241, 0.12); color: var(--color-primary); font-size: 0.75rem; padding: 3px 8px; border-radius: 5px; font-weight: 600;">{{ p.batch_number|default:"Batch 1" }}</span>
+                                </td>
                                 <td>
                                     <span class="badge badge-info">{% if p.category %}{{ p.category.name }}{% else %}Uncategorized{% endif %}</span>
                                 </td>
@@ -159,8 +168,7 @@
                                 <td style="font-size: 0.85rem;">{{ p.manufacturer|default:"-" }}</td>
                                 <td style="font-size: 0.85rem;">{{ p.strength|default:"-" }}</td>
                                 <td style="font-size: 0.85rem;">
-                                    Batch: <code>{{ p.batch_number|default:"-" }}</code>
-                                    <div style="font-size: 0.75rem; color: var(--text-muted);">NAFDAC: {{ p.nafdac_reg_no|default:"-" }}</div>
+                                    <code style="font-family: monospace; font-size: 0.82rem;">{{ p.nafdac_reg_no|default:"-" }}</code>
                                 </td>
                                 <td style="font-size: 0.85rem; font-style: italic;">{{ p.storage_conditions|default:"-" }}</td>
                                 <td>
@@ -387,9 +395,10 @@
                     <label for="prod-min" class="form-label">Min Stock (Alert)</label>
                     <input type="number" name="min_stock_level" id="prod-min" class="form-control" value="5" min="0" required>
                 </div>
-                {% if not is_admin %}
-                <div style="display:none;"></div> <!-- Filler grid space -->
-                {% endif %}
+                <div class="form-group">
+                    <label for="prod-batch" class="form-label">Batch Number (Optional)</label>
+                    <input type="text" name="batch_number" id="prod-batch" class="form-control" placeholder="e.g. Batch 2 (auto if blank)">
+                </div>
             </div>
 
             <div class="form-row-grid-3" style="gap: 0.75rem;">
@@ -450,11 +459,7 @@
                     <input type="text" name="strength" class="form-control" placeholder="e.g. 500mg, 10mg/5ml">
                 </div>
             </div>
-            <div class="form-row-grid-3" style="margin-top: 0.5rem;">
-                <div class="form-group">
-                    <label class="form-label">Batch Number</label>
-                    <input type="text" name="batch_number" class="form-control" placeholder="e.g. B1234">
-                </div>
+            <div class="form-row-grid-2" style="margin-top: 0.5rem;">
                 <div class="form-group">
                     <label class="form-label">NAFDAC Reg. No</label>
                     <input type="text" name="nafdac_reg_no" class="form-control" placeholder="e.g. A4-1234">
@@ -715,6 +720,10 @@
                     <label for="edit-prod-min" class="form-label">Min Stock (Alert)</label>
                     <input type="number" name="min_stock_level" id="edit-prod-min" class="form-control" min="0" required>
                 </div>
+                <div class="form-group">
+                    <label for="edit-prod-batch" class="form-label">Batch Number</label>
+                    <input type="text" name="batch_number" id="edit-prod-batch" class="form-control" placeholder="e.g. Batch 1">
+                </div>
             </div>
 
             <div class="form-row-grid-3" style="gap: 0.75rem;">
@@ -770,11 +779,7 @@
                     <input type="text" name="strength" id="edit-prod-strength" class="form-control" placeholder="e.g. 500mg, 10mg/5ml">
                 </div>
             </div>
-            <div class="form-row-grid-3" style="margin-top: 0.5rem;">
-                <div class="form-group">
-                    <label class="form-label">Batch Number</label>
-                    <input type="text" name="batch_number" id="edit-prod-batch" class="form-control" placeholder="e.g. B1234">
-                </div>
+            <div class="form-row-grid-2" style="margin-top: 0.5rem;">
                 <div class="form-group">
                     <label class="form-label">NAFDAC Reg. No</label>
                     <input type="text" name="nafdac_reg_no" id="edit-prod-nafdac" class="form-control" placeholder="e.g. A4-1234">
