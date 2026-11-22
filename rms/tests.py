@@ -667,6 +667,79 @@ class RMSModelsAndAPITests(TestCase):
         self.assertEqual(reprint_receipt['store_email'], "support@globalsupermart.com")
         self.assertEqual(reprint_receipt['receipt_footer'], "Thanks for shopping! Valid for exchange in 7 days.")
 
+    def test_receipt_settings_are_isolated_between_tenants(self):
+        first_owner, _, first_shop = self.create_tenant('julotop')
+        second_owner, _, second_shop = self.create_tenant('ezra')
+        first_settings = StoreSettings.get_settings(tenant_owner=first_owner)
+        first_settings.store_name = 'Julotop'
+        first_settings.address = 'Julotop Street'
+        first_settings.phone = '08000000001'
+        first_settings.email = 'julotop@example.com'
+        first_settings.receipt_footer = 'Thank you from Julotop'
+        first_settings.save()
+        second_settings = StoreSettings.get_settings(tenant_owner=second_owner)
+        second_settings.store_name = 'Ezra Shop'
+        second_settings.address = 'Ezra Avenue'
+        second_settings.phone = '08000000002'
+        second_settings.email = 'ezra@example.com'
+        second_settings.receipt_footer = 'Thank you from Ezra'
+        second_settings.save()
+
+        first_product = Product.objects.create(
+            name='Julotop Item',
+            sku='JULOTOP-001',
+            category=self.category,
+            shop=first_shop,
+            cost_price=Decimal('1.00'),
+            selling_price=Decimal('2.00'),
+            stock_quantity=5,
+        )
+        second_product = Product.objects.create(
+            name='Ezra Item',
+            sku='EZRA-001',
+            category=self.category,
+            shop=second_shop,
+            cost_price=Decimal('1.00'),
+            selling_price=Decimal('2.00'),
+            stock_quantity=5,
+        )
+
+        receipts = []
+        for owner, product, shop in (
+            (first_owner, first_product, first_shop),
+            (second_owner, second_product, second_shop),
+        ):
+            client = Client()
+            self.assertTrue(client.login(username=owner.username, password='tenant123'))
+            response = client.post(
+                reverse('checkout_api'),
+                data=json.dumps({
+                    'items': [{'product_id': product.id, 'quantity': 1}],
+                    'payment_method': 'CASH',
+                }),
+                content_type='application/json',
+            )
+            self.assertEqual(response.status_code, 200)
+            receipt = response.json()['receipt']
+            receipts.append((client, receipt))
+
+            sale = Sale.objects.get(receipt_number=receipt['receipt_number'])
+            reprint = client.get(reverse('sale_detail_json', kwargs={'sale_id': sale.id}))
+            self.assertEqual(reprint.status_code, 200)
+            self.assertEqual(reprint.json()['receipt']['store_name'], receipt['store_name'])
+            self.assertEqual(sale.shop, shop)
+
+        self.assertEqual(receipts[0][1]['store_name'], 'Julotop')
+        self.assertEqual(receipts[0][1]['store_address'], 'Julotop Street')
+        self.assertEqual(receipts[0][1]['store_phone'], '08000000001')
+        self.assertEqual(receipts[0][1]['store_email'], 'julotop@example.com')
+        self.assertEqual(receipts[0][1]['receipt_footer'], 'Thank you from Julotop')
+        self.assertEqual(receipts[1][1]['store_name'], 'Ezra Shop')
+        self.assertEqual(receipts[1][1]['store_address'], 'Ezra Avenue')
+        self.assertEqual(receipts[1][1]['store_phone'], '08000000002')
+        self.assertEqual(receipts[1][1]['store_email'], 'ezra@example.com')
+        self.assertEqual(receipts[1][1]['receipt_footer'], 'Thank you from Ezra')
+
     def test_batch_creation_for_same_sku_different_expiry(self):
         owner, profile, shop = self.create_tenant('batch_tenant')
         client = Client()
@@ -898,7 +971,7 @@ class RMSModelsAndAPITests(TestCase):
             'items': [{'product_id': product.id, 'quantity': 1, 'unit_price': '100.00'}],
             'payment_method': 'CASH'
         }), content_type='application/json')
-        self.assertEqual(checkout_res2.status_code, 200)
+        self.assertEqual(checkout_res2.status_code, 200, checkout_res2.content)
 
     def test_superuser_exemptions(self):
         from datetime import timedelta
@@ -1305,3 +1378,35 @@ class RMSModelsAndAPITests(TestCase):
         self.assertEqual(cashier.profile.role, 'CASHIER')
         self.assertEqual(cashier.profile.shop, shop)
         self.assertEqual(cashier.profile.tenant_owner, owner)
+
+    @override_settings(EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend')
+    def test_password_reset_flow_sends_link_and_changes_password(self):
+        from django.core import mail
+
+        response = self.client.post(reverse('password_reset'), {'email': self.cashier_user.email})
+        self.assertRedirects(response, reverse('password_reset_done'))
+        self.assertEqual(len(mail.outbox), 1)
+
+        reset_url = next(
+            line for line in mail.outbox[0].body.splitlines()
+            if '/password-reset/' in line
+        )
+        reset_path = urlsplit(reset_url).path
+        confirm_response = self.client.get(reset_path, follow=True)
+        self.assertEqual(confirm_response.status_code, 200)
+        confirm_path = confirm_response.request['PATH_INFO']
+
+        response = self.client.post(confirm_path, {
+            'new_password1': 'NewSecurePass!2026',
+            'new_password2': 'NewSecurePass!2026',
+        })
+        self.assertRedirects(response, reverse('password_reset_complete'))
+        self.assertTrue(self.client.login(username='cashier', password='NewSecurePass!2026'))
+
+    @override_settings(EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend')
+    def test_password_reset_does_not_disclose_unknown_email(self):
+        from django.core import mail
+
+        response = self.client.post(reverse('password_reset'), {'email': 'unknown@example.com'})
+        self.assertRedirects(response, reverse('password_reset_done'))
+        self.assertEqual(mail.outbox, [])

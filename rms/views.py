@@ -418,6 +418,14 @@ def get_tenant_scope(user):
         return profile.tenant_owner if profile.tenant_owner else user
     return user
 
+
+def get_store_settings_for_user(user, shop=None):
+    tenant_owner = shop.tenant_owner if shop and shop.tenant_owner_id else getattr(
+        getattr(user, 'profile', None), 'tenant_owner', None
+    )
+    return StoreSettings.get_settings(tenant_owner=tenant_owner)
+
+
 def has_wholesale_access(user):
     tenant_owner = get_tenant_scope(user)
     profile = getattr(tenant_owner, 'profile', None) if tenant_owner else None
@@ -1169,6 +1177,7 @@ def admin_panel_view(request):
             )
             messages.warning(request, f"Payment #{payment.reference} rejected.")
         elif action == 'update_bank_settings':
+            # Subscription payment credentials belong to the platform, not a tenant receipt.
             store_settings = StoreSettings.get_settings()
             store_settings.company_bank_name = request.POST.get('company_bank_name', store_settings.company_bank_name).strip()
             store_settings.company_account_name = request.POST.get('company_account_name', store_settings.company_account_name).strip()
@@ -1544,7 +1553,7 @@ def dashboard_view(request):
             'all_catalog_products': all_wh_prods,
         }
 
-    store_settings = StoreSettings.get_settings()
+    store_settings = get_store_settings_for_user(request.user, selected_shop)
 
     context = {
         'dashboard_mode': dashboard_mode,
@@ -1631,7 +1640,7 @@ def pos_view(request):
         categories = Category.objects.all().order_by('name')
         shops = Shop.objects.all().order_by('name') if user_is_admin else None
 
-    settings = StoreSettings.get_settings()
+    settings = get_store_settings_for_user(request.user, user_shop)
     
     # Format products for JS search, adding expiry warning flags and custom attributes
     products_json = []
@@ -1719,7 +1728,7 @@ def checkout_api(request):
             return JsonResponse({'success': False, 'error': 'Cart is empty.'}, status=400)
 
         # Get settings
-        settings = StoreSettings.get_settings()
+        settings = get_store_settings_for_user(request.user, user_shop)
         tax_rate = settings.tax_rate
 
         subtotal = Decimal('0.00')
@@ -2352,7 +2361,7 @@ def sale_detail_json(request, sale_id):
             'subtotal': f"{item.subtotal:.2f}"
         })
 
-    settings = StoreSettings.get_settings()
+    settings = get_store_settings_for_user(request.user, sale.shop)
     receipt_data = {
         'receipt_number': sale.receipt_number,
         'timestamp': sale.timestamp.strftime('%Y-%m-%d %H:%M:%S'),
@@ -2550,8 +2559,8 @@ def export_wholesale_catalog_csv(request):
 def settings_view(request):
     if request.user.is_superuser:
         return redirect('admin_panel')
-    settings = StoreSettings.get_settings()
-    tenant_owner = get_tenant_scope(request.user) or request.user
+    tenant_owner = request.user.profile.tenant_owner
+    settings = StoreSettings.get_settings(tenant_owner=tenant_owner)
     can_edit_receipt_footer = getattr(getattr(tenant_owner, 'profile', None), 'plan', 'FREE') != 'FREE'
     
     if request.method == 'POST':
@@ -2565,7 +2574,7 @@ def settings_view(request):
         
         try:
             settings.save()
-            messages.success(request, "Global store settings updated successfully.")
+            messages.success(request, "Store settings updated successfully.")
         except ValidationError as e:
             messages.error(request, str(e))
         return redirect('settings')
@@ -2916,7 +2925,7 @@ def shop_management_view(request):
 def customer_display_view(request):
     """A secondary display page intended to face the customer during checkout.
     Receives live cart data via BroadcastChannel from the POS tab — no server calls needed."""
-    settings = StoreSettings.get_settings()
+    settings = get_store_settings_for_user(request.user, request.user.profile.shop)
     active_ads = list(Advertisement.objects.filter(is_active=True).values('id', 'title', 'content', 'image_url'))
     context = {
         'store_name': settings.store_name,

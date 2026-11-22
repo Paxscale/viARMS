@@ -363,6 +363,13 @@ class SaleItem(models.Model):
             raise ValidationError("Quantity must be greater than zero.")
 
 class StoreSettings(models.Model):
+    tenant_owner = models.OneToOneField(
+        User,
+        on_delete=models.CASCADE,
+        related_name='store_settings',
+        null=True,
+        blank=True,
+    )
     store_name = models.CharField(max_length=200, default="Our Shop")
     address = models.TextField(blank=True, null=True, default="123 Retail Ave, Shoptown")
     phone = models.CharField(max_length=50, blank=True, null=True, default="+234 810 026 2697")
@@ -381,13 +388,29 @@ class StoreSettings(models.Model):
         return self.store_name
 
     def save(self, *args, **kwargs):
-        if not self.pk and StoreSettings.objects.exists():
-            raise ValidationError("Only one instance of StoreSettings can exist.")
+        if (
+            self.tenant_owner_id is None
+            and not self.pk
+            and StoreSettings.objects.filter(tenant_owner__isnull=True).exists()
+        ):
+            raise ValidationError("Only one platform StoreSettings instance can exist.")
         return super(StoreSettings, self).save(*args, **kwargs)
 
     @classmethod
-    def get_settings(cls):
-        settings, created = cls.objects.get_or_create(pk=1)
+    def get_settings(cls, tenant_owner=None):
+        if tenant_owner is None:
+            settings, created = cls.objects.get_or_create(pk=1, defaults={'tax_rate': Decimal('0.00')})
+            return settings
+
+        shop = Shop.objects.filter(tenant_owner=tenant_owner).order_by('id').first()
+        defaults = {
+            'store_name': shop.name if shop else tenant_owner.username,
+            'address': (shop.location or '') if shop else '',
+            'phone': (shop.phone or '') if shop else '',
+            'email': tenant_owner.email or '',
+            'tax_rate': Decimal('0.00'),
+        }
+        settings, created = cls.objects.get_or_create(tenant_owner=tenant_owner, defaults=defaults)
         return settings
 
 
