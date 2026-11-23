@@ -1,4 +1,4 @@
-{% load static %}
+{% load static humanize %}
 <!DOCTYPE html>
 <html lang="en" data-theme="light">
 <head>
@@ -21,25 +21,100 @@
             align-items: center;
             justify-content: center;
             text-align: center;
-            padding: 6rem 2rem 4rem;
-            min-height: 80vh;
-            background: radial-gradient(circle at top, rgba(99, 102, 241, 0.15) 0%, var(--bg-base) 70%);
+            padding: 9rem 1.5rem 5rem;
+            min-height: 72vh;
+            background: radial-gradient(ellipse at 50% 0%, rgba(99, 102, 241, 0.2) 0%, transparent 62%);
         }
-        .hero-title {
-            font-size: 3.5rem;
-            font-weight: 800;
+        .hero-eyebrow {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
             margin-bottom: 1.5rem;
-            background: linear-gradient(135deg, #a5b4fc, var(--color-primary));
+            padding: 0.55rem 0.9rem;
+            border: 1px solid var(--border-color);
+            border-radius: 999px;
+            color: var(--text-secondary);
+            background: rgba(255,255,255,0.04);
+            font-size: 0.85rem;
+        }
+        .hero-eyebrow i { color: var(--color-success); width: 16px; height: 16px; }
+        .hero-title-wrap { max-width: 950px; }
+        .hero-title .hero-accent {
+            background: linear-gradient(120deg, #a5b4fc, #818cf8 55%, #34d399);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
-            line-height: 1.2;
+        }
+        .hero-title {
+            font-size: clamp(2.8rem, 7vw, 5.5rem);
+            font-weight: 800;
+            letter-spacing: -0.055em;
+            margin: 0 0 1.25rem;
+            line-height: 1.02;
         }
         .hero-subtitle {
-            font-size: 1.25rem;
+            font-size: clamp(1rem, 2vw, 1.2rem);
             color: var(--text-secondary);
-            max-width: 600px;
-            margin-bottom: 2.5rem;
-            line-height: 1.6;
+            max-width: 690px;
+            margin: 0 auto 2rem;
+            line-height: 1.75;
+        }
+        .impact-section {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 0;
+            max-width: 1120px;
+            margin: 0 auto 3rem;
+            padding: 1.5rem;
+            border: 1px solid var(--border-color);
+            border-radius: 24px;
+            background: rgba(255,255,255,0.035);
+            backdrop-filter: blur(18px);
+        }
+        .impact-heading {
+            grid-column: 1 / -1;
+            margin: 0 0 0.3rem;
+            color: var(--text-primary);
+            font-size: 1.4rem;
+            font-weight: 700;
+            text-align: center;
+        }
+        .impact-intro {
+            grid-column: 1 / -1;
+            margin: 0 0 1.2rem;
+            color: var(--text-secondary);
+            font-size: 0.92rem;
+            text-align: center;
+        }
+        .impact-card {
+            padding: 1rem 0.75rem;
+            text-align: center;
+            border-right: 1px solid var(--border-color);
+        }
+        .impact-card:last-child { border-right: 0; }
+        .impact-icon {
+            display: flex;
+            width: 38px;
+            height: 38px;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 0.6rem;
+            border-radius: 12px;
+            color: var(--color-primary);
+            background: var(--color-primary-glow);
+        }
+        .impact-icon i { width: 19px; height: 19px; }
+        .impact-number {
+            display: block;
+            color: var(--text-primary);
+            font-size: clamp(1.8rem, 4vw, 2.5rem);
+            font-weight: 800;
+            line-height: 1.1;
+            letter-spacing: -0.04em;
+        }
+        .impact-label {
+            display: block;
+            margin-top: 0.5rem;
+            color: var(--text-secondary);
         }
         .hero-actions {
             display: flex;
@@ -51,14 +126,30 @@
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
             gap: 2rem;
-            padding: 4rem 2rem;
+            padding: 2rem 2rem 5rem;
             max-width: 1200px;
             margin: 0 auto;
         }
+        .section-heading {
+            max-width: 720px;
+            margin: 0 auto;
+            padding: 3rem 1.5rem 0;
+            text-align: center;
+        }
+        .section-heading h2 {
+            margin: 0 0 0.75rem;
+            font-size: clamp(2rem, 4vw, 3rem);
+            letter-spacing: -0.04em;
+        }
+        .section-heading p { margin: 0; color: var(--text-secondary); line-height: 1.7; }
         .feature-card {
             padding: 2rem;
             text-align: left;
+            border: 1px solid var(--border-color);
+            border-radius: 22px;
+            transition: transform 180ms ease, border-color 180ms ease;
         }
+        .feature-card:hover { transform: translateY(-4px); border-color: var(--color-primary); }
         .feature-icon {
             color: var(--color-primary);
             margin-bottom: 1.5rem;
@@ -114,7 +205,7 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding: 1rem 2rem;
+            padding: 0.85rem max(1.25rem, calc((100vw - 1200px) / 2));
             backdrop-filter: blur(20px);
             background: rgba(10, 15, 26, 0.85);
             z-index: 1000;
@@ -128,10 +219,49 @@
             gap: 0.5rem;
             color: var(--text-primary);
         }
+        .nav-links { display: flex; align-items: center; gap: 1.5rem; }
+        .nav-links > a:not(.btn) { color: var(--text-secondary); text-decoration: none; font-size: 0.92rem; }
+        .nav-links > a:not(.btn):hover { color: var(--text-primary); }
+        .audience-strip { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.65rem; padding: 0 1.25rem 2rem; }
+        .audience-chip { padding: 0.6rem 0.9rem; border: 1px solid var(--border-color); border-radius: 999px; color: var(--text-secondary); font-size: 0.85rem; background: rgba(255,255,255,0.025); }
+        .closing-cta {
+            max-width: 1120px;
+            margin: 1rem auto 5rem;
+            padding: 3.5rem 1.5rem;
+            border: 1px solid var(--border-color);
+            border-radius: 28px;
+            text-align: center;
+            background: radial-gradient(ellipse at 50% 0%, rgba(99,102,241,0.2), transparent 70%), var(--bg-surface);
+        }
+        .closing-cta h2 { margin: 0 0 0.75rem; font-size: clamp(1.8rem, 4vw, 2.7rem); letter-spacing: -0.04em; }
+        .closing-cta p { max-width: 620px; margin: 0 auto 1.5rem; color: var(--text-secondary); line-height: 1.7; }
+        .demo-section {
+            margin: 0;
+            padding: 4rem max(1.5rem, calc((100vw - 1120px) / 2)) 5rem;
+            border-top: 1px solid var(--border-color);
+            border-bottom: 1px solid var(--border-color);
+            background: linear-gradient(180deg, rgba(99,102,241,0.07), rgba(255,255,255,0.015));
+        }
+        .demo-section .section-heading { padding: 0; }
+        .demo-frame {
+            overflow: hidden;
+            margin-top: 2rem;
+            border: 1px solid var(--border-color);
+            border-radius: 24px;
+            background: #080d19;
+            box-shadow: 0 28px 90px rgba(0,0,0,0.28);
+        }
+        .demo-frame video { display: block; width: 100%; aspect-ratio: 16 / 9; background: #080d19; }
 
         @media (max-width: 768px) {
-            .hero-title { font-size: 2.5rem; }
-            .hero-section { padding-top: 8rem; }
+            .hero-title { font-size: clamp(2.6rem, 9vw, 4rem); }
+            .hero-section { padding-top: 8rem; min-height: auto; }
+            .impact-section { grid-template-columns: repeat(2, minmax(0, 1fr)); margin: 0 1rem 2rem; }
+            .impact-card:nth-of-type(3) { border-right: 0; }
+            .impact-card:nth-of-type(3),
+            .impact-card:nth-of-type(4) { border-top: 1px solid var(--border-color); }
+            .nav-links { gap: 0.75rem; }
+            .nav-links > a:not(.btn) { display: none; }
         }
 
         @media (max-width: 576px) {
@@ -166,9 +296,19 @@
             .hero-actions .btn {
                 width: 100%;
             }
+            .impact-section { padding: 0.75rem; }
+            .impact-number { font-size: 1.75rem; }
+            .impact-label { font-size: 0.78rem; }
             .features-grid,
             .pricing-section {
                 padding: 2.5rem 1rem;
+            }
+            .impact-section {
+                gap: 0;
+                margin-bottom: 2rem;
+            }
+            .impact-card {
+                padding: 1.1rem 0.5rem;
             }
             .features-grid,
             .pricing-grid {
@@ -246,52 +386,107 @@
             <i data-lucide="shopping-bag" style="color: var(--color-primary)"></i>
             viARMS
         </div>
-        <div style="display: flex; gap: 1rem;">
+        <div class="nav-links">
+            <a href="#features">Features</a>
+            <a href="#pricing">Pricing</a>
             <a href="{% url 'login' %}" class="btn" style="background: transparent; border: 1px solid var(--border-color);">Login</a>
-            <a href="{% url 'register' %}?plan=FREE" class="btn btn-primary">Start 14-Day Trial</a>
+            <a href="{% url 'register' %}?plan=FREE" class="btn btn-primary">Get started</a>
         </div>
     </nav>
 
     <div class="hero-section">
-        <h1 class="hero-title">Smart Retail Management<br>for Modern Businesses</h1>
-        <p class="hero-subtitle">viARMS is the all-in-one POS, inventory, and staff management platform tailored for Pharmacies, Supermarkets, Bookshops, and Gadget stores across Africa.</p>
+        <div class="hero-eyebrow"><i data-lucide="sparkles"></i> Retail operations, made simpler</div>
+        <div class="hero-title-wrap">
+            <h1 class="hero-title">Run your shop.<br><span class="hero-accent">Grow with confidence.</span></h1>
+        </div>
+        <p class="hero-subtitle">viARMS brings sales, inventory, staff, and branches together in one easy-to-use platform, so you can spend less time chasing numbers and more time growing your business.</p>
 
         <div class="hero-actions">
-            <a href="{% url 'register' %}?plan=FREE" class="btn btn-primary" style="padding: 1rem 2rem; font-size: 1.1rem; border-radius: 50px;">
-                Start 14-Day Free Trial
+            <a href="{% url 'register' %}?plan=FREE" class="btn btn-primary" style="padding: 1rem 1.5rem; font-size: 1rem; border-radius: 50px;">
+                Start your free 14-day trial <i data-lucide="arrow-right" style="width: 17px; vertical-align: middle; margin-left: 0.35rem;"></i>
             </a>
-            <a href="#features" class="btn" style="padding: 1rem 2rem; font-size: 1.1rem; border-radius: 50px; background: rgba(255,255,255,0.05); border: 1px solid var(--border-color);">
-                See Features
+            <a href="#demo" class="btn" style="padding: 1rem 1.5rem; font-size: 1rem; border-radius: 50px; background: rgba(255,255,255,0.05); border: 1px solid var(--border-color);">
+                Watch the product tour
             </a>
         </div>
     </div>
 
+    <section class="demo-section" id="demo" aria-labelledby="demo-title">
+        <div class="section-heading">
+            <h2 id="demo-title">See viARMS in action</h2>
+            <p>Take a quick tour of checkout, inventory, sales reporting, and branch management.</p>
+        </div>
+        <div class="demo-frame">
+            <video autoplay muted loop controls playsinline preload="metadata" poster="{% static 'media/viarms-product-tour-poster.png' %}" aria-label="viARMS product walkthrough">
+                <source src="{% static 'media/viarms-product-tour.webm' %}" type="video/webm">
+                Your browser does not support WebM video. Please use a current version of Chrome, Edge, Firefox, or Safari.
+            </video>
+        </div>
+    </section>
+
+    <section class="impact-section" aria-label="viARMS impact">
+        <h2 class="impact-heading">A growing community of businesses</h2>
+        <p class="impact-intro">Real activity across the viARMS platform</p>
+        <div class="impact-card">
+            <span class="impact-icon"><i data-lucide="building-2"></i></span>
+            <span class="impact-number">{{ tenant_count|intcomma }}</span>
+            <span class="impact-label">Businesses onboard</span>
+        </div>
+        <div class="impact-card">
+            <span class="impact-icon"><i data-lucide="store"></i></span>
+            <span class="impact-number">{{ shop_count|intcomma }}</span>
+            <span class="impact-label">Shops supported</span>
+        </div>
+        <div class="impact-card">
+            <span class="impact-icon"><i data-lucide="package-check"></i></span>
+            <span class="impact-number">{{ product_count|intcomma }}</span>
+            <span class="impact-label">Active products managed</span>
+        </div>
+        <div class="impact-card">
+            <span class="impact-icon"><i data-lucide="users"></i></span>
+            <span class="impact-number">{{ staff_count|intcomma }}</span>
+            <span class="impact-label">Team members supported</span>
+        </div>
+    </section>
+
+    <div class="section-heading">
+        <h2>Everything your shop needs to run smoothly</h2>
+        <p>From the first sale of the day to a full view of every branch, viARMS helps keep the moving parts of your business in sync.</p>
+    </div>
+    <div class="audience-strip" aria-label="Business types supported">
+        <span class="audience-chip">Pharmacies</span>
+        <span class="audience-chip">Supermarkets</span>
+        <span class="audience-chip">Bookshops</span>
+        <span class="audience-chip">Fashion and boutiques</span>
+        <span class="audience-chip">Electronics and gadgets</span>
+        <span class="audience-chip">Wholesale</span>
+    </div>
     <div id="features" class="features-grid">
         <div class="feature-card glass-panel">
             <div class="feature-icon"><i data-lucide="layout-dashboard"></i></div>
-            <h3 style="margin-bottom: 0.75rem; font-size: 1.25rem;">Multi-Tenant &amp; Multi-Branch</h3>
-            <p style="color: var(--text-secondary); line-height: 1.5;">Manage multiple shop locations from a single admin dashboard. Data is strictly isolated per tenant.</p>
+            <h3 style="margin-bottom: 0.75rem; font-size: 1.25rem;">One view of every branch</h3>
+            <p style="color: var(--text-secondary); line-height: 1.5;">Manage multiple shop locations from a single dashboard and keep each business's information securely separated.</p>
         </div>
         <div class="feature-card glass-panel">
             <div class="feature-icon"><i data-lucide="languages"></i></div>
-            <h3 style="margin-bottom: 0.75rem; font-size: 1.25rem;">Multi-Language POS</h3>
-            <p style="color: var(--text-secondary); line-height: 1.5;">Native support for English, Naija Pidgin, Yorùbá, Igbo, and Hausa for your cashiers and staff.</p>
+            <h3 style="margin-bottom: 0.75rem; font-size: 1.25rem;">Checkout that feels familiar</h3>
+            <p style="color: var(--text-secondary); line-height: 1.5;">Let your team use the point of sale in English, Naija Pidgin, Yoruba, Igbo, or Hausa.</p>
         </div>
         <div class="feature-card glass-panel">
             <div class="feature-icon"><i data-lucide="package-search"></i></div>
-            <h3 style="margin-bottom: 0.75rem; font-size: 1.25rem;">Business Specific Fields</h3>
-            <p style="color: var(--text-secondary); line-height: 1.5;">Whether it's Pharmacy prescriptions, Bookshop ISBNs, or Gadget warranties, the platform adapts to your industry.</p>
+            <h3 style="margin-bottom: 0.75rem; font-size: 1.25rem;">Inventory you can trust</h3>
+            <p style="color: var(--text-secondary); line-height: 1.5;">Track stock levels, batches, and expiry dates, with product details suited to the way your business works.</p>
         </div>
         <div class="feature-card glass-panel">
             <div class="feature-icon"><i data-lucide="monitor-speaker"></i></div>
-            <h3 style="margin-bottom: 0.75rem; font-size: 1.25rem;">Customer Display Ads</h3>
-            <p style="color: var(--text-secondary); line-height: 1.5;">Push targeted advertisements to the customer-facing screen while they wait during checkout.</p>
+            <h3 style="margin-bottom: 0.75rem; font-size: 1.25rem;">Know how your business is doing</h3>
+            <p style="color: var(--text-secondary); line-height: 1.5;">Review sales activity, keep an eye on low stock, and give your team the tools to serve customers well.</p>
         </div>
     </div>
 
-    <div class="pricing-section">
-        <h2 style="font-size: 2.5rem; margin-bottom: 1rem;">Plans for Every Stage</h2>
-        <p style="color: var(--text-secondary); font-size: 1.1rem;">Start with a 14-day Free trial, then choose the plan that fits your business.</p>
+    <div class="pricing-section" id="pricing">
+        <h2 style="font-size: clamp(2rem, 4vw, 3rem); letter-spacing: -0.04em; margin-bottom: 1rem;">A plan for where you are going</h2>
+        <p style="color: var(--text-secondary); font-size: 1.05rem;">Try viARMS free for 14 days, then choose the plan that fits your team and branches.</p>
 
         <div class="pricing-grid">
             <div class="pricing-card">
@@ -348,6 +543,11 @@
             </div>
         </div>
     </div>
+    <section class="closing-cta">
+        <h2>Make your next business decision with clarity.</h2>
+        <p>Bring your sales, stock, and team into one place. Start your free 14-day trial and see how viARMS fits your business.</p>
+        <a href="{% url 'register' %}?plan=FREE" class="btn btn-primary" style="padding: 0.95rem 1.5rem; border-radius: 50px;">Get started with viARMS <i data-lucide="arrow-right" style="width: 17px; vertical-align: middle; margin-left: 0.35rem;"></i></a>
+    </section>
     <!-- Copyright Footer -->
     <footer style="text-align: center; padding: 2.5rem 1rem 1.5rem; font-size: 0.78rem; color: var(--text-muted); border-top: 1px solid var(--border-color); margin-top: 3rem; line-height: 1.8;">
         &copy; viARMS &nbsp;·&nbsp; <a href="{% url 'terms_and_agreement' %}" style="color: var(--text-muted); text-decoration: underline;">Terms &amp; Agreement</a> &nbsp;·&nbsp; Powered by <strong style="color: var(--color-primary);">viARMS</strong> | Scales Technologies

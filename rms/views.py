@@ -880,7 +880,21 @@ def landing_view(request):
         if request.user.is_superuser:
             return redirect('admin_panel')
         return redirect('dashboard')
-    return render(request, 'landing.html')
+    tenant_count = User.objects.filter(is_superuser=False).filter(
+        Q(profile__tenant_owner=F('id')) | Q(profile__tenant_owner__isnull=True)
+    ).count()
+    shop_count = Shop.objects.count()
+    product_count = Product.objects.filter(is_active=True).count()
+    staff_count = UserProfile.objects.filter(
+        tenant_owner__isnull=False,
+        user__is_active=True,
+    ).exclude(tenant_owner_id=F('user_id')).count()
+    return render(request, 'landing.html', {
+        'tenant_count': tenant_count,
+        'shop_count': shop_count,
+        'product_count': product_count,
+        'staff_count': staff_count,
+    })
 
 def get_managed_tenant_profile(user_id):
     profile = get_object_or_404(

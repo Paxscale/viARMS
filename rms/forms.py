@@ -1,9 +1,28 @@
 from django import forms
+from django.contrib.auth.forms import PasswordResetForm
+from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.utils import timezone
 from allauth.socialaccount.forms import SignupForm
 
 from .models import Shop, UserProfile
+
+
+class RequestHostPasswordResetForm(PasswordResetForm):
+    """Use the request host and support password setup for active accounts."""
+
+    def get_users(self, email):
+        user_model = get_user_model()
+        email_field = user_model.get_email_field_name()
+        return user_model._default_manager.filter(
+            **{f'{email_field}__iexact': email, 'is_active': True}
+        ).iterator()
+
+    def save(self, *args, **kwargs):
+        request = kwargs.get('request')
+        if request is not None:
+            kwargs['domain_override'] = request.get_host()
+        return super().save(*args, **kwargs)
 
 
 class ViARMSocialSignupForm(SignupForm):

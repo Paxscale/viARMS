@@ -8,10 +8,12 @@ from django.conf import settings
 from django.conf.urls.static import static
 from django.views.generic import TemplateView
 from rms import views as rms_views
+from rms.forms import RequestHostPasswordResetForm
 
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('password-reset/', auth_views.PasswordResetView.as_view(
+        form_class=RequestHostPasswordResetForm,
         template_name='registration/password_reset_form.html',
         email_template_name='registration/password_reset_email.txt',
         subject_template_name='registration/password_reset_subject.txt',
