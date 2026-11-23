@@ -13,7 +13,7 @@ class Command(BaseCommand):
 
         # 1. Create Default Shop
         default_shop, created = Shop.objects.get_or_create(
-            name='viARMS Lagos Central',
+            name='viARMS SaaS Retail Hub',
             defaults={
                 'location': 'Plot 104 Marina Boulevard, Lagos Island, Nigeria',
                 'phone': '+234 1 555 0199'
@@ -195,9 +195,9 @@ class Command(BaseCommand):
         # 5. Create/Update StoreSettings (15% tax)
         settings = StoreSettings.get_settings()
         settings.store_name = 'viARMS Retail Hub'
-        settings.address = 'Marina Street, Lagos Island, Nigeria'
-        settings.phone = '+234 1 555 0100'
-        settings.tax_rate = Decimal('7.50') # Standard Nigerian VAT is 7.5%
+        settings.address = 'Scales Technologies, Girie, Adamawa, Nigeria'
+        settings.phone = '+234 8100262697'
+        settings.tax_rate = Decimal('0.50') # Standard Nigerian VAT is 7.5%
         settings.receipt_footer = 'Thank you for shopping with viARMS Record Management System. Powered by Scales Technologies.'
         settings.save()
 
