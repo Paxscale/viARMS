@@ -1,0 +1,72 @@
+{% extends 'base.html' %}
+
+{% block title %}{{ product.name }} - viARMS{% endblock %}
+
+{% block content %}
+<div class="panel-header" style="gap: 1rem; flex-wrap: wrap;">
+    <div>
+        <a href="{{ back_url }}" class="btn btn-secondary btn-sm" style="margin-bottom: 0.75rem;">Back to list</a>
+        <h1 style="font-size: 1.75rem; font-weight: 700;">{{ product.name }}</h1>
+        <p style="color: var(--text-secondary); font-size: 0.9rem;">SKU {{ product.sku }}</p>
+    </div>
+    <div>
+        {% if product.is_expired %}
+        <span class="badge badge-danger">Expired</span>
+        {% elif product.stock_quantity <= product.min_stock_level %}
+        <span class="badge" style="background: rgba(245, 158, 11, 0.15); color: var(--color-warning);">Low stock</span>
+        {% else %}
+        <span class="badge badge-success">In stock</span>
+        {% endif %}
+    </div>
+</div>
+
+<div class="{% if business_type == 'PHARMACEUTICAL' or business_type == 'BOOK_ACCESSORIES' or business_type == 'UTENSILS' %}dashboard-layout layout-2-1{% endif %}">
+    <section class="glass-panel" style="padding: 1.5rem;">
+        <h2 class="panel-title" style="font-size: 1.05rem; margin-bottom: 1rem;">Product information</h2>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem;">
+            <div><div class="form-label">Category</div><div>{% if product.category %}<a href="{% url 'category_detail' product.category.id %}">{{ product.category.name }}</a>{% else %}Uncategorized{% endif %}</div></div>
+            <div><div class="form-label">Batch</div><div><a href="{% url 'stock_batches' %}?batch={{ product.batch_number|default:'BN: 1'|urlencode }}">{{ product.batch_number|default:"BN: 1" }}</a></div></div>
+            {% if is_admin %}<div><div class="form-label">Shop</div><div>{{ product.shop.name|default:"—" }}</div></div>{% endif %}
+            <div><div class="form-label">Stock quantity</div><div>{{ product.stock_quantity }}</div></div>
+            <div><div class="form-label">Minimum stock level</div><div>{{ product.min_stock_level }}</div></div>
+            {% if is_admin %}
+            <div><div class="form-label">Cost price</div><div>₦{{ product.cost_price|floatformat:2 }}</div></div>
+            {% endif %}
+            <div><div class="form-label">Selling price</div><div>₦{{ product.selling_price|floatformat:2 }}</div></div>
+            <div><div class="form-label">Expiry date</div><div>{{ product.expiry_date|date:"M d, Y"|default:"—" }}</div></div>
+        </div>
+        {% if product.description %}
+        <div style="margin-top: 1.25rem;">
+            <div class="form-label">Description</div>
+            <div>{{ product.description|linebreaksbr }}</div>
+        </div>
+        {% endif %}
+    </section>
+
+    {% if business_type == 'PHARMACEUTICAL' or business_type == 'BOOK_ACCESSORIES' or business_type == 'UTENSILS' %}
+    <section class="glass-panel" style="padding: 1.5rem;">
+        <h2 class="panel-title" style="font-size: 1.05rem; margin-bottom: 1rem;">Additional details</h2>
+        <dl style="display: grid; gap: 0.8rem;">
+            {% if business_type == 'PHARMACEUTICAL' %}
+            {% if product.manufacturer %}<div><dt class="form-label">Manufacturer</dt><dd>{{ product.manufacturer }}</dd></div>{% endif %}
+            {% if product.strength %}<div><dt class="form-label">Strength</dt><dd>{{ product.strength }}</dd></div>{% endif %}
+            {% if product.generic_name %}<div><dt class="form-label">Generic name</dt><dd>{{ product.generic_name }}</dd></div>{% endif %}
+            {% if product.dosage_form %}<div><dt class="form-label">Dosage form</dt><dd>{{ product.dosage_form }}</dd></div>{% endif %}
+            {% if product.nafdac_reg_no %}<div><dt class="form-label">NAFDAC registration</dt><dd>{{ product.nafdac_reg_no }}</dd></div>{% endif %}
+            {% if product.storage_conditions %}<div><dt class="form-label">Storage conditions</dt><dd>{{ product.storage_conditions }}</dd></div>{% endif %}
+            <div><dt class="form-label">Prescription required</dt><dd>{% if product.prescription_required %}Yes{% else %}No{% endif %}</dd></div>
+            {% elif business_type == 'BOOK_ACCESSORIES' %}
+            {% if product.author %}<div><dt class="form-label">Author</dt><dd>{{ product.author }}</dd></div>{% endif %}
+            {% if product.publisher %}<div><dt class="form-label">Publisher</dt><dd>{{ product.publisher }}</dd></div>{% endif %}
+            {% if product.isbn %}<div><dt class="form-label">ISBN</dt><dd>{{ product.isbn }}</dd></div>{% endif %}
+            {% if product.color %}<div><dt class="form-label">Color</dt><dd>{{ product.color }}</dd></div>{% endif %}
+            {% if product.size %}<div><dt class="form-label">Size</dt><dd>{{ product.size }}</dd></div>{% endif %}
+            {% if product.warranty_period %}<div><dt class="form-label">Warranty</dt><dd>{{ product.warranty_period }}</dd></div>{% endif %}
+            {% elif business_type == 'UTENSILS' %}
+            {% if product.material %}<div><dt class="form-label">Material</dt><dd>{{ product.get_material_display }}</dd></div>{% endif %}
+            {% endif %}
+        </dl>
+    </section>
+    {% endif %}
+</div>
+{% endblock %}

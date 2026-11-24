@@ -184,8 +184,8 @@ body {
 
 .form-control:focus {
     outline: none;
-    border-color: var(--color-primary);
-    box-shadow: 0 0 0 2px var(--color-primary-glow);
+    border-color: var(--color-primary-glow);
+    box-shadow: none;
 }
 
 /* Form group spacing */
@@ -231,8 +231,8 @@ body {
 }
 .mode-switch-pill:hover {
     background: rgba(255, 255, 255, 0.1) !important;
-    border-color: var(--color-primary) !important;
-    box-shadow: 0 0 12px var(--color-primary-glow);
+    border-color: var(--color-primary-glow) !important;
+    box-shadow: none;
 }
 
 .glass-panel {
@@ -325,12 +325,12 @@ body {
 .sidebar-link:hover, .sidebar-link.active {
     color: var(--text-primary);
     background: var(--color-primary-glow);
-    border: 1px solid rgba(99, 102, 241, 0.2);
+    border: 1px solid var(--color-primary-glow);
 }
 
 .sidebar-link.active {
-    border-color: var(--color-primary);
-    background: linear-gradient(135deg, var(--color-primary-glow), rgba(99, 102, 241, 0.05));
+    border-color: var(--color-primary-glow);
+    background: linear-gradient(135deg, var(--color-primary-glow), transparent);
 }
 
 .sidebar-footer {
@@ -500,8 +500,8 @@ body {
 
 .form-control:focus {
     outline: none;
-    border-color: var(--color-primary);
-    box-shadow: 0 0 0 2px var(--color-primary-glow);
+    border-color: var(--color-primary-glow);
+    box-shadow: none;
 }
 
 /* Table Design */
@@ -533,6 +533,24 @@ body {
 
 .custom-table tr:hover td {
     background: rgba(255, 255, 255, 0.02);
+}
+
+tr[data-row-href] {
+    cursor: pointer;
+}
+
+.table-row-link {
+    color: inherit;
+    text-decoration: none;
+}
+
+.table-row-link:hover {
+    text-decoration: underline;
+}
+
+.custom-table tr[data-row-href]:hover td,
+.data-table tr[data-row-href]:hover td {
+    background: var(--color-primary-glow);
 }
 
 /* Badges */
@@ -707,7 +725,7 @@ body {
 /* Shared details keep every screen visually consistent without requiring each
    page to duplicate presentation markup. */
 :where(button, a, input, select, textarea):focus-visible {
-    outline: 3px solid var(--color-primary-glow);
+    outline: 2px solid var(--color-primary-glow);
     outline-offset: 2px;
 }
 
@@ -807,7 +825,7 @@ textarea.form-control {
 .qty-btn:focus-visible,
 .remove-cart-item:focus-visible,
 .modal-close:focus-visible {
-    outline: 2px solid var(--color-primary);
+    outline: 2px solid var(--color-primary-glow);
     outline-offset: 2px;
 }
 
@@ -958,9 +976,9 @@ textarea.form-control {
 
 .pos-scan-button:hover,
 .pos-scan-button:focus-visible {
-    border-color: var(--color-primary);
+    border-color: var(--color-primary-glow);
     outline: none;
-    background: rgba(99, 102, 241, 0.12);
+    background: var(--color-primary-glow);
 }
 
 .pos-scan-button svg {
@@ -1019,9 +1037,9 @@ textarea.form-control {
 }
 
 .category-chip:hover, .category-chip.active {
-    background: var(--color-primary);
-    color: white;
-    border-color: var(--color-primary);
+    background: var(--color-primary-glow);
+    color: var(--color-primary);
+    border-color: var(--color-primary-glow);
 }
 
 .products-grid {
@@ -1047,13 +1065,13 @@ textarea.form-control {
 }
 
 .product-card:hover {
-    border-color: var(--color-primary);
-    transform: translateY(-2px);
-    box-shadow: 0 4px 20px rgba(99, 102, 241, 0.15);
+    border-color: var(--color-primary-glow);
+    transform: translateY(-1px);
+    box-shadow: none;
 }
 
 .product-card:focus-visible {
-    outline: 3px solid var(--color-primary);
+    outline: 2px solid var(--color-primary-glow);
     outline-offset: 2px;
 }
 
@@ -1311,8 +1329,9 @@ textarea.form-control {
 }
 
 .qty-btn:hover {
-    background: var(--color-primary);
-    border-color: var(--color-primary);
+    background: var(--color-primary-glow);
+    border-color: var(--color-primary-glow);
+    color: var(--color-primary);
 }
 
 .cart-item-subtotal {
@@ -1383,7 +1402,6 @@ textarea.form-control {
 }
 .btn-primary:hover {
     background: var(--color-primary-hover);
-    box-shadow: 0 4px 15px rgba(99, 102, 241, 0.3);
 }
 
 .btn-secondary {
@@ -2413,14 +2431,14 @@ body[data-theme="glass"] select.form-control option {
     color: var(--text-primary);
     text-align: left;
     background: var(--bg-surface);
-    border: 2px solid var(--border-color);
+    border: 1px solid var(--border-color);
     border-radius: 14px;
     cursor: pointer;
     transition: border-color 160ms ease, background-color 160ms ease, transform 160ms ease;
 }
 
 .theme-btn:hover { transform: translateY(-1px); }
-.theme-btn[aria-pressed="true"] { border-color: var(--color-primary) !important; opacity: 1 !important; }
+.theme-btn[aria-pressed="true"] { border-color: var(--color-primary-glow) !important; opacity: 1 !important; }
 .theme-btn > span:nth-child(2) { display: grid; gap: 0.15rem; }
 .theme-btn strong { font-size: 0.9rem; }
 .theme-btn small { color: var(--text-muted); font-size: 0.75rem; }

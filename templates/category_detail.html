@@ -117,9 +117,9 @@
         <tbody>
           {% for row in products %}
           {% with p=row.product %}
-          <tr {% if p.is_expired %}style="background: rgba(239,68,68,0.06); border-left: 2px solid rgba(239,68,68,0.5);"{% elif p.stock_quantity <= p.min_stock_level %}style="background: rgba(251,191,36,0.05); border-left: 2px solid rgba(251,191,36,0.4);"{% endif %}>
+          <tr data-row-href="{% url 'product_detail' p.id %}?next={{ request.get_full_path|urlencode }}" {% if p.is_expired %}style="background: rgba(239,68,68,0.06); border-left: 2px solid rgba(239,68,68,0.5);"{% elif p.stock_quantity <= p.min_stock_level %}style="background: rgba(251,191,36,0.05); border-left: 2px solid rgba(251,191,36,0.4);"{% endif %}>
             <td>
-              <div style="font-weight: 600; {% if p.is_expired %}text-decoration: line-through; color: var(--text-muted);{% endif %}">{{ p.name }}</div>
+              <div style="font-weight: 600; {% if p.is_expired %}text-decoration: line-through; color: var(--text-muted);{% endif %}"><a class="table-row-link" href="{% url 'product_detail' p.id %}?next={{ request.get_full_path|urlencode }}">{{ p.name }}</a></div>
               {% if p.is_expired %}<span style="font-size: 0.7rem; color: #ef4444; font-weight: 600;">EXPIRED</span>{% elif p.stock_quantity <= p.min_stock_level %}<span style="font-size: 0.7rem; color: #fbbf24; font-weight: 600;">LOW STOCK</span>{% endif %}
             </td>
             <td style="font-family: monospace; font-size: 0.8rem; font-weight: 600;">{{ p.sku }}</td>

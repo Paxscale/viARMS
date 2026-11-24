@@ -170,7 +170,7 @@
     function updateThemeUI(theme) {
         document.querySelectorAll('.theme-btn').forEach(btn => {
             const isActive = btn.dataset.themeVal === theme;
-            btn.style.borderColor = isActive ? 'var(--color-primary)' : 'transparent';
+            btn.style.borderColor = isActive ? 'var(--color-primary-glow)' : 'transparent';
             btn.style.opacity = isActive ? '1' : '0.75';
             btn.setAttribute('aria-pressed', isActive ? 'true' : 'false');
             const check = btn.querySelector('.theme-check');

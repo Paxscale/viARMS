@@ -419,6 +419,17 @@ def get_tenant_scope(user):
     return user
 
 
+def _safe_detail_return_url(request, fallback_url):
+    return_url = request.GET.get('next', '')
+    if return_url and url_has_allowed_host_and_scheme(
+        return_url,
+        allowed_hosts={request.get_host()},
+        require_https=request.is_secure(),
+    ):
+        return return_url
+    return fallback_url
+
+
 def get_store_settings_for_user(user, shop=None):
     tenant_owner = shop.tenant_owner if shop and shop.tenant_owner_id else getattr(
         getattr(user, 'profile', None), 'tenant_owner', None
@@ -2344,23 +2355,41 @@ def sales_history_view(request):
     }
     return render(request, 'sales_history.html', context)
 
+
+def _get_sale_for_user(user, sale_id):
+    user_shop = user.profile.shop
+    tenant = get_tenant_scope(user)
+    sales = Sale.objects.select_related('cashier', 'shop').prefetch_related('items__product')
+
+    if is_admin(user):
+        if tenant and Shop.objects.filter(tenant_owner=tenant).exists():
+            return get_object_or_404(sales, id=sale_id, shop__tenant_owner=tenant)
+        return get_object_or_404(sales, id=sale_id)
+
+    if user_shop and user_shop.tenant_owner:
+        return get_object_or_404(
+            sales,
+            id=sale_id,
+            shop=user_shop,
+            shop__tenant_owner=user_shop.tenant_owner,
+        )
+    return get_object_or_404(sales, id=sale_id, shop=user_shop)
+
+
+@login_required
+def sale_detail_view(request, sale_id):
+    sale = _get_sale_for_user(request.user, sale_id)
+    return render(request, 'sale_detail.html', {
+        'sale': sale,
+        'items': sale.items.all(),
+        'is_admin': is_admin(request.user),
+        'back_url': _safe_detail_return_url(request, reverse('sales_history')),
+    })
+
+
 @login_required
 def sale_detail_json(request, sale_id):
-    user_profile = request.user.profile
-    is_user_admin = is_admin(request.user)
-    user_shop = user_profile.shop
-    tenant = get_tenant_scope(request.user)
-
-    if is_user_admin:
-        if tenant and Shop.objects.filter(tenant_owner=tenant).exists():
-            sale = get_object_or_404(Sale, id=sale_id, shop__tenant_owner=tenant)
-        else:
-            sale = get_object_or_404(Sale, id=sale_id)
-    else:
-        if user_shop and user_shop.tenant_owner:
-            sale = get_object_or_404(Sale, id=sale_id, shop=user_shop, shop__tenant_owner=user_shop.tenant_owner)
-        else:
-            sale = get_object_or_404(Sale, id=sale_id, shop=user_shop)
+    sale = _get_sale_for_user(request.user, sale_id)
 
     items_data = []
     for item in sale.items.all():
@@ -2403,6 +2432,21 @@ def activity_log_view(request):
     tenant = get_tenant_scope(request.user)
     activity = ActivityLog.objects.filter(tenant_owner=tenant).select_related('actor')[:100]
     return render(request, 'activity_log.html', {'activity_entries': activity, 'is_admin': True})
+
+
+@login_required
+@user_passes_test(lambda u: not u.is_superuser and is_admin(u))
+def activity_detail_view(request, activity_id):
+    tenant = get_tenant_scope(request.user)
+    entry = get_object_or_404(
+        ActivityLog.objects.select_related('actor'),
+        id=activity_id,
+        tenant_owner=tenant,
+    )
+    return render(request, 'activity_detail.html', {
+        'entry': entry,
+        'back_url': _safe_detail_return_url(request, reverse('activity_log')),
+    })
 
 
 @login_required
@@ -3386,6 +3430,26 @@ def remita_webhook_view(request):
 # ---------------------------------------------------------------------------
 # Category Dashboard
 # ---------------------------------------------------------------------------
+@login_required
+def product_detail_view(request, product_id):
+    profile = getattr(request.user, 'profile', None)
+    tenant = get_tenant_scope(request.user)
+    products = Product.objects.filter(is_active=True).select_related('category', 'shop')
+    if tenant:
+        products = products.filter(shop__tenant_owner=tenant)
+    if not is_admin(request.user):
+        user_shop = profile.shop if profile else None
+        products = products.filter(shop=user_shop) if user_shop else products.none()
+
+    product = get_object_or_404(products, id=product_id)
+    return render(request, 'product_detail.html', {
+        'product': product,
+        'is_admin': is_admin(request.user),
+        'business_type': profile.business_type if profile else 'GENERAL',
+        'back_url': _safe_detail_return_url(request, reverse('products')),
+    })
+
+
 @login_required
 def category_detail_view(request, category_id):
     """

@@ -12,7 +12,7 @@ from PIL import Image
 from allauth.account.models import EmailAddress
 from allauth.socialaccount.models import SocialAccount, SocialApp, SocialLogin
 from allauth.socialaccount.providers.google.provider import GoogleProvider
-from rms.models import Category, Product, Sale, SaleItem, Shop, StoreSettings, AdminNotification
+from rms.models import ActivityLog, Category, Product, Sale, SaleItem, Shop, StoreSettings, AdminNotification
 import json
 from urllib.parse import urlsplit
 
@@ -724,6 +724,129 @@ class RMSModelsAndAPITests(TestCase):
         self.assertEqual(reprint_receipt['store_phone'], "+234 809 111 2233")
         self.assertEqual(reprint_receipt['store_email'], "support@globalsupermart.com")
         self.assertEqual(reprint_receipt['receipt_footer'], "Thanks for shopping! Valid for exchange in 7 days.")
+
+    def test_table_rows_open_tenant_scoped_detail_pages(self):
+        owner, _, shop = self.create_tenant('row_detail_owner')
+        other_owner, _, other_shop = self.create_tenant('row_detail_other')
+        category = Category.objects.create(name='Detail category', tenant_owner=owner)
+        product = Product.objects.create(
+            name='Detail product',
+            sku='DETAIL-001',
+            category=category,
+            shop=shop,
+            cost_price=Decimal('2.00'),
+            selling_price=Decimal('3.00'),
+            stock_quantity=4,
+            batch_number='BN: 1',
+        )
+        other_product = Product.objects.create(
+            name='Other tenant product',
+            sku='DETAIL-OTHER',
+            shop=other_shop,
+            cost_price=Decimal('2.00'),
+            selling_price=Decimal('3.00'),
+            stock_quantity=4,
+        )
+        sale = Sale.objects.create(
+            receipt_number='DETAIL-RECEIPT-001',
+            subtotal=Decimal('3.00'),
+            tax_rate=Decimal('0.00'),
+            tax_amount=Decimal('0.00'),
+            discount=Decimal('0.00'),
+            total_amount=Decimal('3.00'),
+            payment_method='CASH',
+            cashier=owner,
+            shop=shop,
+        )
+        SaleItem.objects.create(
+            sale=sale,
+            product=product,
+            quantity=1,
+            unit_cost_price=Decimal('2.00'),
+            unit_price=Decimal('3.00'),
+            subtotal=Decimal('3.00'),
+        )
+        other_sale = Sale.objects.create(
+            receipt_number='DETAIL-RECEIPT-OTHER',
+            subtotal=Decimal('3.00'),
+            tax_rate=Decimal('0.00'),
+            tax_amount=Decimal('0.00'),
+            discount=Decimal('0.00'),
+            total_amount=Decimal('3.00'),
+            payment_method='CASH',
+            cashier=other_owner,
+            shop=other_shop,
+        )
+        entry = ActivityLog.objects.create(
+            tenant_owner=owner,
+            actor=owner,
+            action='Test activity',
+            details='Activity detail text',
+        )
+        other_entry = ActivityLog.objects.create(
+            tenant_owner=other_owner,
+            actor=other_owner,
+            action='Other activity',
+            details='Other tenant detail',
+        )
+
+        client = Client()
+        self.assertTrue(client.login(username=owner.username, password='tenant123'))
+
+        sale_path = reverse('sale_detail', kwargs={'sale_id': sale.id})
+        sale_detail = client.get(sale_path)
+        self.assertEqual(sale_detail.status_code, 200)
+        self.assertContains(sale_detail, 'DETAIL-RECEIPT-001')
+        self.assertContains(sale_detail, 'Detail product')
+        self.assertEqual(
+            client.get(reverse('sale_detail', kwargs={'sale_id': other_sale.id})).status_code,
+            404,
+        )
+
+        product_path = reverse('product_detail', kwargs={'product_id': product.id})
+        product_detail = client.get(product_path)
+        self.assertEqual(product_detail.status_code, 200)
+        self.assertContains(product_detail, 'Detail product')
+        self.assertContains(product_detail, 'Product information')
+        self.assertEqual(
+            client.get(reverse('product_detail', kwargs={'product_id': other_product.id})).status_code,
+            404,
+        )
+
+        cashier = User.objects.create_user('row_detail_cashier', password='cashier123')
+        cashier_profile = cashier.profile
+        cashier_profile.role = 'CASHIER'
+        cashier_profile.tenant_owner = owner
+        cashier_profile.shop = shop
+        cashier_profile.is_approved = True
+        cashier_profile.save()
+        cashier_client = Client()
+        self.assertTrue(cashier_client.login(username=cashier.username, password='cashier123'))
+        cashier_product_detail = cashier_client.get(product_path)
+        self.assertEqual(cashier_product_detail.status_code, 200)
+        self.assertNotContains(cashier_product_detail, 'Cost price')
+
+        activity_path = reverse('activity_detail', kwargs={'activity_id': entry.id})
+        activity_detail = client.get(activity_path)
+        self.assertEqual(activity_detail.status_code, 200)
+        self.assertContains(activity_detail, 'Activity detail text')
+        self.assertEqual(
+            client.get(reverse('activity_detail', kwargs={'activity_id': other_entry.id})).status_code,
+            404,
+        )
+
+        sales_table = client.get(reverse('sales_history'))
+        self.assertContains(sales_table, f'data-row-href="{sale_path}?next=')
+        self.assertContains(sales_table, 'View sale')
+
+        activity_table = client.get(reverse('activity_log'))
+        self.assertContains(activity_table, f'data-row-href="{activity_path}?next=')
+
+        category_table = client.get(reverse('category_detail', kwargs={'category_id': category.id}))
+        self.assertContains(category_table, f'data-row-href="{product_path}?next=')
+
+        batch_table = client.get(reverse('stock_batches'), {'batch': 'BN: 1'})
+        self.assertContains(batch_table, f'data-row-href="{product_path}?next=')
 
     def test_receipt_settings_are_isolated_between_tenants(self):
         first_owner, _, first_shop = self.create_tenant('julotop')

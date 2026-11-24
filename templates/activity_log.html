@@ -29,8 +29,8 @@
             <thead><tr><th>Date &amp; time</th><th>Activity</th><th>Details</th><th>By</th></tr></thead>
             <tbody>
                 {% for entry in activity_entries %}
-                <tr>
-                    <td>{{ entry.created_at|date:"M d, Y H:i" }}</td>
+                <tr data-row-href="{% url 'activity_detail' entry.id %}?next={{ request.get_full_path|urlencode }}">
+                    <td><a class="table-row-link" href="{% url 'activity_detail' entry.id %}?next={{ request.get_full_path|urlencode }}">{{ entry.created_at|date:"M d, Y H:i" }}</a></td>
                     <td><strong>{{ entry.action }}</strong></td>
                     <td>{{ entry.details }}</td>
                     <td>{{ entry.actor.username|default:"System" }}</td>

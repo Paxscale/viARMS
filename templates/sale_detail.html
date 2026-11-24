@@ -1,0 +1,56 @@
+{% extends 'base.html' %}
+
+{% block title %}Sale {{ sale.receipt_number }} - viARMS{% endblock %}
+
+{% block content %}
+<div class="panel-header" style="gap: 1rem; flex-wrap: wrap;">
+    <div>
+        <a href="{{ back_url }}" class="btn btn-secondary btn-sm" style="margin-bottom: 0.75rem;">Back to sales</a>
+        <h1 style="font-size: 1.75rem; font-weight: 700;">Sale details</h1>
+        <p style="color: var(--text-secondary); font-size: 0.9rem;">Receipt {{ sale.receipt_number }}</p>
+    </div>
+</div>
+
+<section class="glass-panel" style="padding: 1.5rem; margin-bottom: 1.25rem;">
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem;">
+        <div><div class="form-label">Date &amp; time</div><div>{{ sale.timestamp|date:"M d, Y H:i" }}</div></div>
+        <div><div class="form-label">Shop</div><div>{{ sale.shop.name|default:"Unassigned" }}</div></div>
+        <div><div class="form-label">Cashier</div><div>{{ sale.cashier.username|default:"System"|title }}</div></div>
+        <div><div class="form-label">Payment method</div><div>{{ sale.get_payment_method_display }}</div></div>
+    </div>
+</section>
+
+<section class="glass-panel" style="padding: 1.5rem;">
+    <h2 class="panel-title" style="font-size: 1.05rem; margin-bottom: 1rem;">Items sold</h2>
+    <div class="table-responsive">
+        <table class="custom-table">
+            <thead>
+                <tr><th>Product</th><th>SKU</th><th style="text-align: right;">Quantity</th><th style="text-align: right;">Unit price</th><th style="text-align: right;">Line total</th></tr>
+            </thead>
+            <tbody>
+                {% for item in items %}
+                <tr>
+                    <td>{{ item.product.name|default:"Deleted product" }}</td>
+                    <td style="font-family: monospace;">{{ item.product.sku|default:"—" }}</td>
+                    <td style="text-align: right;">{{ item.quantity }}</td>
+                    <td style="text-align: right;">₦{{ item.unit_price|floatformat:2 }}</td>
+                    <td style="text-align: right; font-weight: 600;">₦{{ item.subtotal|floatformat:2 }}</td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="5" style="text-align: center; color: var(--text-muted); padding: 2rem;">No items are recorded for this sale.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <div style="max-width: 360px; margin: 1rem 0 0 auto; display: grid; gap: 0.5rem;">
+        <div style="display: flex; justify-content: space-between;"><span>Subtotal</span><span>₦{{ sale.subtotal|floatformat:2 }}</span></div>
+        <div style="display: flex; justify-content: space-between;"><span>Discount</span><span>-₦{{ sale.discount|floatformat:2 }}</span></div>
+        <div style="display: flex; justify-content: space-between;"><span>Tax ({{ sale.tax_rate|floatformat:2 }}%)</span><span>₦{{ sale.tax_amount|floatformat:2 }}</span></div>
+        <div style="display: flex; justify-content: space-between; border-top: 1px solid var(--border-color); padding-top: 0.65rem; font-weight: 700;"><span>Total received</span><span>₦{{ sale.total_amount|floatformat:2 }}</span></div>
+        {% if is_admin %}
+        <div style="display: flex; justify-content: space-between; color: var(--color-success);"><span>Net profit</span><span>₦{{ sale.net_profit|floatformat:2 }}</span></div>
+        {% endif %}
+    </div>
+</section>
+{% endblock %}

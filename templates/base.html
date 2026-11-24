@@ -18,7 +18,7 @@
     <link rel="icon" type="image/svg+xml" href="{% static 'icons/icon.svg' %}">
     <meta name="mobile-web-app-capable" content="yes">
 
-    <link rel="stylesheet" href="{% static 'css/styles.css' %}?v=12">
+    <link rel="stylesheet" href="{% static 'css/styles.css' %}?v=15">
     <!-- Lucide Icons (CDN) for modern, clean iconography -->
     <script src="https://unpkg.com/lucide@latest"></script>
     <!-- viARMS i18n System -->
@@ -504,6 +504,14 @@
         const sidebarLinks = document.querySelectorAll('.sidebar-link');
         sidebarLinks.forEach(link => {
             link.addEventListener('click', () => toggleSidebar(false));
+        });
+
+        document.addEventListener('click', (event) => {
+            const target = event.target instanceof Element ? event.target : null;
+            if (!target || event.defaultPrevented) return;
+            const row = target.closest('tr[data-row-href]');
+            if (!row || target.closest('a, button, input, select, textarea, label')) return;
+            window.location.assign(row.dataset.rowHref);
         });
 
         // Auto-fade toasts after 4 seconds

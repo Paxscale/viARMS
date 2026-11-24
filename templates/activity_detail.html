@@ -1,0 +1,23 @@
+{% extends 'base.html' %}
+
+{% block title %}Activity Details - viARMS{% endblock %}
+
+{% block content %}
+<div class="panel-header" style="gap: 1rem; flex-wrap: wrap;">
+    <div>
+        <a href="{{ back_url }}" class="btn btn-secondary btn-sm" style="margin-bottom: 0.75rem;">Back to activity</a>
+        <h1 style="font-size: 1.75rem; font-weight: 700;">Activity details</h1>
+        <p style="color: var(--text-secondary); font-size: 0.9rem;">{{ entry.created_at|date:"M d, Y H:i" }}</p>
+    </div>
+</div>
+
+<section class="glass-panel" style="padding: 1.5rem; max-width: 900px;">
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem; margin-bottom: 1.25rem;">
+        <div><div class="form-label">Activity</div><div style="font-weight: 600;">{{ entry.action }}</div></div>
+        <div><div class="form-label">Recorded by</div><div>{{ entry.actor.username|default:"System" }}</div></div>
+        <div><div class="form-label">Date &amp; time</div><div>{{ entry.created_at|date:"M d, Y H:i:s" }}</div></div>
+    </div>
+    <div class="form-label">Details</div>
+    <p style="white-space: pre-wrap;">{{ entry.details|default:"No additional details were recorded." }}</p>
+</section>
+{% endblock %}
