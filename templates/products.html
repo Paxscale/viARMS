@@ -453,7 +453,7 @@
                         <strong style="font-size: 0.82rem; color: #fde047;"><i data-lucide="ban" style="width: 14px; height: 14px; vertical-align: middle; margin-right: 4px;"></i> Product Images Disabled</strong>
                         <p style="font-size: 0.75rem; color: var(--text-muted); margin: 0.2rem 0 0;">Product images are not supported on the <strong>Standard Plan</strong>.</p>
                     </div>
-                    <a href="{% url 'subscription_upgrade' %}" style="font-size: 0.75rem; color: #a78bfa; font-weight: 700; text-decoration: none; border: 1px solid rgba(139,92,246,0.3); padding: 3px 8px; border-radius: 4px; white-space: nowrap;">Upgrade to Premium &nearr;</a>
+                    <a href="{% url 'subscription_upgrade' %}?plan=PREMIUM" style="font-size: 0.75rem; color: #a78bfa; font-weight: 700; text-decoration: none; border: 1px solid rgba(139,92,246,0.3); padding: 3px 8px; border-radius: 4px; white-space: nowrap;">Upgrade to Premium &nearr;</a>
                 </div>
             </div>
             {% endif %}

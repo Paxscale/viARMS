@@ -9,6 +9,9 @@ from decimal import Decimal
 from io import BytesIO
 from tempfile import TemporaryDirectory
 from PIL import Image
+from allauth.account.models import EmailAddress
+from allauth.socialaccount.models import SocialAccount, SocialApp, SocialLogin
+from allauth.socialaccount.providers.google.provider import GoogleProvider
 from rms.models import Category, Product, Sale, SaleItem, Shop, StoreSettings, AdminNotification
 import json
 from urllib.parse import urlsplit
@@ -99,6 +102,61 @@ class RMSModelsAndAPITests(TestCase):
         verification_response = self.client.get(urlsplit(verification_url).path)
         self.assertEqual(verification_response.status_code, 302)
         return self.client.get(reverse('register'))
+
+    def test_social_login_authenticates_existing_account_by_verified_email(self):
+        existing_user = User.objects.create_user(
+            'social_existing_user',
+            email='social-existing@test.com',
+            password='tenant123',
+        )
+        social_login = SocialLogin(
+            user=User(email='social-existing@test.com'),
+            account=SocialAccount(provider='google', uid='google-user-1'),
+            provider=GoogleProvider(
+                request=None,
+                app=SocialApp(
+                    provider='google',
+                    name='Google',
+                    client_id='test',
+                    secret='test',
+                ),
+            ),
+            email_addresses=[
+                EmailAddress(email='social-existing@test.com', verified=True, primary=True),
+            ],
+        )
+
+        social_login.lookup()
+
+        self.assertEqual(social_login.user, existing_user)
+        self.assertTrue(social_login.is_existing)
+
+    def test_social_login_does_not_authenticate_by_unverified_email(self):
+        User.objects.create_user(
+            'social_unverified_user',
+            email='social-unverified@test.com',
+            password='tenant123',
+        )
+        social_login = SocialLogin(
+            user=User(email='social-unverified@test.com'),
+            account=SocialAccount(provider='google', uid='google-user-2'),
+            provider=GoogleProvider(
+                request=None,
+                app=SocialApp(
+                    provider='google',
+                    name='Google',
+                    client_id='test',
+                    secret='test',
+                ),
+            ),
+            email_addresses=[
+                EmailAddress(email='social-unverified@test.com', verified=False, primary=True),
+            ],
+        )
+
+        social_login.lookup()
+
+        self.assertFalse(social_login.is_existing)
 
     def test_super_admin_can_suspend_and_reactivate_tenant_access(self):
         owner, profile, shop = self.create_tenant('managed_tenant')
@@ -1078,6 +1136,63 @@ class RMSModelsAndAPITests(TestCase):
 
         # Notification sent to tenant
         self.assertTrue(AdminNotification.objects.filter(target_tenant=owner, title__icontains='Upgraded').exists())
+
+    def test_subscription_upgrade_prefills_selected_plan_and_transfer_amount(self):
+        owner, profile, shop = self.create_tenant('selected_plan_owner')
+        client = Client()
+        client.login(username=owner.username, password='tenant123')
+
+        free_subscription_page = client.get(reverse('subscription'))
+        self.assertContains(
+            free_subscription_page,
+            'href="/subscription/upgrade/?plan=PREMIUM"',
+            html=False,
+        )
+
+        profile.plan = 'PREMIUM'
+        profile.save(update_fields=['plan'])
+        premium_subscription_page = client.get(reverse('subscription'))
+        self.assertContains(
+            premium_subscription_page,
+            'href="/subscription/upgrade/?plan=PREMIUM"',
+            html=False,
+        )
+        self.assertContains(
+            premium_subscription_page,
+            'href="/subscription/upgrade/?plan=GOLDEN_PREMIUM"',
+            html=False,
+        )
+
+        test_cases = [
+            ('STANDARD', 'ANNUAL', 'ANNUAL', Decimal('80000.00')),
+            ('STANDARD', 'QUARTERLY', 'ANNUAL', Decimal('80000.00')),
+            ('PREMIUM', 'QUARTERLY', 'QUARTERLY', Decimal('35000.00')),
+            ('PREMIUM', 'ANNUAL', 'ANNUAL', Decimal('120000.00')),
+            ('GOLDEN_PREMIUM', 'QUARTERLY', 'QUARTERLY', Decimal('70000.00')),
+            ('GOLDEN_PREMIUM', 'ANNUAL', 'ANNUAL', Decimal('250000.00')),
+        ]
+        for plan, cycle, expected_cycle, amount in test_cases:
+            with self.subTest(plan=plan, cycle=cycle):
+                response = client.get(reverse('subscription_upgrade'), {
+                    'plan': plan,
+                    'billing_cycle': cycle,
+                })
+
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.context['initial_plan'], plan)
+                self.assertEqual(response.context['initial_billing_cycle'], expected_cycle)
+                self.assertEqual(response.context['initial_amount'], amount)
+                self.assertContains(
+                    response,
+                    f'id="selected-plan-input" value="{plan}"',
+                    html=False,
+                )
+                self.assertContains(
+                    response,
+                    f'id="selected-cycle-input" value="{expected_cycle}"',
+                    html=False,
+                )
+                self.assertContains(response, f'₦{amount:,.0f}')
 
     def test_subscription_remita_instant_verify_api(self):
         from rms.models import SubscriptionPayment

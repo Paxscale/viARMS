@@ -1,5 +1,5 @@
 {% extends 'base.html' %}
-{% load static %}
+{% load static humanize %}
 
 {% block title %}Upgrade Subscription - viARMS{% endblock %}
 
@@ -49,8 +49,8 @@
             </div>
 
             <div style="margin: 1.25rem 0;">
-                <span class="price-val" data-plan="STANDARD" data-cycle="ANNUAL" style="font-size: 2.2rem; font-weight: 800; color: var(--text-primary);">₦80,000</span>
-                <span class="cycle-label" style="font-size: 0.85rem; color: var(--text-muted);">/ year</span>
+                <span class="price-val" data-plan="STANDARD" data-cycle="ANNUAL" style="font-size: 2.2rem; font-weight: 800; color: var(--text-primary);">₦{{ pricing.STANDARD.ANNUAL|floatformat:0|intcomma }}</span>
+                <span class="cycle-label" data-plan="STANDARD" style="font-size: 0.85rem; color: var(--text-muted);">/ year</span>
             </div>
             <div style="font-size: 0.75rem; color: #fbbf24; background: rgba(251,191,36,0.1); border: 1px solid rgba(251,191,36,0.3); border-radius: 6px; padding: 0.3rem 0.6rem; margin-bottom: 0.5rem; display: inline-block;">
                 <i data-lucide="lock" style="width:12px;height:12px;vertical-align:middle;margin-right:3px;"></i> Annual billing only
@@ -94,10 +94,10 @@
             </div>
 
             <div style="margin: 1.25rem 0;">
-                <span class="price-val" data-plan="PREMIUM" data-cycle="ANNUAL" style="font-size: 2.2rem; font-weight: 800; color: var(--text-primary);">₦120,000</span>
-                <span class="cycle-label" style="font-size: 0.85rem; color: var(--text-muted);">/ year</span>
+                <span class="price-val" data-plan="PREMIUM" data-cycle="ANNUAL" style="font-size: 2.2rem; font-weight: 800; color: var(--text-primary);">₦{{ pricing.PREMIUM.ANNUAL|floatformat:0|intcomma }}</span>
+                <span class="cycle-label" data-plan="PREMIUM" style="font-size: 0.85rem; color: var(--text-muted);">/ year</span>
             </div>
-            <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.5rem;" id="prem-quarterly-note">or ₦35,000 / quarter</div>
+            <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.5rem;" id="prem-quarterly-note">or ₦{{ pricing.PREMIUM.QUARTERLY|floatformat:0|intcomma }} / quarter</div>
 
             <ul style="list-style: none; padding: 0; margin: 1.5rem 0 0; display: flex; flex-direction: column; gap: 0.75rem; font-size: 0.85rem; color: var(--text-secondary);">
                 <li style="display: flex; align-items: center; gap: 8px;">
@@ -146,10 +146,10 @@
             </div>
 
             <div style="margin: 1.25rem 0;">
-                <span class="price-val" data-plan="GOLDEN_PREMIUM" data-cycle="ANNUAL" style="font-size: 2.2rem; font-weight: 800; color: var(--text-primary);">₦250,000</span>
-                <span class="cycle-label" style="font-size: 0.85rem; color: var(--text-muted);">/ year</span>
+                <span class="price-val" data-plan="GOLDEN_PREMIUM" data-cycle="ANNUAL" style="font-size: 2.2rem; font-weight: 800; color: var(--text-primary);">₦{{ pricing.GOLDEN_PREMIUM.ANNUAL|floatformat:0|intcomma }}</span>
+                <span class="cycle-label" data-plan="GOLDEN_PREMIUM" style="font-size: 0.85rem; color: var(--text-muted);">/ year</span>
             </div>
-            <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.5rem;" id="gold-quarterly-note">or ₦70,000 / quarter</div>
+            <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.5rem;" id="gold-quarterly-note">or ₦{{ pricing.GOLDEN_PREMIUM.QUARTERLY|floatformat:0|intcomma }} / quarter</div>
 
             <ul style="list-style: none; padding: 0; margin: 1.5rem 0 0; display: flex; flex-direction: column; gap: 0.75rem; font-size: 0.85rem; color: var(--text-secondary);">
                 <li style="display: flex; align-items: center; gap: 8px;">
@@ -231,7 +231,7 @@
             <form method="POST" enctype="multipart/form-data" id="upgrade-form">
                 {% csrf_token %}
                 <input type="hidden" name="plan" id="selected-plan-input" value="{{ initial_plan }}">
-                <input type="hidden" name="billing_cycle" id="selected-cycle-input" value="ANNUAL">
+                <input type="hidden" name="billing_cycle" id="selected-cycle-input" value="{{ initial_billing_cycle }}">
                 <input type="hidden" name="payment_method" id="selected-method-input" value="BANK_TRANSFER">
 
                 <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; margin-bottom: 1rem;">
@@ -265,7 +265,7 @@
                 <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem; border-top: 1px solid var(--border-color); padding-top: 1.25rem;">
                     <div>
                         <span style="font-size: 0.82rem; color: var(--text-muted);">Total Payable:</span>
-                        <div id="summary-total" style="font-size: 1.5rem; font-weight: 800; color: var(--text-primary);">₦15,000</div>
+                        <div id="summary-total" style="font-size: 1.5rem; font-weight: 800; color: var(--text-primary);">₦{{ initial_amount|floatformat:0|intcomma }}</div>
                     </div>
                     <button type="submit" class="btn btn-primary" style="padding: 0.75rem 2rem; font-weight: 700; font-size: 0.95rem; display: inline-flex; align-items: center; gap: 8px;">
                         <i data-lucide="send" style="width: 16px; height: 16px;"></i> Submit Bank Transfer for Confirmation
@@ -296,7 +296,7 @@
                     </div>
                     <div style="display: flex; justify-content: space-between; font-size: 1.1rem; font-weight: 800; border-top: 1px solid var(--border-color); padding-top: 0.6rem; margin-top: 0.4rem;">
                         <span>Amount:</span>
-                        <span id="card-amount-display" style="color: var(--color-primary);">₦15,000</span>
+                        <span id="card-amount-display" style="color: var(--color-primary);">₦{{ initial_amount|floatformat:0|intcomma }}</span>
                     </div>
                 </div>
 
@@ -312,6 +312,7 @@
 
 {% block scripts %}
 <!-- Remita environment detection: sandbox if no merchantId set, or starts with '2547916' -->
+{{ pricing|json_script:"subscription-plan-pricing" }}
 <script>
     const _remitaMerchantId = "{{ settings.remita_merchant_id|default:'' }}";
     const _isSandbox = !_remitaMerchantId || _remitaMerchantId.startsWith('2547916');
@@ -326,16 +327,15 @@
     })();
 </script>
 <script>
-    // Pricing table: Standard = Annual only; Premium & Golden Premium = Quarterly or Annual
-    const PRICING = {
-        'STANDARD':       { 'QUARTERLY': null,   'ANNUAL': 80000  },
-        'PREMIUM':        { 'QUARTERLY': 35000,  'ANNUAL': 120000 },
-        'GOLDEN_PREMIUM': { 'QUARTERLY': 70000,  'ANNUAL': 250000 }
-    };
+    const PRICING = JSON.parse(document.getElementById('subscription-plan-pricing').textContent);
 
     let _currentPlan  = "{{ initial_plan|default:'STANDARD' }}";
-    let _currentCycle = "ANNUAL";   // default: Annual
+    let _currentCycle = "{{ initial_billing_cycle }}";
     let _currentMethod = "BANK_TRANSFER";
+
+    function getPlanPrice(plan, cycle) {
+        return Number(PRICING[plan][cycle] || PRICING[plan].ANNUAL);
+    }
 
     function selectPlan(plan) {
         _currentPlan = plan;
@@ -392,18 +392,15 @@
     }
 
     function updatePriceDisplays() {
-        const stdPrice  = PRICING['STANDARD'][_currentCycle]  || PRICING['STANDARD']['ANNUAL'];
-        const premPrice = PRICING['PREMIUM'][_currentCycle]   || PRICING['PREMIUM']['ANNUAL'];
-        const goldPrice = PRICING['GOLDEN_PREMIUM'][_currentCycle] || PRICING['GOLDEN_PREMIUM']['ANNUAL'];
         const cycleText = formatCycleLabel(_currentCycle);
 
-        // Standard always shows annual price
-        document.querySelectorAll('.price-val[data-plan="STANDARD"]').forEach(el => el.textContent = '₦' + (80000).toLocaleString());
-        document.querySelectorAll('.price-val[data-plan="PREMIUM"]').forEach(el => el.textContent = '₦' + premPrice.toLocaleString());
-        document.querySelectorAll('.price-val[data-plan="GOLDEN_PREMIUM"]').forEach(el => el.textContent = '₦' + goldPrice.toLocaleString());
-
-        // Cycle label: Standard always shows /year
-        document.querySelectorAll('.cycle-label').forEach(el => el.textContent = cycleText);
+        document.querySelectorAll('.price-val').forEach(el => {
+            const cycle = el.dataset.plan === 'STANDARD' ? 'ANNUAL' : _currentCycle;
+            el.textContent = '₦' + getPlanPrice(el.dataset.plan, cycle).toLocaleString();
+        });
+        document.querySelectorAll('.cycle-label').forEach(el => {
+            el.textContent = el.dataset.plan === 'STANDARD' ? '/ year' : cycleText;
+        });
 
         // Quarterly secondary notes
         const premNote = document.getElementById('prem-quarterly-note');
@@ -412,8 +409,7 @@
         if (goldNote) goldNote.style.display = (_currentCycle === 'ANNUAL') ? 'block' : 'none';
 
         // Effective price for selected plan (Standard always uses ANNUAL)
-        const activePricePlan = (_currentPlan === 'STANDARD') ? 'ANNUAL' : _currentCycle;
-        const activePrice = PRICING[_currentPlan][activePricePlan] || PRICING[_currentPlan]['ANNUAL'];
+        const activePrice = getPlanPrice(_currentPlan, _currentCycle);
         const formatted = '₦' + activePrice.toLocaleString();
 
         document.getElementById('summary-total').textContent = formatted;
@@ -464,8 +460,7 @@
         const btn = document.querySelector('[onclick="triggerCardPayment()"]');
         if (btn) { btn.disabled = true; btn.textContent = 'Loading Remita...'; }
 
-        const activePriceCycle = (_currentPlan === 'STANDARD') ? 'ANNUAL' : _currentCycle;
-        const activePrice = PRICING[_currentPlan][activePriceCycle] || PRICING[_currentPlan]['ANNUAL'];
+        const activePrice = getPlanPrice(_currentPlan, _currentCycle);
 
         // Step 1: Request a Remita RRR from the server (server locks the amount)
         fetch("{% url 'remita_generate_rrr_api' %}", {
@@ -486,9 +481,10 @@
 
             // No live merchant ID = test/simulation mode
             if (!_remitaMerchantId) {
-                if (confirm('Remita not configured yet.
+                const simulationMessage = `Remita not configured yet.
 
-Simulate a test payment of ₦' + activePrice.toLocaleString() + ' for ' + _currentPlan + '?')) {
+Simulate a test payment of ₦${activePrice.toLocaleString()} for ${_currentPlan}?`;
+                if (confirm(simulationMessage)) {
                     verifyRemitaTransaction('RRR-TEST-' + Math.random().toString(36).substring(2, 10).toUpperCase(), _currentPlan, _currentCycle, data.orderId);
                 } else {
                     resetPayBtn(btn);
@@ -559,7 +555,8 @@ Simulate a test payment of ₦' + activePrice.toLocaleString() + ' for ' + _curr
         .then(res => res.json())
         .then(data => {
             if (data.status === 'success') {
-                alert('Payment confirmed! Your account has been upgraded to ' + (plan === 'GOLDEN_PREMIUM' ? 'Golden Premium' : 'Premium') + '.');
+                const planTitles = {'STANDARD': 'Standard', 'PREMIUM': 'Premium', 'GOLDEN_PREMIUM': 'Golden Premium'};
+                alert('Payment confirmed! Your account has been upgraded to ' + (planTitles[plan] || plan) + '.');
                 window.location.href = "{% url 'subscription' %}";
             } else {
                 alert('Payment verification failed: ' + (data.message || 'Unknown error. Contact support.'));
@@ -574,7 +571,7 @@ Simulate a test payment of ₦' + activePrice.toLocaleString() + ' for ' + _curr
 
     // Init on page load
     document.addEventListener('DOMContentLoaded', function() {
-        setBillingCycle('ANNUAL');  // Default to Annual billing
+        setBillingCycle(_currentCycle);
         selectPlan(_currentPlan);
         lucide.createIcons();
     });

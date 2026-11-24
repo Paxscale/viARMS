@@ -378,7 +378,7 @@
                         Operations are restricted while your subscription is inactive. Your account and store data are retained while suspended.
                     </span>
                 </div>
-                <a href="{% url 'subscription_upgrade' %}" style="white-space: nowrap; font-size: 0.82rem; background: #ef4444; color: #fff; font-weight: 700; text-decoration: none; padding: 0.45rem 1rem; border-radius: 6px; display: inline-flex; align-items: center; gap: 6px;">
+                <a href="{% url 'subscription_upgrade' %}?plan={% if user.profile.plan == 'FREE' %}PREMIUM{% else %}{{ user.profile.plan }}{% endif %}" style="white-space: nowrap; font-size: 0.82rem; background: #ef4444; color: #fff; font-weight: 700; text-decoration: none; padding: 0.45rem 1rem; border-radius: 6px; display: inline-flex; align-items: center; gap: 6px;">
                     <i data-lucide="zap" style="width: 14px; height: 14px;"></i> Redeem Subscription &nearr;
                 </a>
             </div>
@@ -388,7 +388,7 @@
                     <i data-lucide="sparkles" style="width: 15px; height: 15px; flex-shrink: 0; color: #a78bfa;"></i>
                     <span><strong>14-Day Free Trial Active ({{ user.profile.trial_days_remaining }} day{{ user.profile.trial_days_remaining|pluralize }} remaining)</strong> &mdash; You have full access to all <strong>Premium</strong> features, including product photos and advanced analytics.</span>
                 </div>
-                <a href="{% url 'subscription_upgrade' %}" style="white-space: nowrap; font-size: 0.78rem; color: #a78bfa; font-weight: 700; text-decoration: none; border: 1px solid rgba(139,92,246,0.4); padding: 0.25rem 0.65rem; border-radius: 4px;">Choose Plan &nearr;</a>
+                <a href="{% url 'subscription_upgrade' %}?plan=PREMIUM" style="white-space: nowrap; font-size: 0.78rem; color: #a78bfa; font-weight: 700; text-decoration: none; border: 1px solid rgba(139,92,246,0.4); padding: 0.25rem 0.65rem; border-radius: 4px;">Choose Plan &nearr;</a>
             </div>
             {% endif %}
             {% elif user.profile.is_account_suspended %}

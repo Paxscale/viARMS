@@ -503,7 +503,7 @@
 
             <div class="pricing-card">
                 <h3 style="font-size: 1.5rem; margin-bottom: 0.5rem;">Standard</h3>
-                <div style="font-size: 2.1rem; font-weight: 700; margin-bottom: 0.4rem;">&#8358;80,000<span style="font-size: 1rem; color: var(--text-muted); font-weight: 400;"> / year</span></div>
+                <div style="font-size: 2.1rem; font-weight: 700; margin-bottom: 0.4rem;">&#8358;{{ pricing.STANDARD.ANNUAL|floatformat:0|intcomma }}<span style="font-size: 1rem; color: var(--text-muted); font-weight: 400;"> / year</span></div>
                 <p style="font-size: 0.8rem; color: var(--text-muted); margin: 0 0 1.25rem;">Annual billing only</p>
                 <ul style="list-style: none; display: flex; flex-direction: column; gap: 1rem; color: var(--text-secondary);">
                     <li style="display: flex; gap: 0.5rem;"><i data-lucide="check" style="color: var(--color-success);"></i> 1 shop branch</li>
@@ -517,8 +517,8 @@
             <div class="pricing-card premium">
                 <div class="premium-badge">Most Popular</div>
                 <h3 style="font-size: 1.5rem; margin-bottom: 0.5rem; color: var(--color-primary);">Premium</h3>
-                <div style="font-size: 2.1rem; font-weight: 700; margin-bottom: 0.4rem;">&#8358;120,000<span style="font-size: 1rem; color: var(--text-muted); font-weight: 400;"> / year</span></div>
-                <p style="font-size: 0.8rem; color: var(--text-muted); margin: 0 0 1.25rem;">or &#8358;35,000 quarterly</p>
+                <div style="font-size: 2.1rem; font-weight: 700; margin-bottom: 0.4rem;">&#8358;{{ pricing.PREMIUM.ANNUAL|floatformat:0|intcomma }}<span style="font-size: 1rem; color: var(--text-muted); font-weight: 400;"> / year</span></div>
+                <p style="font-size: 0.8rem; color: var(--text-muted); margin: 0 0 1.25rem;">or &#8358;{{ pricing.PREMIUM.QUARTERLY|floatformat:0|intcomma }} quarterly</p>
                 <ul style="list-style: none; display: flex; flex-direction: column; gap: 1rem; color: var(--text-secondary);">
                     <li style="display: flex; gap: 0.5rem;"><i data-lucide="check" style="color: var(--color-primary);"></i> Up to 5 shop branches</li>
                     <li style="display: flex; gap: 0.5rem;"><i data-lucide="check" style="color: var(--color-primary);"></i> Up to 5 managers and unlimited cashiers</li>
@@ -531,8 +531,8 @@
             <div class="pricing-card" style="border: 1px solid #fbbf24; background: linear-gradient(180deg, rgba(251,191,36,0.05) 0%, var(--bg-surface) 100%); position: relative;">
                 <div class="premium-badge" style="background: linear-gradient(135deg, #f59e0b, #d97706); top: -12px; right: 24px;">Golden Plan</div>
                 <h3 style="font-size: 1.5rem; margin-bottom: 0.5rem; color: #fbbf24;">Golden Premium</h3>
-                <div style="font-size: 2.1rem; font-weight: 700; margin-bottom: 0.4rem;">&#8358;250,000<span style="font-size: 1rem; color: var(--text-muted); font-weight: 400;"> / year</span></div>
-                <p style="font-size: 0.8rem; color: var(--text-muted); margin: 0 0 1.25rem;">or &#8358;70,000 quarterly</p>
+                <div style="font-size: 2.1rem; font-weight: 700; margin-bottom: 0.4rem;">&#8358;{{ pricing.GOLDEN_PREMIUM.ANNUAL|floatformat:0|intcomma }}<span style="font-size: 1rem; color: var(--text-muted); font-weight: 400;"> / year</span></div>
+                <p style="font-size: 0.8rem; color: var(--text-muted); margin: 0 0 1.25rem;">or &#8358;{{ pricing.GOLDEN_PREMIUM.QUARTERLY|floatformat:0|intcomma }} quarterly</p>
                 <ul style="list-style: none; display: flex; flex-direction: column; gap: 1rem; color: var(--text-secondary);">
                     <li style="display: flex; gap: 0.5rem;"><i data-lucide="check" style="color: #fbbf24;"></i> Everything in Premium</li>
                     <li style="display: flex; gap: 0.5rem;"><i data-lucide="check" style="color: #fbbf24;"></i> Unlimited branches and staff</li>

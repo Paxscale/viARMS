@@ -15,11 +15,11 @@
         </p>
     </div>
     {% if profile.plan == 'FREE' or profile.is_trial_expired or profile.is_subscription_expired %}
-    <a href="{% url 'subscription_upgrade' %}" class="btn btn-primary" style="padding: 0.65rem 1.5rem; font-weight: 600; display: inline-flex; align-items: center; gap: 8px;">
+    <a href="{% url 'subscription_upgrade' %}?plan={{ renewal_plan }}" class="btn btn-primary" style="padding: 0.65rem 1.5rem; font-weight: 600; display: inline-flex; align-items: center; gap: 8px;">
         <i data-lucide="zap" style="width: 16px; height: 16px;"></i> Upgrade Plan Now
     </a>
     {% else %}
-    <a href="{% url 'subscription_upgrade' %}" class="btn btn-secondary" style="padding: 0.65rem 1.5rem; font-weight: 600; display: inline-flex; align-items: center; gap: 8px;">
+    <a href="{% url 'subscription_upgrade' %}?plan={{ profile.plan }}" class="btn btn-secondary" style="padding: 0.65rem 1.5rem; font-weight: 600; display: inline-flex; align-items: center; gap: 8px;">
         <i data-lucide="arrow-up-right" style="width: 16px; height: 16px;"></i> Change or Extend Plan
     </a>
     {% endif %}
@@ -55,8 +55,8 @@
                 {% endif %}
             {% endif %}
         </p>
-        <a href="{% url 'subscription_upgrade' %}" style="font-size: 0.82rem; color: var(--color-primary); font-weight: 600; text-decoration: none; display: inline-flex; align-items: center; gap: 4px;">
-            Upgrade to higher tier &rarr;
+        <a href="{% url 'subscription_upgrade' %}?plan={{ upgrade_plan }}" style="font-size: 0.82rem; color: var(--color-primary); font-weight: 600; text-decoration: none; display: inline-flex; align-items: center; gap: 4px;">
+            {% if profile.plan == 'GOLDEN_PREMIUM' %}Renew or change plan{% else %}Upgrade to higher tier{% endif %} &rarr;
         </a>
     </div>
 
@@ -175,7 +175,7 @@
                 {% empty %}
                 <tr>
                     <td colspan="7" style="text-align: center; padding: 2.5rem; color: var(--text-muted);">
-                        No payment transactions recorded yet. <a href="{% url 'subscription_upgrade' %}" style="color: var(--color-primary); font-weight: 600;">Upgrade your plan now &nearr;</a>
+                        No payment transactions recorded yet. <a href="{% url 'subscription_upgrade' %}?plan={{ renewal_plan }}" style="color: var(--color-primary); font-weight: 600;">Upgrade your plan now &nearr;</a>
                     </td>
                 </tr>
                 {% endfor %}

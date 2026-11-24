@@ -894,6 +894,7 @@ def landing_view(request):
         'shop_count': shop_count,
         'product_count': product_count,
         'staff_count': staff_count,
+        'pricing': SubscriptionPayment.PLAN_PRICING,
     })
 
 def get_managed_tenant_profile(user_id):
@@ -930,17 +931,18 @@ def send_suspension_email(user):
         return False
     from django.core.mail import send_mail
     from django.conf import settings
+    pricing = SubscriptionPayment.PLAN_PRICING
     subject = "viARMS — Store Account Suspended (14-Day Free Trial Ended)"
     message = (
         f"Hello {user.first_name or user.username},\n\n"
         f"Your 14-day free trial on viARMS has ended, and your store operations are now suspended.\n\n"
         f"To restore your store operations and preserve your inventory and sales data, "
         f"please redeem your subscription by selecting one of our plans:\n"
-        f"  1. Standard Plan (₦8,000/mo) — 1 shop branch, POS & text inventory management\n"
-        f"  2. Premium Plan (₦15,000/mo) — Up to 5 branches, full product images, analytics & CSV export\n"
-        f"  3. Golden Premium Plan (₦35,000/mo) — Unlimited branches & staff, stock transfers & priority support\n\n"
+        f"  1. Standard Plan (₦{pricing['STANDARD']['ANNUAL']:,.0f}/year) — 1 shop branch, POS & text inventory management\n"
+        f"  2. Premium Plan (₦{pricing['PREMIUM']['QUARTERLY']:,.0f}/quarter or ₦{pricing['PREMIUM']['ANNUAL']:,.0f}/year) — Up to 5 branches, full product images, analytics & CSV export\n"
+        f"  3. Golden Premium Plan (₦{pricing['GOLDEN_PREMIUM']['QUARTERLY']:,.0f}/quarter or ₦{pricing['GOLDEN_PREMIUM']['ANNUAL']:,.0f}/year) — Unlimited branches & staff, stock transfers & priority support\n\n"
         "Your account and business records remain stored while suspended. They will not be automatically deleted.\n\n"
-        f"Redeem your subscription now: https://scales.pythonanywhere.com/subscription/upgrade/\n\n"
+        f"Redeem your subscription now: https://scales.pythonanywhere.com/subscription/upgrade/?plan=PREMIUM\n\n"
         f"Best regards,\n"
         f"viARMS Support Team"
     )
@@ -3051,6 +3053,12 @@ def subscription_view(request):
     payments = SubscriptionPayment.objects.filter(tenant=tenant_owner).order_by('-created_at')
     settings = StoreSettings.get_settings()
     pricing = SubscriptionPayment.PLAN_PRICING
+    renewal_plan = profile.plan if profile.plan in pricing else 'PREMIUM'
+    upgrade_plan = {
+        'STANDARD': 'PREMIUM',
+        'PREMIUM': 'GOLDEN_PREMIUM',
+        'GOLDEN_PREMIUM': 'GOLDEN_PREMIUM',
+    }.get(profile.plan, 'PREMIUM')
 
     context = {
         'tenant_owner': tenant_owner,
@@ -3058,6 +3066,8 @@ def subscription_view(request):
         'payments': payments,
         'settings': settings,
         'pricing': pricing,
+        'renewal_plan': renewal_plan,
+        'upgrade_plan': upgrade_plan,
         'is_admin': is_admin(request.user),
     }
     return render(request, 'subscription.html', context)
@@ -3130,14 +3140,22 @@ def subscription_upgrade_view(request):
             )
             return redirect('subscription')
 
-    initial_plan = request.GET.get('plan', 'PREMIUM').upper()
+    initial_plan = request.GET.get('plan', profile.plan).upper()
     if initial_plan not in pricing:
         initial_plan = 'PREMIUM'
+    initial_billing_cycle = request.GET.get(
+        'billing_cycle',
+        request.GET.get('cycle', 'ANNUAL'),
+    ).upper()
+    if initial_plan == 'STANDARD' or initial_billing_cycle not in pricing[initial_plan]:
+        initial_billing_cycle = 'ANNUAL'
     context = {
         'profile': profile,
         'settings': settings,
         'pricing': pricing,
         'initial_plan': initial_plan,
+        'initial_billing_cycle': initial_billing_cycle,
+        'initial_amount': pricing[initial_plan][initial_billing_cycle],
         'is_admin': is_admin(request.user),
     }
     return render(request, 'subscription_upgrade.html', context)

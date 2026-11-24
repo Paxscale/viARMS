@@ -1,6 +1,6 @@
 ﻿# Google and Apple sign-in setup
 
-The login and registration pages show provider buttons only after credentials are configured. OAuth sign-in does not configure outbound SMTP. New social signups still collect business/KYC details and require administrator approval.
+The login and registration pages show provider buttons only after credentials are configured. OAuth sign-in does not configure outbound SMTP. New social signups still collect business/KYC details and require administrator approval. A verified Google or Apple email matching an existing account signs in to that account; new users continue to the business/KYC signup form.
 
 ## 1. Install in the project virtual environment
 
@@ -48,6 +48,6 @@ Apple web sign-in needs a registered public domain and HTTPS callback, so it wil
 
 ## 4. Finish configuration
 
-Restart Django after editing `.env`. A provider button appears after that provider has all required credentials. On first social sign-in, finish the business signup form; administrator approval still applies. Existing accounts are not silently linked by matching email alone.
+Restart Django after editing `.env`. A provider button appears after that provider has all required credentials. New users finish the business signup form after first social sign-in; administrator approval still applies. Existing users with a matching verified provider email are signed in directly.
 
-Keep `.env` and Apple's `.p8` private. Revoke/rotate any credential that has been exposed.
+Keep `.env` and Apple's `.p8` private. Google and Apple are configured as trusted verified-email providers for matching existing accounts. Existing accounts are not automatically linked to a social account, so the provider email must continue to match the account email. Revoke/rotate any credential that has been exposed.
