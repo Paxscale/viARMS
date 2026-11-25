@@ -4,5 +4,6 @@ backups/
 __pycache__/
 .venv/
 chrome-login-profile/
+.env.example
 .env
 *.env
